@@ -1,9 +1,10 @@
-import { polylineMidpoint, rectCenter, rectsIntersect, DEG, type Rect } from '../../../lib/canvas/geometry';
-import { endDirection } from '../../../lib/canvas/route';
+import { rectCenter, rectsIntersect, DEG, type Rect } from '../../../lib/canvas/geometry';
+import { connectorEndDirection, connectorMidpoint } from '../../../lib/canvas/route';
 import { contentRect, STICKY_RADIUS, traceRounded, traceShape } from '../../../lib/canvas/shapes';
 import { F_STRIKE, type Fmt } from '../../../lib/canvas/richText';
 import { LABEL_SIZE, boxFontSize, fontOf, type TextLayout, type TextLayouter } from '../../../lib/canvas/textLayout';
-import { aabb, type BoxRec, type ConnectorRec, type ObjectRec } from '../../../lib/canvas/types';
+import { aabb, type ConnectorRec, type ImageRec, type ObjectRec, type TextBoxRec } from '../../../lib/canvas/types';
+import type { ImageSource } from './images';
 import { readableInk, resolveColor, resolveSticky, type CanvasPalette } from './palette';
 import type { VoteBadge } from '../../../lib/canvas/votes';
 import { drawVoteMark } from './voteDraw';
@@ -30,6 +31,8 @@ export interface DrawEnv {
   hiddenText: string | null;
   /** Vote badges of the open or finished vote (ADR-0127); absent while there is no vote, so a plain canvas pays nothing. */
   votes?: { badge(id: string): VoteBadge | null } | undefined;
+  /** Decoded pictures (ADR-0127, 2026-10-23); absent: every picture is its plaque. */
+  images?: ImageSource | undefined;
 }
 
 const font = (env: DrawEnv, size: number): string => `${size}px ${env.palette.fontFamily}`;
@@ -118,10 +121,35 @@ function drawBody(ctx: Ctx2D, o: ObjectRec, env: DrawEnv): void {
     case 'connector':
       drawConnector(ctx, o, env);
       break;
+    case 'image':
+      drawPicture(ctx, o, env);
+      break;
   }
 }
 
-function markVotes(ctx: Ctx2D, o: BoxRec, env: DrawEnv): void {
+/**
+ * A picture: the decoded still scaled into its frame (aspect kept by the frame itself), or a plaque while it loads,
+ * when it failed, on the public page without access, and below the plaque zoom.
+ */
+function drawPicture(ctx: Ctx2D, o: ImageRec, env: DrawEnv): void {
+  const img = env.scale >= TEXT_PLAQUE_SCALE * 0.5 ? (env.images?.get(o.src) ?? null) : null;
+  if (img) {
+    ctx.drawImage(img, o.x, o.y, o.w, o.h);
+    return;
+  }
+  ctx.fillStyle = env.palette.plaque;
+  const alpha = ctx.globalAlpha;
+  ctx.globalAlpha = alpha * 0.5;
+  if (env.scale < TEXT_PLAQUE_SCALE) ctx.fillRect(o.x, o.y, o.w, o.h);
+  else {
+    ctx.beginPath();
+    traceRounded(ctx, o, Math.min(12, o.w / 8, o.h / 8));
+    ctx.fill();
+  }
+  ctx.globalAlpha = alpha;
+}
+
+function markVotes(ctx: Ctx2D, o: TextBoxRec, env: DrawEnv): void {
   const b = env.votes?.badge(o.id);
   if (b) drawVoteMark(ctx, o, b, env);
 }
@@ -222,7 +250,7 @@ function drawRich(ctx: Ctx2D, env: DrawEnv, lay: TextLayout, size: number, box: 
   }
 }
 
-function drawSticky(ctx: Ctx2D, o: BoxRec & { kind: 'sticky' }, env: DrawEnv): void {
+function drawSticky(ctx: Ctx2D, o: TextBoxRec & { kind: 'sticky' }, env: DrawEnv): void {
   const c = resolveSticky(env.palette, o.color);
   ctx.fillStyle = c.bg;
   if (env.scale < TEXT_PLAQUE_SCALE) {
@@ -235,12 +263,12 @@ function drawSticky(ctx: Ctx2D, o: BoxRec & { kind: 'sticky' }, env: DrawEnv): v
   if (env.hiddenText !== o.id) drawLines(ctx, env, o, o.text, o.fmt, boxFontSize(o), contentRect(o), c.fg, 'left', false);
 }
 
-function drawText(ctx: Ctx2D, o: BoxRec & { kind: 'text' }, env: DrawEnv): void {
+function drawText(ctx: Ctx2D, o: TextBoxRec & { kind: 'text' }, env: DrawEnv): void {
   if (env.hiddenText === o.id) return;
   drawLines(ctx, env, o, o.text, o.fmt, o.size, contentRect(o), resolveColor(env.palette, o.color) ?? env.palette.ink, 'left', false);
 }
 
-function drawShape(ctx: Ctx2D, o: BoxRec & { kind: 'shape' }, env: DrawEnv): void {
+function drawShape(ctx: Ctx2D, o: TextBoxRec & { kind: 'shape' }, env: DrawEnv): void {
   const fill = resolveColor(env.palette, o.fill);
   const stroke = resolveColor(env.palette, o.stroke);
   ctx.beginPath();
@@ -273,16 +301,20 @@ function drawConnector(ctx: Ctx2D, o: ConnectorRec, env: DrawEnv): void {
   ctx.lineCap = 'butt';
   ctx.beginPath();
   ctx.moveTo(pts[0] ?? 0, pts[1] ?? 0);
-  for (let i = 2; i + 1 < pts.length; i += 2) ctx.lineTo(pts[i] ?? 0, pts[i + 1] ?? 0);
+  const c = o.curve;
+  // A curve is drawn as the exact cubic (the flattened `points` serve hit tests and bounds).
+  if (c && c.length === 4) ctx.bezierCurveTo(c[0] ?? 0, c[1] ?? 0, c[2] ?? 0, c[3] ?? 0, pts[pts.length - 2] ?? 0, pts[pts.length - 1] ?? 0);
+  else for (let i = 2; i + 1 < pts.length; i += 2) ctx.lineTo(pts[i] ?? 0, pts[i + 1] ?? 0);
   ctx.stroke();
   if (!detail) return;
   const head = 8 + o.strokeWidth * 2;
-  if (o.arrow !== 'none') drawArrowHead(ctx, pts[pts.length - 2] ?? 0, pts[pts.length - 1] ?? 0, endDirection(pts, true), head, stroke);
-  if (o.arrow === 'both') drawArrowHead(ctx, pts[0] ?? 0, pts[1] ?? 0, endDirection(pts, false), head, stroke);
+  if (o.arrow !== 'none') drawArrowHead(ctx, pts[pts.length - 2] ?? 0, pts[pts.length - 1] ?? 0, connectorEndDirection(o, true), head, stroke);
+  if (o.arrow === 'both') drawArrowHead(ctx, pts[0] ?? 0, pts[1] ?? 0, connectorEndDirection(o, false), head, stroke);
   if (o.label) {
-    const m = polylineMidpoint(pts);
+    const m = connectorMidpoint(o);
     const lay = env.layouter.layout(o.label, LABEL_SIZE, 160);
-    const w = Math.max(...lay.widths, 0) + 12;
+    // A pixel of slack: re-laid at exactly its measured width, the last glyph could wrap onto a line that is cut off.
+    const w = Math.ceil(Math.max(...lay.widths, 0)) + 1 + 12;
     const h = lay.height + 6;
     ctx.fillStyle = env.palette.labelBg;
     ctx.beginPath();

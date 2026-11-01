@@ -7,10 +7,54 @@ package sqlc
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const addTaskRelease = `-- name: AddTaskRelease :execrows
+INSERT INTO task_releases (task_id, environment, release_id) VALUES ($1, $2, $3)
+ON CONFLICT (task_id, environment) DO NOTHING
+`
+
+type AddTaskReleaseParams struct {
+	TaskID      uuid.UUID
+	Environment string
+	ReleaseID   uuid.UUID
+}
+
+func (q *Queries) AddTaskRelease(ctx context.Context, arg AddTaskReleaseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, addTaskRelease, arg.TaskID, arg.Environment, arg.ReleaseID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const boardReleaseEnvironments = `-- name: BoardReleaseEnvironments :many
+SELECT DISTINCT environment FROM board_releases WHERE board_id = $1
+`
+
+func (q *Queries) BoardReleaseEnvironments(ctx context.Context, boardID uuid.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, boardReleaseEnvironments, boardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var environment string
+		if err := rows.Scan(&environment); err != nil {
+			return nil, err
+		}
+		items = append(items, environment)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
 
 const boardRuleCounts = `-- name: BoardRuleCounts :many
 SELECT board_id, count(*)::integer AS rules FROM board_rules
@@ -79,6 +123,16 @@ func (q *Queries) CountBoardRules(ctx context.Context, boardID uuid.UUID) (int32
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const countReleaseTasks = `-- name: CountReleaseTasks :exec
+UPDATE board_releases SET tasks_count = (SELECT count(*) FROM task_releases r WHERE r.release_id = board_releases.id)
+WHERE id = $1
+`
+
+func (q *Queries) CountReleaseTasks(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, countReleaseTasks, id)
+	return err
 }
 
 const createBoardRule = `-- name: CreateBoardRule :one
@@ -184,7 +238,7 @@ func (q *Queries) FinishScheduledRuleRun(ctx context.Context, arg FinishSchedule
 
 const getBoardGit = `-- name: GetBoardGit :one
 
-SELECT board_id, provider, secret_enc, created_by, created_at, last_event_at, last_error, events_count FROM board_git WHERE board_id = $1
+SELECT board_id, provider, secret_enc, created_by, created_at, last_event_at, last_error, events_count, backlink, api_token_enc, gitlab_url, backlink_error FROM board_git WHERE board_id = $1
 `
 
 // ---- Git ----
@@ -200,6 +254,32 @@ func (q *Queries) GetBoardGit(ctx context.Context, boardID uuid.UUID) (BoardGit,
 		&i.LastEventAt,
 		&i.LastError,
 		&i.EventsCount,
+		&i.Backlink,
+		&i.ApiTokenEnc,
+		&i.GitlabUrl,
+		&i.BacklinkError,
+	)
+	return i, err
+}
+
+const getBoardRelease = `-- name: GetBoardRelease :one
+SELECT id, board_id, environment, sha, name, url, created_by, created_at, updated_at, tasks_count FROM board_releases WHERE id = $1
+`
+
+func (q *Queries) GetBoardRelease(ctx context.Context, id uuid.UUID) (BoardRelease, error) {
+	row := q.db.QueryRow(ctx, getBoardRelease, id)
+	var i BoardRelease
+	err := row.Scan(
+		&i.ID,
+		&i.BoardID,
+		&i.Environment,
+		&i.Sha,
+		&i.Name,
+		&i.Url,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TasksCount,
 	)
 	return i, err
 }
@@ -271,7 +351,7 @@ func (q *Queries) GetBoardRuleWorkspace(ctx context.Context, id uuid.UUID) (uuid
 }
 
 const getTaskGitLink = `-- name: GetTaskGitLink :one
-SELECT id, task_id, kind, provider, repo, ref, title, url, state, author, created_at, updated_at FROM task_git_links
+SELECT id, task_id, kind, provider, repo, ref, title, url, state, author, created_at, updated_at, draft, seen, merge_shas FROM task_git_links
 WHERE task_id = $1 AND kind = $2 AND provider = $3 AND repo = $4 AND ref = $5
 `
 
@@ -305,6 +385,9 @@ func (q *Queries) GetTaskGitLink(ctx context.Context, arg GetTaskGitLinkParams) 
 		&i.Author,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Draft,
+		&i.Seen,
+		&i.MergeShas,
 	)
 	return i, err
 }
@@ -336,6 +419,50 @@ func (q *Queries) InsertBoardRuleRun(ctx context.Context, arg InsertBoardRuleRun
 		arg.SchedKey,
 	)
 	return err
+}
+
+const listBoardReleases = `-- name: ListBoardReleases :many
+SELECT id, board_id, environment, sha, name, url, created_by, created_at, updated_at, tasks_count FROM board_releases
+WHERE board_id = $1 AND ($2::text = '' OR environment = $2)
+ORDER BY created_at DESC, id DESC
+LIMIT $3
+`
+
+type ListBoardReleasesParams struct {
+	BoardID     uuid.UUID
+	Environment string
+	Lim         int32
+}
+
+func (q *Queries) ListBoardReleases(ctx context.Context, arg ListBoardReleasesParams) ([]BoardRelease, error) {
+	rows, err := q.db.Query(ctx, listBoardReleases, arg.BoardID, arg.Environment, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BoardRelease{}
+	for rows.Next() {
+		var i BoardRelease
+		if err := rows.Scan(
+			&i.ID,
+			&i.BoardID,
+			&i.Environment,
+			&i.Sha,
+			&i.Name,
+			&i.Url,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TasksCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listBoardRules = `-- name: ListBoardRules :many
@@ -507,7 +634,7 @@ func (q *Queries) ListScheduledRules(ctx context.Context) ([]BoardRule, error) {
 }
 
 const listTaskGitLinks = `-- name: ListTaskGitLinks :many
-SELECT id, task_id, kind, provider, repo, ref, title, url, state, author, created_at, updated_at FROM task_git_links WHERE task_id = $1 ORDER BY updated_at DESC, id DESC
+SELECT id, task_id, kind, provider, repo, ref, title, url, state, author, created_at, updated_at, draft, seen, merge_shas FROM task_git_links WHERE task_id = $1 ORDER BY updated_at DESC, id DESC
 `
 
 func (q *Queries) ListTaskGitLinks(ctx context.Context, taskID uuid.UUID) ([]TaskGitLink, error) {
@@ -532,7 +659,93 @@ func (q *Queries) ListTaskGitLinks(ctx context.Context, taskID uuid.UUID) ([]Tas
 			&i.Author,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Draft,
+			&i.Seen,
+			&i.MergeShas,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTaskReleases = `-- name: ListTaskReleases :many
+SELECT tr.task_id, tr.release_id, tr.environment, tr.created_at, r.name, r.url
+FROM task_releases tr JOIN board_releases r ON r.id = tr.release_id
+WHERE tr.task_id = ANY($1::uuid[])
+ORDER BY tr.task_id, tr.created_at DESC, tr.environment
+`
+
+type ListTaskReleasesRow struct {
+	TaskID      uuid.UUID
+	ReleaseID   uuid.UUID
+	Environment string
+	CreatedAt   time.Time
+	Name        string
+	Url         string
+}
+
+func (q *Queries) ListTaskReleases(ctx context.Context, taskIds []uuid.UUID) ([]ListTaskReleasesRow, error) {
+	rows, err := q.db.Query(ctx, listTaskReleases, taskIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTaskReleasesRow{}
+	for rows.Next() {
+		var i ListTaskReleasesRow
+		if err := rows.Scan(
+			&i.TaskID,
+			&i.ReleaseID,
+			&i.Environment,
+			&i.CreatedAt,
+			&i.Name,
+			&i.Url,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const liveTasksByNumbers = `-- name: LiveTasksByNumbers :many
+SELECT t.id, t.number,
+    EXISTS (SELECT 1 FROM task_releases r WHERE r.task_id = t.id AND r.environment = $1)::boolean AS released
+FROM tasks t
+WHERE t.board_id = $2 AND t.number = ANY($3::int[]) AND t.archived_at IS NULL
+`
+
+type LiveTasksByNumbersParams struct {
+	Environment string
+	BoardID     uuid.UUID
+	Numbers     []int32
+}
+
+type LiveTasksByNumbersRow struct {
+	ID       uuid.UUID
+	Number   int32
+	Released bool
+}
+
+// released: the task is already in a release of the environment.
+func (q *Queries) LiveTasksByNumbers(ctx context.Context, arg LiveTasksByNumbersParams) ([]LiveTasksByNumbersRow, error) {
+	rows, err := q.db.Query(ctx, liveTasksByNumbers, arg.Environment, arg.BoardID, arg.Numbers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LiveTasksByNumbersRow{}
+	for rows.Next() {
+		var i LiveTasksByNumbersRow
+		if err := rows.Scan(&i.ID, &i.Number, &i.Released); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -596,6 +809,75 @@ func (q *Queries) RecordBoardRuleRuns(ctx context.Context, arg RecordBoardRuleRu
 	return i, err
 }
 
+const releaseTasksByCommits = `-- name: ReleaseTasksByCommits :many
+SELECT t.id, t.number FROM tasks t
+WHERE t.board_id = $1 AND t.archived_at IS NULL
+  AND t.id IN (
+    SELECT x.task_id FROM unnest($2::text[]) s(sha) CROSS JOIN LATERAL (
+      SELECT l.task_id FROM task_git_links l WHERE l.kind = 'commit' AND l.ref = s.sha
+      UNION ALL
+      SELECT l.task_id FROM task_git_links l WHERE l.kind = 'pr' AND l.merge_shas @> ARRAY[s.sha]) x)
+  AND NOT EXISTS (SELECT 1 FROM task_releases r WHERE r.task_id = t.id AND r.environment = $3)
+ORDER BY t.number
+LIMIT $4
+`
+
+type ReleaseTasksByCommitsParams struct {
+	BoardID     uuid.UUID
+	Shas        []string
+	Environment string
+	Lim         int32
+}
+
+type ReleaseTasksByCommitsRow struct {
+	ID     uuid.UUID
+	Number int32
+}
+
+// Live tasks of the board linked to a commit of shas, or to a pull request whose merge / squash /
+// head commit is one of them, not yet in a release of the environment; by number, at most lim.
+// One index probe per SHA (migration 00139): LATERAL keeps the plan off a walk of every link of
+// the board compared with the whole list (`&&` / `= ANY` with 5000 SHAs: seconds).
+func (q *Queries) ReleaseTasksByCommits(ctx context.Context, arg ReleaseTasksByCommitsParams) ([]ReleaseTasksByCommitsRow, error) {
+	rows, err := q.db.Query(ctx, releaseTasksByCommits,
+		arg.BoardID,
+		arg.Shas,
+		arg.Environment,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ReleaseTasksByCommitsRow{}
+	for rows.Next() {
+		var i ReleaseTasksByCommitsRow
+		if err := rows.Scan(&i.ID, &i.Number); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setBoardGitBacklinkError = `-- name: SetBoardGitBacklinkError :exec
+UPDATE board_git SET backlink_error = $1
+WHERE board_id = $2 AND backlink_error <> $1
+`
+
+type SetBoardGitBacklinkErrorParams struct {
+	BacklinkError string
+	BoardID       uuid.UUID
+}
+
+func (q *Queries) SetBoardGitBacklinkError(ctx context.Context, arg SetBoardGitBacklinkErrorParams) error {
+	_, err := q.db.Exec(ctx, setBoardGitBacklinkError, arg.BacklinkError, arg.BoardID)
+	return err
+}
+
 const setBoardRulePosition = `-- name: SetBoardRulePosition :exec
 UPDATE board_rules SET position = $2 WHERE id = $1
 `
@@ -644,6 +926,54 @@ func (q *Queries) TrimTaskGitLinks(ctx context.Context, taskID uuid.UUID) (int64
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const updateBoardGitBacklink = `-- name: UpdateBoardGitBacklink :one
+UPDATE board_git SET backlink = coalesce($1, backlink),
+    api_token_enc = CASE WHEN $2::boolean THEN $3
+        WHEN $4::text IS NOT NULL AND $4::text <> gitlab_url THEN NULL
+        ELSE api_token_enc END,
+    gitlab_url = coalesce($4, gitlab_url),
+    backlink_error = CASE WHEN $2::boolean OR $4 IS NOT NULL THEN '' ELSE backlink_error END
+WHERE board_id = $5
+RETURNING board_id, provider, secret_enc, created_by, created_at, last_event_at, last_error, events_count, backlink, api_token_enc, gitlab_url, backlink_error
+`
+
+type UpdateBoardGitBacklinkParams struct {
+	Backlink    *bool
+	SetToken    bool
+	ApiTokenEnc []byte
+	GitlabUrl   *string
+	BoardID     uuid.UUID
+}
+
+// PATCH /api/boards/{id}/git: unset arguments keep the stored value; a new token or address
+// clears the last backlink error. The token is bound to its address: a changed address without
+// a new token forgets the stored one (it never follows the board to another host).
+func (q *Queries) UpdateBoardGitBacklink(ctx context.Context, arg UpdateBoardGitBacklinkParams) (BoardGit, error) {
+	row := q.db.QueryRow(ctx, updateBoardGitBacklink,
+		arg.Backlink,
+		arg.SetToken,
+		arg.ApiTokenEnc,
+		arg.GitlabUrl,
+		arg.BoardID,
+	)
+	var i BoardGit
+	err := row.Scan(
+		&i.BoardID,
+		&i.Provider,
+		&i.SecretEnc,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.LastEventAt,
+		&i.LastError,
+		&i.EventsCount,
+		&i.Backlink,
+		&i.ApiTokenEnc,
+		&i.GitlabUrl,
+		&i.BacklinkError,
+	)
+	return i, err
 }
 
 const updateBoardRule = `-- name: UpdateBoardRule :one
@@ -699,7 +1029,7 @@ INSERT INTO board_git (board_id, provider, secret_enc, created_by)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (board_id) DO UPDATE SET provider = excluded.provider, secret_enc = excluded.secret_enc,
     created_by = excluded.created_by, created_at = now(), last_error = '', events_count = 0, last_event_at = NULL
-RETURNING board_id, provider, secret_enc, created_by, created_at, last_event_at, last_error, events_count
+RETURNING board_id, provider, secret_enc, created_by, created_at, last_event_at, last_error, events_count, backlink, api_token_enc, gitlab_url, backlink_error
 `
 
 type UpsertBoardGitParams struct {
@@ -726,31 +1056,101 @@ func (q *Queries) UpsertBoardGit(ctx context.Context, arg UpsertBoardGitParams) 
 		&i.LastEventAt,
 		&i.LastError,
 		&i.EventsCount,
+		&i.Backlink,
+		&i.ApiTokenEnc,
+		&i.GitlabUrl,
+		&i.BacklinkError,
+	)
+	return i, err
+}
+
+const upsertBoardRelease = `-- name: UpsertBoardRelease :one
+
+INSERT INTO board_releases (board_id, environment, sha, name, url, created_by)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (board_id, environment, sha) DO UPDATE SET name = excluded.name, url = excluded.url, updated_at = now()
+RETURNING board_releases.id, board_releases.board_id, board_releases.environment, board_releases.sha, board_releases.name, board_releases.url, board_releases.created_by, board_releases.created_at, board_releases.updated_at, board_releases.tasks_count, (xmax = 0)::boolean AS created
+`
+
+type UpsertBoardReleaseParams struct {
+	BoardID     uuid.UUID
+	Environment string
+	Sha         string
+	Name        string
+	Url         string
+	CreatedBy   *uuid.UUID
+}
+
+type UpsertBoardReleaseRow struct {
+	ID          uuid.UUID
+	BoardID     uuid.UUID
+	Environment string
+	Sha         string
+	Name        string
+	Url         string
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	TasksCount  int32
+	Created     bool
+}
+
+// ---- Releases (board task #101) ----
+// A repeat of (board, environment, sha) updates name and url; created = a new row.
+func (q *Queries) UpsertBoardRelease(ctx context.Context, arg UpsertBoardReleaseParams) (UpsertBoardReleaseRow, error) {
+	row := q.db.QueryRow(ctx, upsertBoardRelease,
+		arg.BoardID,
+		arg.Environment,
+		arg.Sha,
+		arg.Name,
+		arg.Url,
+		arg.CreatedBy,
+	)
+	var i UpsertBoardReleaseRow
+	err := row.Scan(
+		&i.ID,
+		&i.BoardID,
+		&i.Environment,
+		&i.Sha,
+		&i.Name,
+		&i.Url,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TasksCount,
+		&i.Created,
 	)
 	return i, err
 }
 
 const upsertTaskGitLink = `-- name: UpsertTaskGitLink :one
-INSERT INTO task_git_links (task_id, kind, provider, repo, ref, title, url, state, author)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO task_git_links (task_id, kind, provider, repo, ref, title, url, state, author, draft, seen, merge_shas)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, coalesce($11::text[], '{}'),
+    coalesce($12::text[], '{}'))
 ON CONFLICT (task_id, kind, provider, repo, ref) DO UPDATE SET title = excluded.title, url = excluded.url,
     state = excluded.state, author = CASE WHEN excluded.author = '' THEN task_git_links.author ELSE excluded.author END,
+    draft = excluded.draft, seen = excluded.seen,
+    merge_shas = CASE WHEN cardinality(excluded.merge_shas) > 0 THEN excluded.merge_shas ELSE task_git_links.merge_shas END,
     updated_at = now()
-RETURNING id, task_id, kind, provider, repo, ref, title, url, state, author, created_at, updated_at
+RETURNING id, task_id, kind, provider, repo, ref, title, url, state, author, created_at, updated_at, draft, seen, merge_shas
 `
 
 type UpsertTaskGitLinkParams struct {
-	TaskID   uuid.UUID
-	Kind     string
-	Provider string
-	Repo     string
-	Ref      string
-	Title    string
-	Url      string
-	State    string
-	Author   string
+	TaskID    uuid.UUID
+	Kind      string
+	Provider  string
+	Repo      string
+	Ref       string
+	Title     string
+	Url       string
+	State     string
+	Author    string
+	Draft     bool
+	Seen      []string
+	MergeShas []string
 }
 
+// merge_shas: an event without them (an edit) keeps the stored ones.
 func (q *Queries) UpsertTaskGitLink(ctx context.Context, arg UpsertTaskGitLinkParams) (TaskGitLink, error) {
 	row := q.db.QueryRow(ctx, upsertTaskGitLink,
 		arg.TaskID,
@@ -762,6 +1162,9 @@ func (q *Queries) UpsertTaskGitLink(ctx context.Context, arg UpsertTaskGitLinkPa
 		arg.Url,
 		arg.State,
 		arg.Author,
+		arg.Draft,
+		arg.Seen,
+		arg.MergeShas,
 	)
 	var i TaskGitLink
 	err := row.Scan(
@@ -777,6 +1180,9 @@ func (q *Queries) UpsertTaskGitLink(ctx context.Context, arg UpsertTaskGitLinkPa
 		&i.Author,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Draft,
+		&i.Seen,
+		&i.MergeShas,
 	)
 	return i, err
 }

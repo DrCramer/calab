@@ -100,3 +100,39 @@ export function localClock(theirs: string, mine: string, at: Date, formatTime: (
   if (off === null) return null;
   return { zone: formatUtcZone(off), time: formatTime(at, theirs), diff: zoneDiffMinutes(theirs, mine, at) };
 }
+
+const hourLabel = (min: number): string => {
+  const h = Math.floor(min / 60) % 24;
+  const m = min % 60;
+  return m ? `${h}:${String(m).padStart(2, '0')}` : String(h);
+};
+
+/** «10–19», «9:30–18» — working hours as minutes from their local midnight (24:00 reads as 0). */
+export function formatWorkRange(startMin: number, endMin: number): string {
+  return `${hourLabel(startMin)}–${hourLabel(endMin)}`;
+}
+
+/** «Пн–Пт», «Пн, Ср, Пт» — ISO weekdays (1 = Monday) by Intl; runs of 3+ days collapse to «Пн–Пт». */
+export function formatWorkDays(days: readonly number[], locale: string): string {
+  const sorted = [...new Set(days)].filter((d) => d >= 1 && d <= 7).sort((a, b) => a - b);
+  if (!sorted.length) return '';
+  let name: (d: number) => string;
+  try {
+    const f = new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' });
+    // 2024-01-01 was a Monday.
+    name = (d) => f.format(new Date(Date.UTC(2024, 0, d)));
+  } catch {
+    name = (d) => String(d);
+  }
+  const out: string[] = [];
+  for (let i = 0; i < sorted.length; ) {
+    let j = i;
+    while (j + 1 < sorted.length && sorted[j + 1] === (sorted[j] ?? 0) + 1) j++;
+    const a = sorted[i] ?? 1;
+    const b = sorted[j] ?? a;
+    if (j - i >= 2) out.push(`${name(a)}–${name(b)}`);
+    else for (let k = i; k <= j; k++) out.push(name(sorted[k] ?? 1));
+    i = j + 1;
+  }
+  return out.join(', ');
+}

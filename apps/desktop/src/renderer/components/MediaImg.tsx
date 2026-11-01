@@ -37,15 +37,17 @@ export function useMediaUrl(path: string | null | undefined, onError?: () => voi
 /**
  * <img> for an API media path (files, thumbnails, avatars, icons). `hiDpiPath` is the same
  * picture for 2× screens: a 1x/2x srcset where URLs load directly (Electron), otherwise one of
- * the two chosen by devicePixelRatio (web, blob URLs).
+ * the two chosen by devicePixelRatio (web, blob URLs). `onFail` hears the picture not loading
+ * either way (web: the fetch; Electron: the <img>'s error event).
  */
 export function MediaImg({
   path,
   hiDpiPath,
+  onFail,
   ...rest
-}: { path: string; hiDpiPath?: string } & Omit<ImgHTMLAttributes<HTMLImageElement>, 'src' | 'srcSet'>): ReactNode {
+}: { path: string; hiDpiPath?: string; onFail?: () => void } & Omit<ImgHTMLAttributes<HTMLImageElement>, 'src' | 'srcSet'>): ReactNode {
   const direct = platform.directMedia;
-  const src = useMediaUrl(hiDpiPath && !direct ? pickByDensity(path, hiDpiPath, window.devicePixelRatio || 1) : path);
+  const src = useMediaUrl(hiDpiPath && !direct ? pickByDensity(path, hiDpiPath, window.devicePixelRatio || 1) : path, onFail);
   const srcSet = hiDpiPath && direct ? densitySrcSet(`${platform.apiBase}${path}`, `${platform.apiBase}${hiDpiPath}`) : undefined;
-  return src ? <img src={src} srcSet={srcSet} {...rest} /> : <span className={rest.className} aria-hidden />;
+  return src ? <img src={src} srcSet={srcSet} {...rest} {...(onFail ? { onError: onFail } : {})} /> : <span className={rest.className} aria-hidden />;
 }

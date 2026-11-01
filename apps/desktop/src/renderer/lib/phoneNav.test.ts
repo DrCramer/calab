@@ -203,11 +203,11 @@ describe('pinned tabs (ADR-0095 + addendum 2026-10-14)', () => {
   });
   it('order: stored first, missing appended in the default sequence; the lead keeps the old bar order', () => {
     expect(normalizeOrder(undefined)).toEqual([...PHONE_TABS]);
-    expect(normalizeOrder(['profile', 'x', 'chats', 'chats'])).toEqual(['profile', 'chats', 'dms', 'calendar', 'boards', 'wiki', 'canvas', 'disk']);
-    expect(normalizeOrder(undefined, ['disk', 'chats', 'dms', 'boards'])).toEqual(['disk', 'chats', 'dms', 'boards', 'calendar', 'wiki', 'canvas', 'profile']);
+    expect(normalizeOrder(['profile', 'x', 'chats', 'chats'])).toEqual(['profile', 'chats', 'dms', 'calendar', 'boards', 'wiki', 'canvas', 'disk', 'telephony']);
+    expect(normalizeOrder(undefined, ['disk', 'chats', 'dms', 'boards'])).toEqual(['disk', 'chats', 'dms', 'boards', 'calendar', 'wiki', 'canvas', 'telephony', 'profile']);
   });
-  it('default order follows the rail: chats, dms, calendar, boards, wiki, canvas, disk, profile', () => {
-    expect(PHONE_TABS).toEqual(['chats', 'dms', 'calendar', 'boards', 'wiki', 'canvas', 'disk', 'profile']);
+  it('default order follows the rail: chats, dms, calendar, boards, wiki, canvas, disk, telephony, profile', () => {
+    expect(PHONE_TABS).toEqual(['chats', 'dms', 'calendar', 'boards', 'wiki', 'canvas', 'disk', 'telephony', 'profile']);
   });
   it('moveTab puts the dragged row on the place of the target, both ways', () => {
     const o = ['chats', 'dms', 'calendar', 'boards', 'wiki', 'canvas', 'disk', 'profile'] as const;

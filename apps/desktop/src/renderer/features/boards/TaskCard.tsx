@@ -1,6 +1,6 @@
 import * as ContextMenu from '../../components/radix/context-menu';
 import { BoardFeature, type Task } from '@calaba/protocol';
-import { CalendarClock, ChevronRight, Copy, CopyPlus, Diamond, GitFork, Link2, ListChecks, MessageSquare, Archive, UserPlus, SquareArrowOutUpRight, UserRound } from 'lucide-react';
+import { AppWindow, CalendarClock, ChevronRight, Copy, CopyPlus, Diamond, GitFork, Link2, ListChecks, MessageSquare, Archive, UserPlus, SquareArrowOutUpRight, UserRound } from 'lucide-react';
 import { memo, useCallback, useMemo, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -11,14 +11,16 @@ import { featureOn } from '../../lib/boards/features';
 import { checklistProgress, milestoneChipOf, useBoards } from '../../stores/boards';
 import { useBoardsUi, type CardMenu } from '../../stores/boardsUi';
 import { myUserId } from '../../stores/session';
-import { memberName } from '../../stores/workspaces';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
 import { DRAG_USER, dragKind } from '../calendar/dragState';
 import { ApprovalTag } from './Approvals';
 import { GitBadge } from './GitLinks';
-import { AssigneeMenu, DateMenu, LabelMenu, MemberAvatar, PriorityMenu, StatusMenu, useToday } from './menus';
+import { AssigneeStack } from './AssigneeStack';
+import { LabelsOverflow, stopClick } from './LabelsOverflow';
+import { openInTab, tabClick } from './TaskTabs';
+import { AssigneeMenu, DateMenu, LabelMenu, PriorityMenu, StatusMenu, useToday } from './menus';
 import { doneType, hasBit, mayArchiveTask, mayEditTask, CREATE_TASKS, MANAGE_BOARD } from './model';
-import { Dot, PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue, PRIORITIES } from './visuals';
+import { PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue, PRIORITIES } from './visuals';
 import { chordLabel, BOARD_HOTKEYS, type BoardHotkeyId } from './hotkeys';
 import { IS_MAC } from '../../services/hotkeys';
 import { useDisabledFeatures, useFeatureOn } from './useBoardView';
@@ -75,6 +77,7 @@ export const TaskCard = memo(function TaskCard({
   const onClick = useCallback(
     (e: MouseEvent) => {
       const ui = useBoardsUi.getState();
+      if (tabClick(id, e, workspaceId, boardId)) return;
       if (e.shiftKey || e.metaKey || e.ctrlKey) {
         // No selection without a bulk bar on a scoped board (ADR-0059).
         if (useBoards.getState().boards[boardId]?.taskScoped) return;
@@ -86,7 +89,7 @@ export const TaskCard = memo(function TaskCard({
       ui.setFocused(id);
       ui.openTask(id);
     },
-    [id, boardId],
+    [id, boardId, workspaceId],
   );
 
   if (!task) return null;
@@ -166,18 +169,8 @@ export const TaskCard = memo(function TaskCard({
           align="end"
           {...menuOpen('assignee')}
         >
-          <button type="button" onClick={stop} disabled={!canEdit} aria-label={t('boards.f.assignee')} className="flex shrink-0 items-center -space-x-1.5 rounded-full disabled:cursor-default" data-testid="card-assignees">
-            {task.assignees.length === 0 ? (
-              <UserRound className="size-4 text-faint" aria-hidden />
-            ) : (
-              task.assignees.slice(0, 3).map((a) => (
-                <span key={a.userId} className="relative rounded-full ring-2 ring-[var(--color-bg-elevated)]" title={a.note ? `${memberName(workspaceId, a.userId)} — ${a.note}` : memberName(workspaceId, a.userId)}>
-                  <MemberAvatar workspaceId={workspaceId} userId={a.userId} size={20} />
-                  {a.isLead && task.assignees.length > 1 ? <span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full bg-accent ring-2 ring-[var(--color-bg-elevated)]" aria-hidden /> : null}
-                </span>
-              ))
-            )}
-            {task.assignees.length > 3 ? <span className="grid size-5 place-items-center rounded-full bg-hover text-micro text-muted ring-2 ring-[var(--color-bg-elevated)]">+{task.assignees.length - 3}</span> : null}
+          <button type="button" onClick={stop} disabled={!canEdit} aria-label={t('boards.f.assignee')} className="flex shrink-0 items-center rounded-full disabled:cursor-default" data-testid="card-assignees">
+            {task.assignees.length === 0 ? <UserRound className="size-4 text-faint" aria-hidden /> : <AssigneeStack workspaceId={workspaceId} assignees={task.assignees} />}
           </button>
         </AssigneeMenu>
       </div>
@@ -191,6 +184,7 @@ export const TaskCard = memo(function TaskCard({
           {task.title}
         </span>
       </div>
+      {on(BoardFeature.LABELS) ? <CardLabels task={task} boardId={boardId} canEdit={canEdit} canCreate={hasBit(perms, CREATE_TASKS) && !scoped} req={menuOpen('label')} /> : null}
       <div className="flex min-w-0 flex-wrap items-center gap-1">
         {on(BoardFeature.PRIORITY) ? (
           <PriorityMenu value={task.priority} onPick={(p) => p !== task.priority && void updateTask(id, { priority: p })} {...menuOpen('priority')}>
@@ -199,7 +193,6 @@ export const TaskCard = memo(function TaskCard({
             </button>
           </PriorityMenu>
         ) : null}
-        {on(BoardFeature.LABELS) ? <CardLabels task={task} boardId={boardId} canEdit={canEdit} canCreate={hasBit(perms, CREATE_TASKS) && !scoped} chip={chip} req={menuOpen('label')} /> : null}
         {on(BoardFeature.DUE_DATE) && (task.dueOn || menuReq?.kind === 'due') ? (
           <DateMenu value={task.dueOn} onPick={(d) => void updateTask(id, { dueOn: d })} title={t('boards.f.dueOn')} {...menuOpen('due')}>
             <button type="button" onClick={stop} disabled={!canEdit} className={cx(chip, overdue && 'border-[color-mix(in_srgb,var(--color-red)_45%,transparent)] text-danger-text')} data-testid="card-due">
@@ -279,26 +272,22 @@ export function useBlockedStatuses(task: Task | undefined, boardId: string): Rea
   return useMemo(() => (statuses ? blockedStatusIds({ approvalState: state, statusId }, statuses) : undefined), [statuses, state, statusId]);
 }
 
-function CardLabels({ task, boardId, canEdit, canCreate, chip, req }: { task: Task; boardId: string; canEdit: boolean; canCreate: boolean; chip: string; req: { open?: boolean; onOpenChange?: (v: boolean) => void } }): ReactNode {
+function CardLabels({ task, boardId, canEdit, canCreate, req }: { task: Task; boardId: string; canEdit: boolean; canCreate: boolean; req: { open?: boolean; onOpenChange?: (v: boolean) => void } }): ReactNode {
   const labels = useBoards((s) => s.boards[boardId]?.labels);
-  const mine = (labels ?? []).filter((l) => task.labelIds.includes(l.id));
+  const labelIds = task.labelIds;
+  const mine = useMemo(() => (labels ?? []).filter((l) => labelIds.includes(l.id)), [labels, labelIds]);
   if (mine.length === 0 && !req.open) return null;
+  const row = <LabelsOverflow labels={mine} interactive={canEdit} onClick={stopClick} data-testid="card-labels" />;
+  if (!canEdit) return row;
   return (
     <LabelMenu
       boardId={boardId}
-      value={task.labelIds}
+      value={labelIds}
       canCreate={canCreate}
-      onToggle={(l) => void updateTask(task.id, { labelIds: task.labelIds.includes(l) ? task.labelIds.filter((x) => x !== l) : [...task.labelIds, l] })}
+      onToggle={(l) => void updateTask(task.id, { labelIds: labelIds.includes(l) ? labelIds.filter((x) => x !== l) : [...labelIds, l] })}
       {...req}
     >
-      <button type="button" onClick={(e) => e.stopPropagation()} disabled={!canEdit} className="inline-flex min-w-0 max-w-full items-center gap-1" data-testid="card-labels">
-        {mine.map((l) => (
-          <span key={l.id} className={cx(chip, 'min-w-0')}>
-            <Dot color={l.color} />
-            <span className="truncate">{l.name}</span>
-          </span>
-        ))}
-      </button>
+      {row}
     </LabelMenu>
   );
 }
@@ -325,6 +314,9 @@ export function TaskContextMenu({ task, canEdit, canArchive, manage, children }:
           <ContextMenu.Item className={item} onSelect={() => useBoardsUi.getState().openTask(task.id)}>
             <SquareArrowOutUpRight className="size-4" aria-hidden /> {t('boards.open')}
             {kbd('open')}
+          </ContextMenu.Item>
+          <ContextMenu.Item className={cx(item, 'mobile:hidden')} onSelect={() => openInTab(task.id, task.workspaceId, task.boardId)} data-testid="task-open-in-tab">
+            <AppWindow className="size-4" aria-hidden /> {t('boards.openInTab')}
           </ContextMenu.Item>
           {canEdit ? (
             <>

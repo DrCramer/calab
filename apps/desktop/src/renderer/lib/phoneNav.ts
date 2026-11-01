@@ -5,9 +5,9 @@
  * and with the older per-feature flags (members, search, calendar event, task…).
  */
 
-export type PhoneTab = 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'wiki' | 'canvas' | 'profile';
+export type PhoneTab = 'chats' | 'dms' | 'boards' | 'calendar' | 'disk' | 'wiki' | 'canvas' | 'telephony' | 'profile';
 /** Default order of all sections (rail order without mail, ADR-0095 addendum 2026-10-14). */
-export const PHONE_TABS: readonly PhoneTab[] = ['chats', 'dms', 'calendar', 'boards', 'wiki', 'canvas', 'disk', 'profile'];
+export const PHONE_TABS: readonly PhoneTab[] = ['chats', 'dms', 'calendar', 'boards', 'wiki', 'canvas', 'disk', 'telephony', 'profile'];
 
 /** How many tabs sit on the bar itself; the rest live behind «Ещё» (ADR-0095). */
 export const PINNED_COUNT = 4;
@@ -95,6 +95,19 @@ export type PhoneScreen =
   | { kind: 'wiki'; pageId: string; trash?: boolean }
   /** A folder or a canvas of «Холст» (ADR-0126 §5, view only on the phone); the workspace is the open one. */
   | { kind: 'canvas'; itemId: string }
+  /** A call of «Телефония → Недавние» (ADR-0137 §7): its detail; the workspace is the open one. */
+  | { kind: 'telCall'; callId: string }
+  /** «Телефония → Контакты» (ADR-0137 §7): a contact's card; the workspace is the open one. */
+  | { kind: 'telContact'; contactId: string }
+  /** A contact's form ('' = a new one; the prefill is in stores/telContacts). */
+  | { kind: 'telContactEdit'; contactId: string }
+  /** «Набор»: the dial pad (the FAB). */
+  | { kind: 'telDial' }
+  /**
+   * «Телефония → Настройки» (ADR-0137 §7, T5): `page` 'list' = the drill-down list, a settings page
+   * id (features/telephony/settings/pages.ts), or a form: 'ext:<id>' / 'group:<id>' / 'menu:<id>' ('new' = a new one).
+   */
+  | { kind: 'telSettings'; page: string }
   /**
    * A settings window (app, workspace, room or board; its source is `useUi.dialog` / `useBoardsUi.settingsFor`)
    * as a screen: `section` null = the list of sections (also the search), else that section.
@@ -150,6 +163,15 @@ export function sameScreen(a: PhoneScreen, b: PhoneScreen): boolean {
       return a.pageId === (b as typeof a).pageId && !!a.trash === !!(b as typeof a).trash;
     case 'canvas':
       return a.itemId === (b as typeof a).itemId;
+    case 'telCall':
+      return a.callId === (b as typeof a).callId;
+    case 'telSettings':
+      return a.page === (b as typeof a).page;
+    case 'telContact':
+    case 'telContactEdit':
+      return a.contactId === (b as typeof a).contactId;
+    case 'telDial':
+      return true;
     case 'search':
     case 'findTime':
       return true;

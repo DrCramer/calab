@@ -31,6 +31,12 @@ import {
   BoardCategoryResponseSchema,
   BoardWebhookPingResponseSchema,
   BoardWebhookResponseSchema,
+  BoardGitResponseSchema,
+  BoardGitSchema,
+  GitProvider,
+  SetBoardGitRequestSchema,
+  UpdateBoardGitRequestSchema,
+  ListBoardRulesResponseSchema,
   ConvertChecklistItemResponseSchema,
   CreateBoardCategoryRequestSchema,
   CreateTaskChecklistItemRequestSchema,
@@ -54,7 +60,14 @@ import {
   ListBoardsResponseSchema,
   ListTasksResponseSchema,
   MyTasksResponseSchema,
+  ListTaskNoticesResponseSchema,
   SearchTasksResponseSchema,
+  CreateSavedTaskSearchRequestSchema,
+  ListSavedTaskSearchesResponseSchema,
+  SavedTaskSearchResponseSchema,
+  SavedTaskSearchSchema,
+  UpdateSavedTaskSearchRequestSchema,
+  type SavedTaskSearch,
   SetAssigneesRequestSchema,
   SetTaskApproversRequestSchema,
   SetBoardPermissionsRequestSchema,
@@ -94,6 +107,11 @@ import {
   CanvasPermissionsResponseSchema,
   CanvasSettingsSchema,
   CanvasVersionsResponseSchema,
+  CanvasCommentResponseSchema,
+  CanvasMentionAccessResponseSchema,
+  CreateCanvasCommentRequestSchema,
+  ListCanvasCommentsResponseSchema,
+  UpdateCanvasCommentRequestSchema,
   CreateCanvasItemRequestSchema,
   CreateCanvasLinkRequestSchema,
   EmptyCanvasTrashResponseSchema,
@@ -104,6 +122,15 @@ import {
   CreateDiskFolderRequestSchema,
   CreateDiskLinkRequestSchema,
   DISK_BITS,
+  OfficeConfigResponseSchema,
+  OfficeCapabilitiesResponseSchema,
+  OfficeCapability,
+  OfficeFormatSchema,
+  type DiskItem,
+  OfficeConvertRequestSchema,
+  CreateOfficeFileRequestSchema,
+  ImportDiskFileRequestSchema,
+  OfficeMode,
   DiskActivityPageSchema,
   DiskItemKind,
   DiskItemResponseSchema,
@@ -229,6 +256,23 @@ import {
   RoomRecordingSchema,
   GetSipSettingsResponseSchema,
   ListSipCallsResponseSchema,
+  ListSipJournalResponseSchema,
+  ListSipContactsResponseSchema,
+  GetSipContactResponseSchema,
+  SipContactInputSchema,
+  UpdateSipContactRequestSchema,
+  SipContactResponseSchema,
+  ImportSipContactsResponseSchema,
+  PlaceSipPersonalCallRequestSchema,
+  PlaceSipPersonalCallResponseSchema,
+  SipPhoneLabel,
+  type SipContact,
+  GetSipJournalEntryResponseSchema,
+  SipJournalEntrySchema,
+  SipCallPartySchema,
+  SipCallEventSchema,
+  SipCallEventKind,
+  SipCallOrigin,
   ListSipActiveCallsResponseSchema,
   SipActiveStep,
   PlaceSipCallRequestSchema,
@@ -237,6 +281,11 @@ import {
   PutSipInboundRequestSchema,
   PutSipRecordingRequestSchema,
   PutSipRecordingResponseSchema,
+  PutSipPolicyRequestSchema,
+  PutSipPolicyResponseSchema,
+  PutSipScheduleRequestSchema,
+  PutSipScheduleResponseSchema,
+  SipScheduleSchema,
   PutSipInboundResponseSchema,
   SipCallDirection,
   SipCallResponseSchema,
@@ -365,6 +414,7 @@ import {
   ListMembersResponseSchema,
   ListBirthdaysResponseSchema,
   ListMemberBirthdaysResponseSchema,
+  ListMessageReadersResponseSchema,
   ListMessagesResponseSchema,
   ListRoomInvitesResponseSchema,
   ListRoomsResponseSchema,
@@ -440,6 +490,7 @@ import {
   UserSchema,
   UserSettingsSchema,
   WorkHoursSchema,
+  CalendarZoneSchema,
   VoiceStateSchema,
   VoiceDisconnectReason,
   VoiceStreamStopReason,
@@ -556,6 +607,9 @@ import {
   type MockPbx,
   type PbxMembers,
 } from './mock-pbx';
+import { advanceCall, listJournal, mayReadCall, missedCount, seedJournal, type JournalRow } from './mock-journal';
+import { checkContact, exportCsv, importCsv, listContacts, makeContact, numberOwner } from './mock-contacts';
+import { normalizeContactNumber } from '../src/renderer/lib/phoneNumber';
 import { MOCK_SIP_RATE_NUMBER, MOCK_SIP_REFUSED_HOST, MOCK_SIP_UNREACHABLE_HOST, defaultSipSettings, isLiveSipStatus, normalizeCallee, numberAllowed, sipSettingsError } from './mock-sip';
 import {
   ACTIVE_BEFORE_MS,
@@ -587,6 +641,7 @@ import {
 } from './mock-calendar';
 import { avatarPicture, cardPicture, encodePng, pngSize } from './png';
 import { freeWindows, intersectIntervals, workIntervals } from '../src/renderer/lib/calendar/freebusy';
+import { hoursProblem } from '../src/renderer/features/telephony/settings/hours';
 import { admissionKey, admissionOutcome, deciderView, guestView, requiresApproval, type AdmissionRec } from './mock-admissions';
 
 export {
@@ -685,7 +740,7 @@ export interface MockServer {
    * `joinedAtMs`: VoiceState.joined_at (client clock — a visual test's page clock is fixed); kept
    * within the same room, none by default.
    */
-  setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean; pending?: boolean; joinedAtMs?: number; musician?: boolean; ptt?: boolean }): void;
+  setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean; pending?: boolean; joinedAtMs?: number; musician?: boolean; ptt?: boolean; onPhone?: boolean }): void;
   /** Sets a user's presence and fans out PRESENCE_UPDATE. */
   setPresence(userId: string, status: PresenceStatus): void;
   /**
@@ -733,9 +788,11 @@ export interface MockServer {
    * ADR-0046: `byUserId` placed a call from `roomId` (no permission checks) → SIP_CALL_UPDATE to the
    * room's viewers; `status` default DIALING, `answeredAgoMs` sets answered_at for ACTIVE. Its id.
    */
-  placeSipCall(roomId: string, byUserId: string, number: string, status?: SipCallStatus, answeredAgoMs?: number): string;
+  placeSipCall(roomId: string, byUserId: string, number: string, status?: SipCallStatus, answeredAgoMs?: number, extension?: string): string;
   /** ADR-0046: moves a call (RINGING / ACTIVE / ENDED / FAILED with `reason`) → SIP_CALL_UPDATE. */
   setSipCallStatus(callId: string, status: SipCallStatus, reason?: string): void;
+  /** ADR-0046: the id of the room's live phone call (placed from the UI); '' = none. */
+  liveSipCallOf(roomId: string): string;
   /**
    * ADR-0117: «Команда Calab» on a plan with telephony, a saved SIP account and an exchange — four
    * numbers (103 unassigned, Григорий without one), groups «Отдел продаж» (round robin, forwards to 100 after 45 s) and
@@ -749,6 +806,12 @@ export interface MockServer {
    * contact) or `failed` (the provider refused the password).
    */
   setSipRegistration(state: 'registered' | 'failed'): void;
+  /**
+   * ADR-0138: the working hours of «Команда Calab» (after seedSipExchange): Пн 9:00–13:00 and
+   * 14:00–18:00, Вт–Пт 9:00–18:00 with a Friday night shift 22:00–02:00, the Russian calendar,
+   * off hours → the menu «Выходные» after a 0:06 notice.
+   */
+  seedSipSchedule(): void;
   /**
    * ADR-0117 §6: the next menu prompt saves (PATCH …/sip/ivr/{mid} with a prompt) wait until the
    * returned release is called — the «Обрабатываем запись…» state stays on screen.
@@ -766,6 +829,35 @@ export interface MockServer {
    * «Созвон» → SIP_CALLS_CHANGED.
    */
   seedSipActiveCalls(): void;
+  /**
+   * ADR-0137 «Недавние»: the call journal of «Команда Calab» (mock-journal.ts seedJournal, around
+   * the visual tests' NOW or `base`) with telephony on (seedSipExchange first); `empty` — none.
+   * Анна's missed badge counts from her last «seen» (none yet: 2 missed calls).
+   */
+  seedSipJournal(opts?: { empty?: boolean; base?: number }): void;
+  /** The next GET …/sip/journal pages wait until the returned release is called (the loading state). */
+  holdSipJournal(): () => void;
+  /**
+   * A journal call moves on → SIP_JOURNAL_ENTRY (and SIP_MISSED_CHANGED when it ends missed):
+   * a ringing call is answered by `by`, else it ends. Default: the live call of the fixture.
+   */
+  advanceSipJournal(callId?: string, by?: string): void;
+  /** A new inbound call starts ringing `ringing` (SIP_JOURNAL_ENTRY): its id. */
+  ringSipJournal(number: string, ringing: string[]): string;
+  /**
+   * ADR-0137 §2 «Контакты»: the phone book of «Команда Calab» (mock-contacts.ts) — Cyrillic and
+   * Latin names, a company without a person, a very long name and company, a contact with three
+   * numbers and a note; the contacts of the journal's calls keep their ids (seedSipJournal first).
+   * `empty` — none. Inbound calls from a contact's number ring with its name (caller ID).
+   */
+  seedSipContacts(opts?: { empty?: boolean }): void;
+  /** The next GET …/sip/contacts pages wait until the returned release is called (the loading state). */
+  holdSipContacts(): () => void;
+  /**
+   * The personal call placed from «Телефония» (ADR-0137 §3) moves on → SIP_CALL_UPDATE to its
+   * caller: RINGING, ACTIVE (answered), ENDED / FAILED with `reason`. Default: answered.
+   */
+  advanceSipPersonal(status?: SipCallStatus, reason?: string): void;
   /**
    * A recording card in the room chat (SYSTEM message, MESSAGE_CREATE) in the given state; the
    * status never advances by itself (unlike a stop through the API).
@@ -871,6 +963,8 @@ export interface MockServer {
   setCalDav(userId: string, patch?: Partial<CalDavRec>): void;
   /** ADR-0041: `userId`'s work hours (default 10:00–19:00 Mon–Fri in their zone; the mock's default zone is Moscow). */
   setWorkHours(userId: string, wh: WorkHoursRec): void;
+  /** Board #85: `userId`'s extra calendar zones (Me.settings.calendar_zones), pushed with their Me. */
+  setCalendarZones(userId: string, zones: ReadonlyArray<{ zone: string; label?: string }>): void;
   /** ADR-0041 §4: what the fake CalDAV server holds for `userId`: a sync with import on copies it to their external busy time (default: 11:00–12:00 MSK of the clock's day). */
   setCalDavRemote(userId: string, intervals: readonly Span[]): void;
   /** The answer link token of an external attendee (the page /e/<id>/rsvp?t=…). */
@@ -909,6 +1003,10 @@ export interface MockServer {
   readonly boards: BoardsMock;
   /** Disk (ADR-0094, mock-disk.ts): the live items, rights and links (marketing scenes rename the fixture). */
   readonly disk: DiskMock;
+  /** The office editor's mock fault (ADR-0143): '' | 'config' | 'token' | 'stuck'. */
+  setOfficeFault(fault: '' | 'config' | 'token' | 'stuck'): void;
+  /** The office editor on / off (GET /api/office/capabilities, ADR-0143); off after every reset. */
+  setOffice(on: boolean): void;
   /** Wiki (ADR-0096, mock-wiki.ts): the live pages, documents and sync sockets (marketing scenes replace the fixture). */
   readonly wiki: WikiMock;
   /** Canvas (ADR-0126, mock-canvas.ts): the live tree, documents and sync sockets. */
@@ -947,13 +1045,22 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     setRecording: (roomId, rec) => impl.setRecording(roomId, rec),
     setGptunnel: (ws, by) => impl.setGptunnel(ws, by),
     setSip: (ws, patch) => impl.setSip(ws, patch),
-    placeSipCall: (roomId, by, number, status, ago) => impl.placeSipCall(roomId, by, number, status, ago),
+    placeSipCall: (roomId, by, number, status, ago, ext) => impl.placeSipCall(roomId, by, number, status, ago, ext),
     setSipCallStatus: (id, status, reason) => impl.setSipCallStatus(id, status, reason),
+    liveSipCallOf: (roomId) => impl.liveSipCallOf(roomId),
     seedSipExchange: (empty) => impl.seedSipExchange(empty),
     setSipRegistration: (st) => impl.setSipRegistration(st),
+    seedSipSchedule: () => impl.seedSipSchedule(),
     holdSipPrompt: () => impl.holdSipPrompt(),
     ringSipInbound: (to, number, via) => impl.ringSipInbound(to, number, via),
     seedSipActiveCalls: () => impl.seedSipActiveCalls(),
+    seedSipJournal: (o) => impl.seedSipJournal(o),
+    holdSipJournal: () => impl.holdSipJournal(),
+    advanceSipJournal: (id, by) => impl.advanceSipJournal(id, by),
+    ringSipJournal: (number, ringing) => impl.ringSipJournal(number, ringing),
+    seedSipContacts: (o) => impl.seedSipContacts(o),
+    holdSipContacts: () => impl.holdSipContacts(),
+    advanceSipPersonal: (st, r) => impl.advanceSipPersonal(st, r),
     injectRecordingCard: (a) => impl.injectRecordingCard(a),
     updateRecordingCard: (id, patch) => impl.updateRecordingCard(id, patch),
     setBirthday: (u, b, card) => impl.setBirthday(u, b, card),
@@ -988,6 +1095,10 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     },
     setCalDav: (u, patch) => impl.seedCalDav(u, patch),
     setWorkHours: (u, wh) => impl.calWorkHours.set(u, { ...wh, days: [...wh.days] }),
+    setCalendarZones: (u, zones) => {
+      const rec = impl.state.users.get(u);
+      if (rec) rec.settings.calendarZones = zones.map((z) => create(CalendarZoneSchema, { zone: z.zone, label: z.label ?? '' }));
+    },
     setCalDavRemote: (u, list) => impl.calDavRemote.set(u, [...list]),
     setEventRecording: (id, at, rec) => impl.setEventRecording(id, at, rec),
     eventRsvpToken: (id, email, st) => rsvpToken(id, email, st),
@@ -1001,6 +1112,12 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     },
     get disk() {
       return impl.disk;
+    },
+    setOfficeFault: (f) => {
+      impl.officeFault = f;
+    },
+    setOffice: (on) => {
+      impl.officeEnabled = on;
     },
     get wiki() {
       return impl.wiki;
@@ -1051,7 +1168,7 @@ class HttpError extends Error {
     message: string,
     readonly field = '',
     /** ApiError reason / used / limit (plan limits, ADR-0024). */
-    readonly extra: { reason?: string; used?: bigint; limit?: bigint } = {},
+    readonly extra: { reason?: string; used?: bigint; limit?: bigint; conflictId?: string; conflictName?: string } = {},
     readonly headers: Record<string, string> = {},
   ) {
     super(message);
@@ -1255,6 +1372,13 @@ function send(res: ServerResponse, status: number, body: string | Buffer, type: 
   res.end(body);
 }
 
+/** The office editor's host page (infra/office) and the STUB api.js, on the mock's origin (ADR-0143). */
+const OFFICE_STUB: Record<string, { file: URL; type: string }> = {
+  '/web-apps/apps/calab/calab-editor.html': { file: new URL('../../../infra/office/calab-editor.html', import.meta.url), type: 'text/html; charset=utf-8' },
+  '/web-apps/apps/calab/calab-editor.js': { file: new URL('../../../infra/office/calab-editor.js', import.meta.url), type: 'text/javascript; charset=utf-8' },
+  '/web-apps/apps/api/documents/api.js': { file: new URL('./assets/office-stub-api.js', import.meta.url), type: 'text/javascript; charset=utf-8' },
+};
+
 /** A search snippet as the server writes it (ADR-0062 §1): the first match of `q` wrapped in \u0002…\u0003. */
 function markHit(text: string, q: string): string {
   const at = q.trim() ? text.toLowerCase().indexOf(q.trim().toLowerCase()) : -1;
@@ -1330,6 +1454,9 @@ class MockImpl {
   private readonly calls = new Map<string, Call>();
   private readonly userCall = new Map<string, string>();
   private callSeq = 0;
+  /** Saved task searches (ADR-0139): "workspace|user" → searches. */
+  private readonly savedSearches = new Map<string, SavedTaskSearch[]>();
+  private savedSearchSeq = 1;
   /** Meetings (ADR-0038) by id; cancelled ones stay (cancelled_at). */
   private readonly calEvents = new Map<string, CalEventRec>();
   /** ADR-0104: comments per event id, oldest first. */
@@ -1337,8 +1464,14 @@ class MockImpl {
   private calCommentSeq = 0;
   /** Task boards (ADR-0042); rebuilt with the state. */
   boards: BoardsMock;
+  /** Board Git setups (ADR-0060 §4, board task #101): board id → setup. */
+  readonly boardGit = new Map<string, MessageShape<typeof BoardGitSchema>>();
   /** Disk (ADR-0094); rebuilt with the state. */
   disk: DiskMock;
+  /** The office editor's mock fault (ADR-0143): '' none, 'config' (the config call fails), 'token' (the stub editor errors with a refused token), 'stuck' (never saves). */
+  officeFault = '';
+  /** The office editor (ADR-0143): off unless a test turns it on (the other screens keep their Disk menus). */
+  officeEnabled = false;
   /** Wiki (ADR-0096); rebuilt with the state. */
   wiki: WikiMock;
   /** The wiki sync sockets (snapshots up to 2 MiB: not the gateway's 64 KiB limit). */
@@ -1442,6 +1575,8 @@ class MockImpl {
   }
 
   reset(scenario: Scenario): void {
+    this.officeFault = '';
+    this.officeEnabled = false;
     for (const t of this.timers) clearTimeout(t);
     this.aiState.clear();
     this.timers.clear();
@@ -1869,7 +2004,8 @@ class MockImpl {
         .filter((c) => c.workspaceId === wsId)
         .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)),
       recordings: [...this.state.recordings.values()].filter((r) => r.workspaceId === wsId && rooms.some((x) => x.id === r.roomId)),
-      sipCalls: [...this.state.sipCalls.values()].filter((c) => c.workspaceId === wsId && isLiveSipStatus(c.status) && rooms.some((x) => x.id === c.roomId)),
+      sipCalls: [...this.state.sipCalls.values()].filter((c) => c.workspaceId === wsId && isLiveSipStatus(c.status) && (rooms.some((x) => x.id === c.roomId) || (c.origin === SipCallOrigin.PERSONAL && c.startedBy === userId))),
+      sipMissed: m && m.role !== WorkspaceRole.GUEST ? missedCount(this.state.sipJournal.values(), wsId, userId, this.state.sipSeen.get(`${wsId}|${userId}`) ?? 0) : 0,
       roles: this.rolesOfWs(wsId),
       badges: this.badgesOf(wsId),
       backgrounds: this.backgroundsOf(wsId),
@@ -2456,7 +2592,7 @@ class MockImpl {
     this.fanout((u) => (u === userId || this.shareWorkspace(u, userId) ? { event: { case: 'presenceUpdate', value: { presence } } } : null));
   }
 
-  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean; camera?: boolean; pending?: boolean; joinedAtMs?: number; musician?: boolean; ptt?: boolean }): void {
+  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean; camera?: boolean; pending?: boolean; joinedAtMs?: number; musician?: boolean; ptt?: boolean; onPhone?: boolean }): void {
     const prev = this.state.voiceStates.get(userId);
     const room = roomId ? this.state.rooms.get(roomId) : undefined;
     // ADR-0034: a DM call's voice session — no workspace; its events go to the two participants.
@@ -2481,6 +2617,7 @@ class MockImpl {
       pending: patch.pending ?? (sameRoom ? prev.pending : false),
       musician: patch.musician ?? (sameRoom ? prev.musician : false),
       ptt: patch.ptt ?? (sameRoom ? prev.ptt : false),
+      onPhone: patch.onPhone ?? (sameRoom ? prev.onPhone : false),
       joinedAt: patch.joinedAtMs !== undefined ? timestampFromMs(patch.joinedAtMs) : sameRoom ? prev.joinedAt : undefined,
     });
     // Moving to another workspace's room: tell the old workspace the user left.
@@ -2714,6 +2851,7 @@ class MockImpl {
       pending: patch.pending ?? (sameRoom ? prev.pending : false),
       musician: patch.musician ?? (sameRoom ? prev.musician : false),
       ptt: patch.ptt ?? (sameRoom ? prev.ptt : false),
+      onPhone: patch.onPhone ?? (sameRoom ? prev.onPhone : false),
     });
     const dmId = room?.id ?? (prevDm ? (prev?.roomId ?? '') : '');
     if (room) this.state.voiceStates.set(userId, v);
@@ -2937,6 +3075,7 @@ class MockImpl {
     const before = new Map([...this.state.users.keys()].map((u) => [u, this.peerRead(roomId, u)]));
     reads.set(roomId, messageId);
     this.state.readStates.set(userId, reads);
+    this.readSeq.set(`${userId}|${roomId}`, ++this.readSeqNext);
     this.toUser(userId, { event: { case: 'readStateUpdate', value: { readState: { roomId, lastReadMessageId: messageId, unreadCount: 0, mentionCount: 0 } } } });
     if (isBot(userId)) return true;
     this.toWorkspace(
@@ -3057,6 +3196,12 @@ class MockImpl {
       const raw = Buffer.concat(chunks);
       const isApi = url.pathname.startsWith('/api/') || url.pathname.startsWith('/__mock/');
       if (!isApi) {
+        // The office editor (ADR-0143): the real host page and a STUB of the Document Server's api.js.
+        const office = OFFICE_STUB[url.pathname];
+        if (office && method === 'GET') {
+          send(res, 200, readFileSync(office.file), office.type);
+          return;
+        }
         if (url.pathname === '/healthz') {
           send(res, 200, 'ok', 'text/plain');
           return;
@@ -3267,11 +3412,20 @@ class MockImpl {
         u.settings.eventReminders = mins.sort((x, y) => y - x);
         u.settings.eventRemindersDnd = b.eventReminders.dnd;
       }
+      if (b.calendarZones) {
+        // Board #85 (the server's rules, users/calendar_zones.go): ≤ 2 distinct IANA zones, labels ≤ 16.
+        if (u.user.isBot) throw forbidden('not for bots');
+        const zones = b.calendarZones.zones.map((z) => ({ zone: z.zone.trim(), label: z.label.trim() }));
+        if (zones.length > 2 || new Set(zones.map((z) => z.zone)).size !== zones.length || zones.some((z) => !/^[A-Z][A-Za-z0-9_+-]*(\/[A-Z][A-Za-z0-9_+-]*)*$/.test(z.zone) || Array.from(z.label).length > 16))
+          throw invalid('calendarZones.zones', 'at most 2 distinct IANA zones, labels ≤ 16 characters');
+        u.settings.calendarZones = zones.map((z) => create(CalendarZoneSchema, z));
+      }
       if (b.settings) {
         const st = create(UserSettingsSchema, b.settings);
         // Meeting reminders are stored apart: a settings replace keeps them (user.proto).
         st.eventReminders = u.settings.eventReminders;
         st.eventRemindersDnd = u.settings.eventRemindersDnd;
+        st.calendarZones = u.settings.calendarZones; // board #85: kept apart too
         if (st.micMode === MicMode.UNSPECIFIED) st.micMode = MicMode.VAD;
         // The server keeps the deprecated flag in sync with mic_mode (user.proto).
         // eslint-disable-next-line @typescript-eslint/no-deprecated
@@ -3476,8 +3630,13 @@ class MockImpl {
       if (b.defaultMaxStreamPreset !== undefined) media.maxStreamPreset = b.defaultMaxStreamPreset;
       if (b.defaultMaxStreams !== undefined) media.maxStreams = b.defaultMaxStreams;
       if (b.defaultCameraLimit !== undefined) media.cameraLimit = b.defaultCameraLimit;
+      if (b.defaultJoinLeaveSoundMax !== undefined) media.joinLeaveSoundMax = b.defaultJoinLeaveSoundMax;
       const mediaChanged =
-        media.audioBitrateKbps !== undefined || media.maxStreamPreset !== undefined || media.maxStreams !== undefined || media.cameraLimit !== undefined;
+        media.audioBitrateKbps !== undefined ||
+        media.maxStreamPreset !== undefined ||
+        media.maxStreams !== undefined ||
+        media.cameraLimit !== undefined ||
+        media.joinLeaveSoundMax !== undefined;
       if (mediaChanged) ws.mediaDefaults = effectiveMedia(ws, media);
       this.toWorkspace(ws.id, { event: { case: 'workspaceUpdate', value: { workspace: ws } } });
       if (mediaChanged) {
@@ -4483,7 +4642,25 @@ class MockImpl {
         hasMore = older.length > limit;
       }
       const me = this.uid(c);
-      sendMsg(c.res, 200, ListMessagesResponseSchema, { messages: messages.map((m) => this.msgOut(m, me)), hasMore });
+      // ADR-0140: the room's ✓✓ marker for rooms READY does not list (task rooms).
+      sendMsg(c.res, 200, ListMessagesResponseSchema, { messages: messages.map((m) => this.msgOut(m, me)), hasMore, peerReadMessageId: this.peerRead(room.id, me) });
+    });
+
+    // ADR-0140: «Прочитали» — the author only; the people whose marker passed the message, in
+    // the order they read, a minute apart after it (the mock models every read as seen).
+    this.route('GET', '/api/rooms/:id/messages/:mid/readers', (c) => {
+      const me = this.uid(c);
+      const room = this.roomOrArchivedFor(c.params[0] ?? '', me);
+      const msg = (s().messages.get(room.id) ?? []).find((m) => m.id === c.params[1]);
+      if (!msg) throw notFound('message not found');
+      if (msg.authorId !== me) throw forbidden('only the author sees who read the message');
+      const base = msg.createdAt ? timestampMs(msg.createdAt) : Date.now();
+      const readers = [...this.state.readStates]
+        .filter(([u, reads]) => u !== me && !this.state.users.get(u)?.user.isBot && (reads.get(room.id) ?? '') >= msg.id)
+        .map(([u]) => ({ u, seq: this.readSeq.get(`${u}|${room.id}`) ?? 0 }))
+        .sort((a, b) => a.seq - b.seq)
+        .map(({ u }, i) => ({ userId: u, readAt: timestampFromMs(base + (i + 1) * 60_000) }));
+      sendMsg(c.res, 200, ListMessageReadersResponseSchema, { readers });
     });
 
     this.route('POST', '/api/rooms/:id/messages', (c) => {
@@ -5471,7 +5648,7 @@ class MockImpl {
       const v = s().voiceStates.get(me);
       if (!v?.roomId) throw conflict('device is not in voice');
       const b = parseBody(c, UpdateVoiceSelfRequestSchema);
-      this.setVoice(me, v.roomId, { ...(b.muted !== undefined ? { muted: b.muted } : {}), ...(b.deafened !== undefined ? { deafened: b.deafened } : {}), ...(b.musician !== undefined ? { musician: b.musician } : {}), ...(b.ptt !== undefined ? { ptt: b.ptt } : {}) });
+      this.setVoice(me, v.roomId, { ...(b.muted !== undefined ? { muted: b.muted } : {}), ...(b.deafened !== undefined ? { deafened: b.deafened } : {}), ...(b.musician !== undefined ? { musician: b.musician } : {}), ...(b.ptt !== undefined ? { ptt: b.ptt } : {}), ...(b.onPhone !== undefined ? { onPhone: b.onPhone } : {}) });
       noContent(c.res);
     });
 
@@ -6176,6 +6353,27 @@ class MockImpl {
     );
   }
 
+  seedSipSchedule(): void {
+    const wsId = IDS.workspaces.main;
+    const weekend = this.pbxOf(wsId).menus.find((m) => m.name === 'Выходные');
+    const day = (weekday: number, startMin: number, endMin: number): { weekday: number; startMin: number; endMin: number } => ({ weekday, startMin, endMin });
+    this.state.sipSettings.set(
+      wsId,
+      create(SipSettingsSchema, {
+        ...this.sipSettingsOf(wsId),
+        schedule: create(SipScheduleSchema, {
+          enabled: true,
+          timeZone: 'Europe/Moscow',
+          hours: [day(1, 540, 780), day(1, 840, 1080), day(2, 540, 1080), day(3, 540, 1080), day(4, 540, 1080), day(5, 540, 1080), day(5, 1320, 120)],
+          productionCalendarRu: true,
+          offHours: create(SipRouteTargetSchema, { kind: SipRouteKind.MENU, id: weekend?.id ?? '' }),
+          noticeFileId: nextId(this.state, 'file'),
+          noticeDurationMs: 6000,
+        }),
+      }),
+    );
+  }
+
   private pbxRoutes(): void {
     this.route('GET', '/api/workspaces/:id/sip/extensions', (c) => {
       const me = this.uid(c);
@@ -6273,6 +6471,7 @@ class MockImpl {
       ringingUserIds: [toUserId],
       via,
       route: 'menu',
+      ...this.callerIdOf(IDS.workspaces.main, number),
     });
     this.state.sipCalls.set(id, c);
     this.toUser(toUserId, { event: { case: 'sipInboundRing', value: { call: clone(SipCallSchema, c) } } });
@@ -6313,7 +6512,7 @@ class MockImpl {
     this.placeSipCall(IDS.rooms.call, IDS.users.anna, '+79262223344', SipCallStatus.ACTIVE, 300_000);
   }
 
-  placeSipCall(roomId: string, byUserId: string, number: string, status = SipCallStatus.DIALING, answeredAgoMs?: number): string {
+  placeSipCall(roomId: string, byUserId: string, number: string, status = SipCallStatus.DIALING, answeredAgoMs?: number, extension = ''): string {
     const room = this.state.rooms.get(roomId);
     if (!room) throw notFound('room not found');
     const id = nextId(this.state, 'file');
@@ -6327,11 +6526,16 @@ class MockImpl {
       status,
       startedAt: timestampFromMs(Date.now() - (answeredAgoMs ?? 0) - 5000),
       participantIdentity: `sip:${id}`,
+      extension,
       ...(status === SipCallStatus.ACTIVE ? { answeredAt: timestampFromMs(Date.now() - (answeredAgoMs ?? 0)) } : {}),
     });
     this.state.sipCalls.set(id, c);
     this.announceSipCall(c);
     return id;
+  }
+
+  liveSipCallOf(roomId: string): string {
+    return [...this.state.sipCalls.values()].find((c) => c.roomId === roomId && isLiveSipStatus(c.status))?.id ?? '';
   }
 
   setSipCallStatus(callId: string, status: SipCallStatus, reason = ''): void {
@@ -6353,8 +6557,346 @@ class MockImpl {
     return { wsId: ws.id, me };
   }
 
+  // ------------------------------------------------ the call journal (ADR-0137 §1, mock-journal.ts)
+
+  seedSipJournal(opts: { empty?: boolean; base?: number } = {}): void {
+    const ws = IDS.workspaces.main;
+    this.state.sipJournal.clear();
+    if (!opts.empty) {
+      const boris = this.state.users.get(IDS.users.boris)?.user.phone ?? '';
+      const rows = seedJournal(opts.base ?? Date.parse('2026-01-15T13:30:00+03:00'), {
+        ws,
+        anna: IDS.users.anna,
+        boris: IDS.users.boris,
+        vera: IDS.users.vera,
+        room: IDS.rooms.call,
+        roomName: this.state.rooms.get(IDS.rooms.call)?.name ?? '',
+        borisPhone: normalizeCallee(boris) ?? '+79125550202',
+      });
+      for (const r of rows) if (r.entry.call) this.state.sipJournal.set(r.entry.call.id, r);
+    }
+    // A fresh journal: nobody has looked at it yet.
+    for (const m of this.membersOf(ws)) {
+      this.state.sipSeen.delete(`${ws}|${m.userId}`);
+      this.announceMissed(ws, m.userId);
+    }
+  }
+
+  private sipJournalHold: Promise<void> | null = null;
+
+  holdSipJournal(): () => void {
+    let release = (): void => undefined;
+    this.sipJournalHold = new Promise<void>((r) => {
+      release = () => {
+        this.sipJournalHold = null;
+        r();
+      };
+    });
+    return release;
+  }
+
+  private announceMissed(ws: string, userId: string): void {
+    const count = missedCount(this.state.sipJournal.values(), ws, userId, this.state.sipSeen.get(`${ws}|${userId}`) ?? 0);
+    this.toUser(userId, { event: { case: 'sipMissedChanged', value: { workspaceId: ws, count } } });
+  }
+
+  private announceJournal(r: JournalRow): void {
+    const ws = r.entry.call?.workspaceId ?? '';
+    this.toWorkspace(ws, { event: { case: 'sipJournalEntry', value: { entry: r.entry } } });
+  }
+
+  advanceSipJournal(callId?: string, by = ''): void {
+    const id = callId ?? [...this.state.sipJournal.values()].find((r) => isLiveSipStatus(r.entry.call?.status ?? SipCallStatus.UNSPECIFIED))?.entry.call?.id ?? '';
+    const r = this.state.sipJournal.get(id);
+    if (!r) throw notFound('call not found');
+    // The call's own clock (the fixture lives at the tests' NOW): 20 s after its last step.
+    const last = Math.max(...[r.entry.call?.startedAt, ...r.events.map((e) => e.at)].map((x) => (x ? timestampMs(x) : 0)));
+    const next = advanceCall(r, last + 20_000, by);
+    this.state.sipJournal.set(id, next);
+    this.announceJournal(next);
+    if (next.entry.missed) for (const p of next.entry.parties) this.announceMissed(next.entry.call?.workspaceId ?? '', p.userId);
+  }
+
+  ringSipJournal(number: string, ringing: string[]): string {
+    const ws = IDS.workspaces.main;
+    const id = nextId(this.state, 'file');
+    const row: JournalRow = {
+      entry: create(SipJournalEntrySchema, {
+        call: create(SipCallSchema, { id, workspaceId: ws, number, direction: SipCallDirection.IN, status: SipCallStatus.RINGING, startedAt: timestampFromMs(Date.now()), participantIdentity: `sip:${id}`, ringingUserIds: ringing, via: 'Отдел продаж' }),
+        origin: SipCallOrigin.INBOUND,
+        peerE164: normalizeCallee(number) ?? '',
+        parties: ringing.map((u) => create(SipCallPartySchema, { userId: u, rang: true })),
+        hasEvents: true,
+      }),
+      events: [create(SipCallEventSchema, { seq: 1, kind: SipCallEventKind.STARTED, at: timestampFromMs(Date.now()), digits: '+74951234567', reason: 'direct' })],
+    };
+    this.state.sipJournal.set(id, row);
+    this.announceJournal(row);
+    return id;
+  }
+
+  // ------------------------------------------------ the phone book and the personal call (ADR-0137 §2–§3, mock-contacts.ts)
+
+  /** Caller ID of a number (ADR-0137 §2): the contact that has it. */
+  private callerIdOf(ws: string, number: string): { callerName: string; callerCompany: string; contactId: string } {
+    const n = normalizeContactNumber(number, this.sipSettingsOf(ws).callerId);
+    const c = n ? numberOwner(this.state.sipContacts, ws, n) : undefined;
+    return { callerName: c?.name ?? '', callerCompany: c?.company ?? '', contactId: c?.id ?? '' };
+  }
+
+  seedSipContacts(opts: { empty?: boolean } = {}): void {
+    const ws = IDS.workspaces.main;
+    this.state.sipContacts.clear();
+    if (opts.empty) return;
+    const at = Date.parse('2026-01-10T12:00:00+03:00');
+    const M = SipPhoneLabel.MOBILE;
+    const W = SipPhoneLabel.WORK;
+    const H = SipPhoneLabel.HOME;
+    const anna = IDS.users.anna;
+    const boris = IDS.users.boris;
+    const list = [
+      makeContact({ id: 'ct-petrova', ws, name: 'Анна Петрова', company: 'ООО Ромашка', note: 'Звонить после 11:00. Решает вопросы по договору поставки, копию счёта — на почту бухгалтерии.', phones: [['+79161234567', M], ['+74950001122', W], ['+79031112233', H]], by: anna, at }),
+      makeContact({ id: 'ct-lutik', ws, company: 'ООО Лютик', phones: [['+74959990011', W]], by: boris, at }),
+      makeContact({ id: 'ct-long', ws, name: 'Константин Константинович Константинопольский-Длинноимённый', company: 'Общество с ограниченной ответственностью «Северо-Западная Логистическая Компания»', phones: [['+78123334455', W]], by: boris, at }),
+      makeContact({ id: 'ct-saveliev', ws, name: 'Игорь Савельев', phones: [['+79250001020', M]], by: anna, at }),
+      makeContact({ id: 'ct-smirnova', ws, name: 'Вера Смирнова', company: 'ИП Смирнова', phones: [['+79161110000', M]], by: boris, at }),
+      makeContact({ id: 'ct-orlov', ws, name: 'Дмитрий Орлов', phones: [['+79037778899', M]], by: anna, at }),
+      makeContact({ id: 'ct-ershov', ws, name: 'Ёлкин Пётр', company: 'Склад №3', phones: [['+79035550199', M]], by: anna, at }),
+      makeContact({ id: 'ct-alice', ws, name: 'Alice Johnson', company: 'Acme Corporation', phones: [['+12125550100', W]], by: boris, at }),
+      makeContact({ id: 'ct-bob', ws, name: 'Bob Miller', phones: [['+4930123456', M]], by: boris, at }),
+      makeContact({ id: 'ct-alpha', ws, company: '«Альфа-Сервис»', phones: [['+74957001100', W]], by: anna, at }),
+    ];
+    // The journal's calls name their contacts by id (mock-journal.ts): the same contact keeps that id.
+    const journalIds = new Map<string, string>();
+    for (const r of this.state.sipJournal.values()) if (r.entry.contact?.id && r.entry.peerE164) journalIds.set(r.entry.peerE164, r.entry.contact.id);
+    for (const c of list) {
+      const jid = c.phones.map((p) => journalIds.get(p.number)).find(Boolean);
+      if (jid) c.id = jid;
+      this.state.sipContacts.set(c.id, c);
+    }
+  }
+
+  private sipContactsHold: Promise<void> | null = null;
+
+  holdSipContacts(): () => void {
+    let release = (): void => undefined;
+    this.sipContactsHold = new Promise<void>((r) => {
+      release = () => {
+        this.sipContactsHold = null;
+        r();
+      };
+    });
+    return release;
+  }
+
+  private sipContactRoutes(): void {
+    // Who: not a guest, telephony on (or MANAGE_INTEGRATIONS); import / export: MANAGE_INTEGRATIONS.
+    const reader = (c: Ctx): { ws: string; me: string; perms: bigint } => {
+      const me = this.uid(c);
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', me);
+      if (m.role === WorkspaceRole.GUEST) throw forbidden('guests have no phone book');
+      return { ws: ws.id, me, perms: workspacePermissions(this.memberRoles(m)) };
+    };
+    const manager = (c: Ctx): { ws: string; me: string } => {
+      const r = reader(c);
+      if (!has(r.perms, PERMISSION_BITS.MANAGE_INTEGRATIONS)) throw forbidden('MANAGE_INTEGRATIONS required');
+      return r;
+    };
+    const fail = (e: { kind: 'validation'; field: string; message: string } | { kind: 'taken'; id: string; name: string }): HttpError =>
+      e.kind === 'validation' ? invalid(e.field, e.message) : new HttpError(409, ErrorCode.SIP_CONTACT_NUMBER_TAKEN, 'the number belongs to another contact', 'phones', { conflictId: e.id, conflictName: e.name });
+    const owned = (ws: string, id: string): SipContact => {
+      const c = this.state.sipContacts.get(id);
+      if (!c || c.workspaceId !== ws) throw notFound('contact not found');
+      return c;
+    };
+    this.route('GET', '/api/workspaces/:id/sip/contacts', async (c) => {
+      const { ws } = reader(c);
+      if (this.sipContactsHold) await this.sipContactsHold;
+      const sp = c.url.searchParams;
+      sendMsg(c.res, 200, ListSipContactsResponseSchema, listContacts(this.state.sipContacts, ws, sp.get('q') ?? '', Number(sp.get('cursor') || '0')));
+    });
+    this.route('GET', '/api/workspaces/:id/sip/contacts/export.csv', (c) => {
+      const { ws } = manager(c);
+      send(c.res, 200, exportCsv(this.state.sipContacts, ws), 'text/csv; charset=utf-8');
+    });
+    this.route('POST', '/api/workspaces/:id/sip/contacts/import', async (c) => {
+      const { ws, me } = manager(c);
+      const f = await parseMultipartFile(c);
+      if (f.bytes.length > 1024 * 1024) throw invalid('file', 'file: at most 1 MB');
+      const dry = c.url.searchParams.get('dry_run') === '1';
+      const r = importCsv(this.state.sipContacts, ws, f.bytes.toString('utf8'), this.sipSettingsOf(ws).callerId, me, () => nextId(this.state, 'file'), Date.now());
+      if ('field' in r) throw invalid(r.field, r.message);
+      if (!dry) for (const x of r.created) this.state.sipContacts.set(x.id, x);
+      sendMsg(c.res, 200, ImportSipContactsResponseSchema, { created: r.created.length, rows: r.rows, skipped: r.skipped, dryRun: dry });
+    });
+    this.route('GET', '/api/workspaces/:id/sip/contacts/:cid', (c) => {
+      const { ws, me, perms } = reader(c);
+      const contact = owned(ws, c.params[1] ?? '');
+      const all = has(perms, PERMISSION_BITS.VIEW_JOURNALS);
+      const numbers = new Set(contact.phones.map((p) => p.number));
+      const calls = [...this.state.sipJournal.values()]
+        .filter((r) => r.entry.call?.workspaceId === ws && numbers.has(r.entry.peerE164) && mayReadCall(r, me, all))
+        .sort((a, b) => Number((b.entry.call?.startedAt?.seconds ?? 0n) - (a.entry.call?.startedAt?.seconds ?? 0n)))
+        .slice(0, 10)
+        .map((r) => r.entry);
+      sendMsg(c.res, 200, GetSipContactResponseSchema, { contact, calls });
+    });
+    this.route('POST', '/api/workspaces/:id/sip/contacts', (c) => {
+      const { ws, me } = reader(c);
+      const b = parseBody(c, SipContactInputSchema);
+      const r = checkContact(this.state.sipContacts, ws, '', b, this.sipSettingsOf(ws).callerId);
+      if ('kind' in r) throw fail(r);
+      const contact = makeContact({ id: nextId(this.state, 'file'), ws, name: b.name.trim(), company: b.company.trim(), note: b.note.trim(), phones: r.phones.map((p) => [p.number, p.label]), by: me, at: Date.now() });
+      this.state.sipContacts.set(contact.id, contact);
+      sendMsg(c.res, 201, SipContactResponseSchema, { contact });
+    });
+    this.route('PATCH', '/api/workspaces/:id/sip/contacts/:cid', (c) => {
+      const { ws, me } = reader(c);
+      const cur = owned(ws, c.params[1] ?? '');
+      const b = parseBody(c, UpdateSipContactRequestSchema);
+      const next = { name: b.name ?? cur.name, company: b.company ?? cur.company, note: b.note ?? cur.note, phones: b.phones ? b.phones.phones : cur.phones };
+      const r = checkContact(this.state.sipContacts, ws, cur.id, next, this.sipSettingsOf(ws).callerId);
+      if ('kind' in r) throw fail(r);
+      const contact = makeContact({ id: cur.id, ws, name: next.name.trim(), company: next.company.trim(), note: next.note.trim(), phones: r.phones.map((p) => [p.number, p.label]), by: me, at: Date.now() });
+      contact.createdBy = cur.createdBy;
+      if (cur.createdAt) contact.createdAt = cur.createdAt;
+      this.state.sipContacts.set(contact.id, contact);
+      sendMsg(c.res, 200, SipContactResponseSchema, { contact });
+    });
+    this.route('DELETE', '/api/workspaces/:id/sip/contacts/:cid', (c) => {
+      const { ws, me, perms } = reader(c);
+      const cur = owned(ws, c.params[1] ?? '');
+      if (cur.createdBy !== me && !has(perms, PERMISSION_BITS.MANAGE_INTEGRATIONS)) throw forbidden('the author or MANAGE_INTEGRATIONS');
+      this.state.sipContacts.delete(cur.id);
+      noContent(c.res);
+    });
+  }
+
+  /** The caller's live personal call (the one a test moves on). */
+  private personalCall(): SipCall | undefined {
+    return [...this.state.sipCalls.values()].reverse().find((x) => x.origin === SipCallOrigin.PERSONAL && isLiveSipStatus(x.status));
+  }
+
+  advanceSipPersonal(status: SipCallStatus = SipCallStatus.ACTIVE, reason = ''): void {
+    const call = this.personalCall();
+    if (!call) throw notFound('no personal call');
+    call.status = status;
+    call.reason = reason;
+    if (status === SipCallStatus.ACTIVE) call.answeredAt = timestampFromMs(Date.now());
+    if (status === SipCallStatus.ENDED || status === SipCallStatus.FAILED) call.endedAt = timestampFromMs(Date.now());
+    this.toUser(call.startedBy, { event: { case: 'sipCallUpdate', value: { call: clone(SipCallSchema, call) } } });
+  }
+
+  private sipPersonalRoutes(): void {
+    // POST: a person with PLACE_CALLS of the workspace, telephony on, one call at a time. The
+    // call's room is the LiveKit room «<prefix>sipout_<call>» of the dev server (no line in it).
+    this.route('POST', '/api/workspaces/:id/sip/calls', async (c) => {
+      const me = this.uid(c);
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', me);
+      if (m.role === WorkspaceRole.GUEST) throw forbidden('guests do not call');
+      if (!has(workspacePermissions(this.memberRoles(m)), PERMISSION_BITS.PLACE_CALLS)) throw forbidden('PLACE_CALLS required');
+      const settings = this.sipSettingsOf(ws.id);
+      if (!settings.enabled) throw new HttpError(409, ErrorCode.SIP_DISABLED, 'telephony is off');
+      const b = parseBody(c, PlaceSipPersonalCallRequestSchema);
+      const number = normalizeContactNumber(b.number, settings.callerId);
+      if (!number) throw invalid('number', 'number: not a phone number');
+      if (number === MOCK_SIP_RATE_NUMBER) throw new HttpError(429, ErrorCode.SIP_RATE_LIMITED, 'too many calls', '', {}, { 'Retry-After': '600' });
+      if (!numberAllowed(number, settings.allowedPrefixes)) throw new HttpError(422, ErrorCode.SIP_NUMBER_NOT_ALLOWED, 'the number is not allowed');
+      if ([...this.state.sipCalls.values()].some((x) => x.startedBy === me && x.origin === SipCallOrigin.PERSONAL && isLiveSipStatus(x.status))) throw new HttpError(409, ErrorCode.SIP_BUSY, 'already on a call');
+      const id = nextId(this.state, 'file');
+      const call = create(SipCallSchema, {
+        id,
+        workspaceId: ws.id,
+        number,
+        direction: SipCallDirection.OUT,
+        origin: SipCallOrigin.PERSONAL,
+        status: SipCallStatus.DIALING,
+        startedBy: me,
+        startedAt: timestampFromMs(Date.now()),
+        participantIdentity: `sip:${id}`,
+        ...this.callerIdOf(ws.id, number),
+      });
+      this.state.sipCalls.set(id, call);
+      const { user } = this.auth(c);
+      const identity = `sipout_${user.user.id}`;
+      const token = await this.voiceToken({ id: `sipout_${id}` } as Room, identity, user.user.displayName);
+      this.toUser(me, { event: { case: 'sipCallUpdate', value: { call: clone(SipCallSchema, call) } } });
+      sendMsg(c.res, 201, PlaceSipPersonalCallResponseSchema, { call: clone(SipCallSchema, call), join: { url: this.lk.url, token, identity, canSpeak: true } });
+    });
+    this.route('DELETE', '/api/workspaces/:id/sip/calls/:cid', (c) => {
+      const me = this.uid(c);
+      const call = this.state.sipCalls.get(c.params[1] ?? '');
+      if (!call || call.workspaceId !== c.params[0] || call.origin !== SipCallOrigin.PERSONAL) throw notFound('call not found');
+      if (call.startedBy !== me) throw forbidden('not your call');
+      if (!isLiveSipStatus(call.status)) throw conflict('the call is over');
+      call.reason = call.status === SipCallStatus.ACTIVE ? 'hangup' : 'cancelled';
+      call.status = SipCallStatus.ENDED;
+      call.endedAt = timestampFromMs(Date.now());
+      call.endedBy = me;
+      this.toUser(me, { event: { case: 'sipCallUpdate', value: { call: clone(SipCallSchema, call) } } });
+      sendMsg(c.res, 200, SipCallResponseSchema, { call: clone(SipCallSchema, call) });
+    });
+  }
+
+  private sipJournalRoutes(): void {
+    const reader = (c: Ctx): { ws: string; me: string; all: boolean } => {
+      const me = this.uid(c);
+      const { ws, m } = this.workspaceFor(c.params[0] ?? '', me);
+      if (m.role === WorkspaceRole.GUEST) throw forbidden('guests have no journal');
+      return { ws: ws.id, me, all: has(workspacePermissions(this.memberRoles(m)), PERMISSION_BITS.VIEW_JOURNALS) };
+    };
+    const time = (v: string | null, field: string): number | null => {
+      if (!v) return null;
+      const t = Date.parse(v);
+      if (Number.isNaN(t)) throw invalid(field, `${field}: not RFC 3339`);
+      return t;
+    };
+    this.route('GET', '/api/workspaces/:id/sip/journal', async (c) => {
+      const { ws, me, all } = reader(c);
+      const sp = c.url.searchParams;
+      const scope = sp.get('scope') || 'mine';
+      if (scope !== 'mine' && scope !== 'all') throw invalid('scope', 'scope: mine | all');
+      if (scope === 'all' && !all) throw forbidden('VIEW_JOURNALS required');
+      const filter = sp.get('filter') ?? '';
+      if (filter && filter !== 'missed' && filter !== 'in' && filter !== 'out') throw invalid('filter', 'filter: missed | in | out');
+      const user = sp.get('user') ?? '';
+      if (user && scope !== 'all') throw invalid('user', 'user: with scope=all only');
+      const limit = Number(sp.get('limit') || '50');
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw invalid('limit', 'limit: 1..100');
+      if (this.sipJournalHold) await this.sipJournalHold;
+      const page = listJournal(this.state.sipJournal.values(), {
+        ws,
+        me,
+        scope,
+        filter: filter as '' | 'missed' | 'in' | 'out',
+        user,
+        q: sp.get('q') ?? '',
+        from: time(sp.get('from'), 'from'),
+        to: time(sp.get('to'), 'to'),
+        cursor: Number(sp.get('cursor') || '0'),
+        limit,
+      });
+      sendMsg(c.res, 200, ListSipJournalResponseSchema, page);
+    });
+    this.route('POST', '/api/workspaces/:id/sip/journal/seen', (c) => {
+      const { ws, me } = reader(c);
+      this.state.sipSeen.set(`${ws}|${me}`, Date.now());
+      this.announceMissed(ws, me);
+      noContent(c.res);
+    });
+    this.route('GET', '/api/workspaces/:id/sip/journal/:cid', (c) => {
+      const { ws, me, all } = reader(c);
+      const r = this.state.sipJournal.get(c.params[1] ?? '');
+      if (!r || r.entry.call?.workspaceId !== ws || !mayReadCall(r, me, all)) throw notFound('call not found');
+      sendMsg(c.res, 200, GetSipJournalEntryResponseSchema, { entry: r.entry, events: r.events, ...(r.recording ? { recording: r.recording } : {}) });
+    });
+  }
+
   private sipRoutes(): void {
     this.pbxRoutes();
+    this.sipJournalRoutes();
+    this.sipContactRoutes();
+    this.sipPersonalRoutes();
     this.route('GET', '/api/workspaces/:id/sip', (c) => {
       const { wsId } = this.sipAdmin(c);
       sendMsg(c.res, 200, GetSipSettingsResponseSchema, { settings: this.sipSettingsOf(wsId) });
@@ -6407,6 +6949,63 @@ class MockImpl {
       if (!cur.updatedAt) throw new HttpError(409, ErrorCode.CONFLICT, 'save the provider settings first');
       this.state.sipSettings.set(wsId, create(SipSettingsSchema, { ...cur, recordInbound: b.recordInbound, recordOutbound: b.recordOutbound }));
       sendMsg(c.res, 200, PutSipRecordingResponseSchema, { settings: this.sipSettingsOf(wsId) });
+    });
+
+    // ADR-0137: the journal's retention and the outbound limits (the server's ranges).
+    this.route('PUT', '/api/workspaces/:id/sip/policy', (c) => {
+      const { wsId } = this.sipAdmin(c);
+      const b = parseBody(c, PutSipPolicyRequestSchema);
+      const cur = this.sipSettingsOf(wsId);
+      if (!cur.updatedAt) throw new HttpError(409, ErrorCode.CONFLICT, 'save the provider settings first');
+      if (b.retentionMonths && ![1, 3, 6, 12, 24, 36].includes(b.retentionMonths)) throw invalid('retentionMonths', 'retentionMonths: 1, 3, 6, 12, 24 or 36');
+      if (b.outPerHour > 1000) throw invalid('outPerHour', 'outPerHour: 1..1000');
+      if (b.outPerUserHour > 1000) throw invalid('outPerUserHour', 'outPerUserHour: 1..1000');
+      this.state.sipSettings.set(
+        wsId,
+        create(SipSettingsSchema, { ...cur, retentionMonths: b.retentionMonths || 12, outPerHour: b.outPerHour || 120, outPerUserHour: b.outPerUserHour || 30 }),
+      );
+      sendMsg(c.res, 200, PutSipPolicyResponseSchema, { settings: this.sipSettingsOf(wsId) });
+    });
+
+    // ADR-0138: the schedule replaced as a whole (the server's interval rules); the notice — a
+    // fresh file id and 0:06, or removed with «».
+    this.route('PUT', '/api/workspaces/:id/sip/schedule', (c) => {
+      const { wsId } = this.sipAdmin(c);
+      const b = parseBody(c, PutSipScheduleRequestSchema);
+      const cur = this.sipSettingsOf(wsId);
+      if (!cur.updatedAt) throw new HttpError(409, ErrorCode.CONFLICT, 'save the provider settings first');
+      const sc = b.schedule ?? create(SipScheduleSchema, {});
+      const tz = sc.timeZone || 'Europe/Moscow';
+      try {
+        new Intl.DateTimeFormat('en', { timeZone: tz });
+      } catch {
+        throw invalid('timeZone', 'an IANA time zone, e.g. Europe/Moscow');
+      }
+      if (hoursProblem(sc.hours.map((h) => ({ weekday: h.weekday, start: h.startMin, end: h.endMin })))) throw invalid('hours', 'working hours overlap');
+      if (sc.enabled && sc.hours.length === 0) throw invalid('hours', 'add the working hours');
+      if (sc.offHours?.kind === SipRouteKind.REPEAT) throw invalid('offHours', 'offHours: not repeat');
+      const old = cur.schedule;
+      const notice =
+        b.noticeSourceFileId === undefined
+          ? { noticeFileId: old?.noticeFileId ?? '', noticeDurationMs: old?.noticeDurationMs ?? 0 }
+          : b.noticeSourceFileId
+            ? { noticeFileId: nextId(this.state, 'file'), noticeDurationMs: 6000 }
+            : { noticeFileId: '', noticeDurationMs: 0 };
+      this.state.sipSettings.set(
+        wsId,
+        create(SipSettingsSchema, {
+          ...cur,
+          schedule: create(SipScheduleSchema, {
+            enabled: sc.enabled,
+            timeZone: tz,
+            hours: sc.hours,
+            productionCalendarRu: sc.productionCalendarRu,
+            offHours: sc.offHours ? create(SipRouteTargetSchema, sc.offHours) : create(SipRouteTargetSchema, { kind: SipRouteKind.HANGUP }),
+            ...notice,
+          }),
+        }),
+      );
+      sendMsg(c.res, 200, PutSipScheduleResponseSchema, { settings: this.sipSettingsOf(wsId) });
     });
 
     // ADR-0117/0121: the inbound settings as sent; the registration's state stays what the
@@ -6509,7 +7108,9 @@ class MockImpl {
       if (!m || m.role === WorkspaceRole.GUEST) throw forbidden('guests cannot place calls');
       this.requireRoomPerm(room, me, PERMISSION_BITS.PLACE_CALLS | CONNECT);
       if (room.type !== RoomType.VOICE) throw invalid('id', 'not a voice room');
-      const number = normalizeCallee(parseBody(c, PlaceSipCallRequestSchema).number);
+      // An extension after the number (the client sends «<number>,<extension>»; sip.SplitExtension).
+      const [raw = '', ...ext] = parseBody(c, PlaceSipCallRequestSchema).number.split(',');
+      const number = normalizeCallee(raw);
       if (!number) throw invalid('number', 'not a phone number');
       const s = this.sipSettingsOf(room.workspaceId);
       if (!s.enabled || !s.trunkSaved) throw new HttpError(409, ErrorCode.SIP_DISABLED, 'telephony is off');
@@ -6517,7 +7118,7 @@ class MockImpl {
       if ([...this.state.sipCalls.values()].some((x) => x.roomId === room.id && isLiveSipStatus(x.status))) throw new HttpError(409, ErrorCode.SIP_CALL_ACTIVE, 'a call is already active in this room');
       if (!numberAllowed(number, s.allowedPrefixes)) throw new HttpError(422, ErrorCode.SIP_NUMBER_NOT_ALLOWED, 'the number is not in the allowed prefixes', 'number');
       if (number === MOCK_SIP_RATE_NUMBER) throw new HttpError(429, ErrorCode.SIP_RATE_LIMITED, 'too many calls', '', {}, { 'Retry-After': '600' });
-      const id = this.placeSipCall(room.id, me, number);
+      const id = this.placeSipCall(room.id, me, number, SipCallStatus.DIALING, undefined, ext.join(','));
       sendMsg(c.res, 201, SipCallResponseSchema, { call: this.state.sipCalls.get(id) });
     });
 
@@ -6639,6 +7240,9 @@ class MockImpl {
   }
 
   private clockMs: number | null = null;
+  /** ADR-0140: the order markers moved in («Прочитали» lists readers in it). */
+  private readSeq = new Map<string, number>();
+  private readSeqNext = 0;
 
   // ------------------------------------------------ temporary rooms (ADR-0044)
 
@@ -7778,6 +8382,7 @@ class MockImpl {
       id, workspaceId: a.workspaceId, roomId: a.roomId ?? '', title: a.title.trim(), description: a.description ?? '',
       startsAt: timestampFromMs(a.startMs), endsAt: timestampFromMs(a.endMs), allDay: a.allDay ?? false, tz: a.tz ?? 'UTC',
       organizerId: organizer, record: a.record ?? false, repeat: a.repeat ?? EventRepeat.UNSPECIFIED,
+      holidayCalendar: a.repeat === EventRepeat.WORKDAYS ? 'ru' : '',
       ...(a.repeatUntilMs ? { repeatUntil: timestampFromMs(a.repeatUntilMs) } : {}),
       attendees, createdAt: timestampFromMs(nowMs), updatedAt: timestampFromMs(nowMs),
     });
@@ -7952,6 +8557,32 @@ class MockImpl {
       noContent(c.res);
     });
     this.boardRoute('POST', '/api/boards/:id/webhook/ping', (c, me) => sendMsg(c.res, 200, BoardWebhookPingResponseSchema, b().pingWebhook(c.params[0] ?? '', me)));
+    // ADR-0060: board rules — an empty list only (the rule editor is shot unsaved).
+    this.boardRoute('GET', '/api/boards/:id/rules', (c) => sendMsg(c.res, 200, ListBoardRulesResponseSchema, { rules: [] }));
+    // ADR-0060 §4 + board task #101: the board's Git setup with the GitLab backlink (no secret checks).
+    this.boardRoute('GET', '/api/boards/:id/git', (c) => sendMsg(c.res, 200, BoardGitResponseSchema, { git: this.boardGit.get(c.params[0] ?? '') }));
+    this.boardRoute('PUT', '/api/boards/:id/git', (c, me) => {
+      const id = c.params[0] ?? '';
+      const r = parseBody(c, SetBoardGitRequestSchema);
+      const name = r.provider === GitProvider.GITLAB ? 'gitlab' : r.provider === GitProvider.GITEA ? 'gitea' : 'github';
+      const g = create(BoardGitSchema, { boardId: id, provider: r.provider, hasSecret: true, url: `https://app.calab.test/api/git/boards/${id}/${name}`, createdBy: me, createdAt: timestampFromMs(Date.now()) });
+      this.boardGit.set(id, g);
+      sendMsg(c.res, 200, BoardGitResponseSchema, { git: g, secret: r.secret || 'mock-secret-0123456789abcdefghijklmnopqrstu' });
+    });
+    this.boardRoute('PATCH', '/api/boards/:id/git', (c) => {
+      const g = this.boardGit.get(c.params[0] ?? '');
+      if (!g) throw new BoardError(404, ErrorCode.NOT_FOUND, 'not found');
+      const r = parseBody(c, UpdateBoardGitRequestSchema);
+      if (r.backlink !== undefined) g.backlink = r.backlink;
+      if (r.apiToken !== undefined) g.hasApiToken = r.apiToken !== '';
+      if (r.gitlabUrl !== undefined) g.gitlabUrl = r.gitlabUrl.replace(/\/+$/, '');
+      g.backlinkError = g.backlink && !g.hasApiToken ? 'no GitLab API token: the note was not posted' : '';
+      sendMsg(c.res, 200, BoardGitResponseSchema, { git: g });
+    });
+    this.boardRoute('DELETE', '/api/boards/:id/git', (c) => {
+      this.boardGit.delete(c.params[0] ?? '');
+      noContent(c.res);
+    });
     // ADR-0058 §2: checklists (TASK_CHECKLIST_* events, no TASK_UPDATE).
     this.boardRoute('POST', '/api/tasks/:id/checklists', (c, me) => {
       const r = parseBody(c, CreateTaskChecklistRequestSchema);
@@ -8142,11 +8773,64 @@ class MockImpl {
         hasMore: r.hasMore,
       });
     });
+    this.boardRoute('GET', '/api/me/task-notices', (c, me) => {
+      if (q(c, 'after')) throw invalid('after', 'only before is supported');
+      const limit = Math.min(100, Math.max(1, Number(q(c, 'limit') || '50') || 50));
+      sendMsg(c.res, 200, ListTaskNoticesResponseSchema, b().notices(me, q(c, 'before'), limit));
+    });
     this.boardRoute('GET', '/api/me/tasks', (c, me) => {
       sendMsg(c.res, 200, MyTasksResponseSchema, { tasks: b().mine(q(c, 'workspace_id'), me, q(c, 'scope') || 'assigned', q(c, 'open') === '1'), nextCursor: '' });
     });
     this.boardRoute('GET', '/api/workspaces/:id/tasks/search', (c, me) => {
+      // The ADR-0139 search (archive, board, filter, sort, cursor, key_task); a plain ⌘K / picker call as before.
+      if (['archived', 'board_id', 'filter', 'sort', 'cursor'].some((k) => c.url.searchParams.has(k)) || !q(c, 'q')) {
+        const r = b().find(c.params[0] ?? '', me, {
+          q: q(c, 'q'),
+          state: q(c, 'state'),
+          archived: q(c, 'archived'),
+          boardId: q(c, 'board_id'),
+          filter: filterOf(c),
+          sort: q(c, 'sort'),
+          cursor: q(c, 'cursor'),
+          limit: Number(q(c, 'limit')) || 20,
+          nowMs: timestampMs(this.callNow()),
+        });
+        sendMsg(c.res, 200, SearchTasksResponseSchema, r);
+        return;
+      }
       sendMsg(c.res, 200, SearchTasksResponseSchema, { tasks: b().search(c.params[0] ?? '', me, q(c, 'q'), Number(q(c, 'limit')) || 20) });
+    });
+    // Saved task searches (ADR-0139): per workspace and person, in memory.
+    const savedKey = (ws: string, me: string): string => `${ws}|${me}`;
+    this.boardRoute('GET', '/api/workspaces/:id/task-searches', (c, me) => {
+      sendMsg(c.res, 200, ListSavedTaskSearchesResponseSchema, { searches: this.savedSearches.get(savedKey(c.params[0] ?? '', me)) ?? [] });
+    });
+    this.boardRoute('POST', '/api/workspaces/:id/task-searches', (c, me) => {
+      const req = parseBody(c, CreateSavedTaskSearchRequestSchema);
+      const name = req.name.trim();
+      if (!name || name.length > 60) throw invalid('name', 'name must be 1..60 characters');
+      const k = savedKey(c.params[0] ?? '', me);
+      const list = this.savedSearches.get(k) ?? [];
+      const s = create(SavedTaskSearchSchema, { id: `ts-${this.savedSearchSeq++}`, name, ...(req.query ? { query: req.query } : {}), position: list.length });
+      this.savedSearches.set(k, [...list, s]);
+      sendMsg(c.res, 201, SavedTaskSearchResponseSchema, { search: s });
+    });
+    this.boardRoute('PATCH', '/api/workspaces/:id/task-searches/:sid', (c, me) => {
+      const req = parseBody(c, UpdateSavedTaskSearchRequestSchema);
+      const k = savedKey(c.params[0] ?? '', me);
+      const list = this.savedSearches.get(k) ?? [];
+      const cur = list.find((x) => x.id === c.params[1]);
+      if (!cur) throw notFound('search not found');
+      const next = create(SavedTaskSearchSchema, { ...cur, ...(req.name !== undefined ? { name: req.name.trim() } : {}), ...(req.query ? { query: req.query } : {}) });
+      this.savedSearches.set(k, list.map((x) => (x.id === cur.id ? next : x)));
+      sendMsg(c.res, 200, SavedTaskSearchResponseSchema, { search: next });
+    });
+    this.boardRoute('DELETE', '/api/workspaces/:id/task-searches/:sid', (c, me) => {
+      const k = savedKey(c.params[0] ?? '', me);
+      const list = this.savedSearches.get(k) ?? [];
+      if (!list.some((x) => x.id === c.params[1])) throw notFound('search not found');
+      this.savedSearches.set(k, list.filter((x) => x.id !== c.params[1]));
+      noContent(c.res);
     });
     // Test control: an update of a task by another user (TASK_UPDATE fan-out as the server would).
     this.route('POST', '/__mock/task', (c) => {
@@ -8285,6 +8969,100 @@ class MockImpl {
     const d = (): DiskMock => this.disk;
     const q = (c: Ctx, k: string): string => c.url.searchParams.get(k) ?? '';
     const p0 = (c: Ctx): string => c.params[0] ?? '';
+    // The office editor (ADR-0143), the server's contract (apps/server/internal/office): the format
+    // map, the signed config (unsigned here: the stub checks nothing; the «Document Server» is the
+    // mock itself — the real host page and a STUB api.js), «Сохранить как», «Сохранить в Диск», «Создать».
+    const officeOn = (): void => {
+      if (!this.officeEnabled) throw notFound();
+    };
+    const officeOf = (name: string) => OFFICE_FORMATS.find((f) => f.extension === (/\.([a-z0-9]+)$/i.exec(name)?.[1]?.toLowerCase() ?? ''));
+    const origin = (c: Ctx): string => `http://${c.req.headers.host ?? '127.0.0.1'}`;
+    this.route('GET', '/api/office/capabilities', (c) => {
+      sendMsg(c.res, 200, OfficeCapabilitiesResponseSchema, this.officeEnabled
+        ? { enabled: true, formats: OFFICE_FORMATS, maxSizeBytes: 100n << 20n, docsUrl: origin(c), themeDark: 'default-dark', themeLight: 'default-light' }
+        : { enabled: false });
+    });
+    this.diskRoute('GET', '/api/office/config', (c, me) => {
+      officeOn();
+      if (this.officeFault === 'config') throw new HttpError(500, ErrorCode.INTERNAL, 'office is down');
+      // A Disk item (rights by the Disk bits), or an attachment (`file`, view only).
+      const fileId = q(c, 'file');
+      const it = fileId ? undefined : d().one(q(c, 'item'), me);
+      const name = it?.name ?? this.state.files.get(fileId)?.meta.name ?? '';
+      if (!it && !this.state.files.get(fileId)) throw notFound();
+      const format = officeOf(name);
+      if (!format) throw new HttpError(415, ErrorCode.VALIDATION, 'this file type does not open in the editor');
+      const phone = q(c, 'phone') === '1';
+      const edit = !!it && !it.trashedAt && (it.myBits & DISK_BITS.WRITE) !== 0n && !phone && format.capability === OfficeCapability.EDIT;
+      const key = `calab-mock-${it?.id ?? fileId}`;
+      const lang = q(c, 'lang') || 'ru';
+      const config = {
+        type: phone ? 'mobile' : 'desktop',
+        documentType: format.documentType,
+        document: { fileType: format.extension, key, title: name, url: `${origin(c)}/__office/file`, permissions: { edit } },
+        editorConfig: {
+          mode: edit ? 'edit' : 'view',
+          lang,
+          region: ({ ru: 'ru-RU', en: 'en-US', es: 'es-ES', zh: 'zh-CN' } as Record<string, string>)[lang] ?? lang,
+          customization: { uiTheme: q(c, 'theme') === 'light' ? 'default-light' : 'default-dark', compactHeader: true, toolbarHideFileName: false, ...(phone ? {} : { goback: { requestClose: true } }) },
+          calabStub: { fault: this.officeFault },
+        },
+        token: 'mock',
+      };
+      sendMsg(c.res, 200, OfficeConfigResponseSchema, {
+        docsUrl: origin(c), hostUrl: `${origin(c)}/web-apps/apps/calab/calab-editor.html`, configJson: JSON.stringify(config),
+        mode: edit ? OfficeMode.EDIT : OfficeMode.VIEW, key, format, itemId: it?.id ?? '', fileId: it?.file?.id ?? fileId,
+      });
+    });
+    // A copy of `meta` under a new name, stored and filed by `me` in folder `parentId` of `ws` (rights, quota, free name, journal).
+    const fileCopy = (ws: string, me: string, parentId: string, meta: FileMeta, name: string, mime = meta.mime): DiskItem => {
+      const bytes = this.state.files.get(meta.id)?.bytes ?? Buffer.from('PK mock office file');
+      const id = this.storeFile(ws, me, { name, mime, bytes });
+      const copy = this.state.files.get(id)?.meta;
+      if (!copy) throw notFound();
+      return d().upload(ws, me, parentId, copy);
+    };
+    const converted = (name: string): { name: string; mime: string } => {
+      const to = officeOf(name)?.convertTo ?? '';
+      if (!to) throw new HttpError(415, ErrorCode.VALIDATION, 'this file type is not converted');
+      return { name: name.replace(/\.[^.]+$/, `.${to}`), mime: OFFICE_MIME[to] ?? 'application/octet-stream' };
+    };
+    // POST /api/disk/items/{id}/office/convert: «Сохранить как» of a legacy Disk file, a NEW item next to it.
+    this.diskRoute('POST', '/api/disk/items/:id/office/convert', (c, me) => {
+      officeOn();
+      const it = d().one(p0(c), me);
+      if (!it.file) throw notFound();
+      const to = converted(it.name);
+      sendMsg(c.res, 201, DiskItemResponseSchema, { item: fileCopy(it.workspaceId, me, it.parentId, it.file, to.name, to.mime) });
+    });
+    // POST /api/workspaces/{id}/office/convert {file_id, parent_id}: the same of an attachment.
+    this.diskRoute('POST', '/api/workspaces/:id/office/convert', (c, me) => {
+      officeOn();
+      const b = parseBody(c, OfficeConvertRequestSchema);
+      const meta = this.state.files.get(b.fileId)?.meta;
+      if (!meta) throw notFound();
+      const to = converted(meta.name);
+      sendMsg(c.res, 201, DiskItemResponseSchema, { item: fileCopy(p0(c), me, b.parentId, meta, to.name, to.mime) });
+    });
+    // POST /api/workspaces/{id}/disk/import {file_id, parent_id, name}: «Сохранить в Диск» of an attachment.
+    this.diskRoute('POST', '/api/workspaces/:id/disk/import', (c, me) => {
+      const b = parseBody(c, ImportDiskFileRequestSchema);
+      const meta = this.state.files.get(b.fileId)?.meta;
+      if (!meta) throw notFound();
+      sendMsg(c.res, 201, DiskItemResponseSchema, { item: fileCopy(p0(c), me, b.parentId, meta, b.name || meta.name) });
+    });
+    // POST /api/workspaces/{id}/office/create {parent_id, extension, name, lang}: «Создать» — a blank file.
+    this.diskRoute('POST', '/api/workspaces/:id/office/create', (c, me) => {
+      officeOn();
+      const b = parseBody(c, CreateOfficeFileRequestSchema);
+      const mime = OFFICE_MIME[b.extension];
+      if (!mime || !['docx', 'xlsx', 'pptx'].includes(b.extension)) throw new HttpError(422, ErrorCode.VALIDATION, 'must be docx, xlsx or pptx', 'extension');
+      const base = (b.name.trim() || ({ docx: 'Новый документ', xlsx: 'Новая таблица', pptx: 'Новая презентация' } as Record<string, string>)[b.extension] || 'file').replace(new RegExp(`\\.${b.extension}$`, 'i'), '');
+      const id = this.storeFile(p0(c), me, { name: `${base}.${b.extension}`, mime, bytes: Buffer.from('PK mock blank office file') });
+      const meta = this.state.files.get(id)?.meta;
+      if (!meta) throw notFound();
+      sendMsg(c.res, 201, DiskItemResponseSchema, { item: d().upload(p0(c), me, b.parentId, meta) });
+    });
     this.diskRoute('GET', '/api/workspaces/:id/disk/items', (c, me) => {
       const r = d().list(p0(c), me, { parent: q(c, 'parent'), trashed: q(c, 'trashed') === '1' || q(c, 'trashed') === 'true', sort: q(c, 'sort'), cursor: q(c, 'cursor'), limit: Number(q(c, 'limit')) || 0 });
       sendMsg(c.res, 200, ListDiskItemsResponseSchema, r);
@@ -8628,7 +9406,7 @@ class MockImpl {
       try {
         await h(c, me);
       } catch (e) {
-        if (e instanceof CanvasError) throw new HttpError(e.status, e.code, e.message, e.field);
+        if (e instanceof CanvasError) throw new HttpError(e.status, e.code, e.message, e.field, e.extra);
         throw e;
       }
     });
@@ -8696,12 +9474,32 @@ class MockImpl {
         if (count) sendMsg(c.res, 200, PublicCanvasSchema, meta);
         else noContent(c.res);
       } catch (e) {
-        if (e instanceof CanvasError) throw new HttpError(e.status, e.code, e.message, e.field);
+        if (e instanceof CanvasError) throw new HttpError(e.status, e.code, e.message, e.field, e.extra);
         throw e;
       }
     };
     this.route('GET', '/api/public/canvas/:code', pub(true));
     this.route('HEAD', '/api/public/canvas/:code', pub(false));
+    // Comments (ADR-0127 wave 4): one page holds every thread; no events (the writer applies its answer).
+    this.canvasRoute('GET', '/api/canvas/items/:id/comments', (c, me) => {
+      const comments = k().listComments(p0(c), me);
+      sendMsg(c.res, 200, ListCanvasCommentsResponseSchema, { comments, openThreads: comments.filter((x) => !x.parentId && !x.resolved).length });
+    });
+    this.canvasRoute('POST', '/api/canvas/items/:id/comments', (c, me) => {
+      const b = parseBody(c, CreateCanvasCommentRequestSchema);
+      sendMsg(c.res, 201, CanvasCommentResponseSchema, { comment: k().addComment(p0(c), me, b) });
+    });
+    this.canvasRoute('GET', '/api/canvas/items/:id/comments/mention-access', (c, me) => {
+      sendMsg(c.res, 200, CanvasMentionAccessResponseSchema, { seeIds: k().mentionAccess(p0(c), me, q(c, 'user_ids').split(',').filter(Boolean)) });
+    });
+    this.canvasRoute('PATCH', '/api/canvas/comments/:id', (c, me) => {
+      const b = parseBody(c, UpdateCanvasCommentRequestSchema);
+      sendMsg(c.res, 200, CanvasCommentResponseSchema, { comment: k().updateComment(p0(c), me, b) });
+    });
+    this.canvasRoute('DELETE', '/api/canvas/comments/:id', (c, me) => {
+      k().removeComment(p0(c), me);
+      noContent(c.res);
+    });
     this.canvasRoute('GET', '/api/canvas/items/:id/versions', (c, me) => sendMsg(c.res, 200, CanvasVersionsResponseSchema, { versions: k().listVersions(p0(c), me) }));
     this.canvasRoute('GET', '/api/canvas/items/:id/versions/:vid', (c, me) => {
       const state = k().versionState(p0(c), c.params[1] ?? '', me);
@@ -8747,7 +9545,8 @@ class MockImpl {
         for (const occ of occurrences(rec, from, to)) rows.push({ rec, occ, v });
       }
       rows.sort((a, b) => a.occ.startMs - b.occ.startMs || a.occ.endMs - b.occ.endMs);
-      sendMsg(c.res, 200, ListCalendarEventsResponseSchema, { events: rows.map((r) => eventOut(r.rec, r.occ, r.v.view, me, r.v.canEdit)) });
+      // The mock workspace follows the Russian production calendar (ADR-0136; the mock expands Mon–Fri only).
+      sendMsg(c.res, 200, ListCalendarEventsResponseSchema, { events: rows.map((r) => eventOut(r.rec, r.occ, r.v.view, me, r.v.canEdit)), holidayCalendar: 'ru' });
     });
 
     this.route('POST', '/api/workspaces/:id/events', (c) => {
@@ -8818,6 +9617,7 @@ class MockImpl {
         roomId: next.roomId, allDay: b.allDay ?? ev.allDay, tz: b.tz ?? ev.tz, record: b.record ?? ev.record, repeat: b.repeat ?? ev.repeat,
         updatedAt: timestampFromMs(this.calNow()), sequence: ev.sequence + (significant || removed ? 1 : 0),
       });
+      if (b.repeat !== undefined && b.repeat !== before.repeat) ev.holidayCalendar = ev.repeat === EventRepeat.WORKDAYS ? 'ru' : '';
       if (next.repeatUntilMs) ev.repeatUntil = timestampFromMs(next.repeatUntilMs);
       else delete ev.repeatUntil;
       if (roomChanged || removed) {
@@ -9067,6 +9867,33 @@ class MockImpl {
     return id;
   }
 }
+
+// ---------------------------------------------------------------- office (ADR-0143)
+
+const OFFICE_MIME: Record<string, string> = {
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+};
+
+/** The server's format map (apps/server/internal/office/formats.go), as the mock serves it. */
+const OFFICE_FORMATS = (
+  [
+    ['docx', 'word', OfficeCapability.EDIT, '', false],
+    ['xlsx', 'cell', OfficeCapability.EDIT, '', false],
+    ['pptx', 'slide', OfficeCapability.EDIT, '', false],
+    ['odt', 'word', OfficeCapability.EDIT, '', true],
+    ['ods', 'cell', OfficeCapability.EDIT, '', true],
+    ['odp', 'slide', OfficeCapability.EDIT, '', true],
+    ['rtf', 'word', OfficeCapability.EDIT, '', true],
+    ['csv', 'cell', OfficeCapability.EDIT, '', true],
+    ['txt', 'word', OfficeCapability.EDIT, '', true],
+    ['doc', 'word', OfficeCapability.CONVERT, 'docx', false],
+    ['xls', 'cell', OfficeCapability.CONVERT, 'xlsx', false],
+    ['ppt', 'slide', OfficeCapability.CONVERT, 'pptx', false],
+    ['pdf', 'pdf', OfficeCapability.VIEW, '', false],
+  ] as const
+).map(([extension, documentType, capability, convertTo, lossy]) => create(OfficeFormatSchema, { extension, documentType, capability, convertTo, lossy }));
 
 // ---------------------------------------------------------------- CLI
 

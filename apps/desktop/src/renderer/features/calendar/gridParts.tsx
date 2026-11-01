@@ -33,12 +33,13 @@ export function blockBox(top: number, height: number, col: number, cols: number,
   return { ...box, left: `calc(min(${(col / cols) * 100}%, (100% - ${w}) * ${col / (cols - 1)}) + 2px)`, width: `calc(${w} - 4px)` };
 }
 
-export const HourScale = memo(function HourScale(): ReactNode {
+/** `primary`: extra zone columns stand beside it (board #85) — the main scale reads a step stronger. */
+export const HourScale = memo(function HourScale({ primary = false }: { primary?: boolean }): ReactNode {
   useLocale();
   return (
     <div className={cx(GUTTER, 'relative mt-2 shrink-0 select-none')} aria-hidden style={{ height: 24 * HOUR_PX }}>
       {Array.from({ length: 23 }, (_, i) => i + 1).map((h) => (
-        <span key={h} className="absolute right-2 -translate-y-1/2 text-micro tabular-nums text-faint" style={{ top: h * HOUR_PX }}>
+        <span key={h} className={cx('absolute right-2 -translate-y-1/2 text-micro tabular-nums', primary ? 'text-muted' : 'text-faint')} style={{ top: h * HOUR_PX }}>
           {formatMinutes(h * 60)}
         </span>
       ))}

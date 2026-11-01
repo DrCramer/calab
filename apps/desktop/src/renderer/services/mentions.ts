@@ -11,26 +11,33 @@ import { t } from '../i18n';
 const PAGE = 30;
 
 /**
- * Mentions inbox history (GET /api/me/mentions). Without `older` it fetches the newest page
- * (merged with what is known, so live mentions and history never duplicate); `older` pages on.
+ * Mentions inbox history (ADR-0141): GET /api/me/mentions and GET /api/me/task-notices, side by
+ * side. Without `older` it fetches the newest page of each (merged with what is known, so live
+ * items and history never duplicate); `older` pages on whichever list has more.
  */
 export async function loadMentions(older = false): Promise<void> {
   const inbox = useInbox.getState();
   if (inbox.loading) return;
   const before = older ? inbox.items.at(-1)?.id : undefined;
-  if (older && !before) return;
+  const noticesBefore = older ? inbox.noticesCursor : undefined;
+  const mentions = !older || (inbox.hasMore && !!before);
+  const notices = !older || (inbox.noticesHasMore && !!noticesBefore);
+  if (!mentions && !notices) return;
   inbox.setLoading(true);
-  try {
-    const res = await api.me.mentions({ limit: PAGE, ...(before ? { before } : {}) });
-    // The list only: badges come from the server-counted read states (READY mention_count), not
-    // from this history — seeding them from it badged the open room (review N7).
-    useInbox.getState().addPage(res.messages, res.hasMore, older);
-  } catch (e) {
-    log.warn('load mentions failed', e);
-    if (!useInbox.getState().loaded) useInbox.getState().addPage([], false, false);
-  } finally {
-    useInbox.getState().setLoading(false);
-  }
+  const [m, n] = await Promise.allSettled([
+    mentions ? api.me.mentions({ limit: PAGE, ...(before ? { before } : {}) }) : null,
+    notices ? api.me.taskNotices({ limit: PAGE, ...(noticesBefore ? { before: noticesBefore } : {}) }) : null,
+  ]);
+  const s = useInbox.getState();
+  // The notices first: addPage marks the inbox loaded, and a first page sets both «has more».
+  if (n.status === 'fulfilled' && n.value) s.addNotices(n.value.entries, n.value.hasMore, older, n.value.nextBefore);
+  else if (n.status === 'rejected') log.warn('load task notices failed', n.reason);
+  // The list only: badges come from the server-counted read states (READY mention_count), not
+  // from this history — seeding them from it badged the open room (review N7).
+  if (m.status === 'fulfilled' && m.value) s.addPage(m.value.messages, m.value.hasMore, older);
+  else if (m.status === 'rejected') log.warn('load mentions failed', m.reason);
+  if (!useInbox.getState().loaded) useInbox.getState().addPage([], false, false);
+  useInbox.getState().setLoading(false);
 }
 
 /**

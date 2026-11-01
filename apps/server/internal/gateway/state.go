@@ -267,6 +267,9 @@ func loadState(ctx context.Context, q *sqlc.Queries, wid uuid.UUID) (*wsState, e
 	for _, m := range members {
 		st.setMember(m.UserID, perm.Role(m.Role), perm.IDStrings(m.RoleIds))
 		st.setBot(m.UserID, m.IsBot)
+		if m.BotOwner != nil {
+			st.setBotOwner(m.UserID, *m.BotOwner)
+		}
 	}
 	if err := loadBoards(ctx, q, wid, st); err != nil {
 		return nil, err

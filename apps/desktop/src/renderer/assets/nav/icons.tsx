@@ -137,26 +137,55 @@ export function DiskActiveIcon({ className }: IconProps): ReactNode {
   );
 }
 
-/** «Холст» (ADR-0126 §5): a board with a sticky note and a connector to a shape; outline at rest. */
+// «Холст» (ADR-0126 §5, redrawn 24.10): a triangle, a circle and a square on the same 3…41 frame as
+// the rest of the set — soft corners (radius 3 on the square, rounded apex/base on the triangle) and
+// 2-unit lines. Both states share one silhouette: the filled one is the same shapes with the same
+// 2-unit stroke painted solid, so switching idle/active doesn't jump.
+const CANVAS_TRIANGLE =
+  'M23.2 6.9L30.8 19.1Q32 21 29.5 21L14.5 21Q12 21 13.2 19.1L20.8 6.9Q22 5 23.2 6.9Z';
+
+/** «Холст»: triangle, square and circle; outline at rest. */
 export function CanvasIdleIcon({ className }: IconProps): ReactNode {
   return (
     <svg viewBox="0 0 44 44" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden focusable="false">
-      <rect x="4" y="6" width="36" height="32" rx="5" />
-      <rect x="10" y="12" width="11" height="10" rx="2" />
-      <circle cx="31" cy="29" r="4.5" />
-      <path d="M21 17H27C29.21 17 31 18.79 31 21V24.5" />
+      <path d={CANVAS_TRIANGLE} />
+      <rect x="4" y="25" width="15" height="15" rx="3" />
+      <circle cx="32" cy="32.5" r="7.5" />
     </svg>
   );
 }
 
-/** «Холст», filled: the board solid with the sticky note and the shape cut out, the connector between them. */
+/** «Холст», filled: the same three shapes, solid. */
 export function CanvasActiveIcon({ className }: IconProps): ReactNode {
   return (
-    <svg viewBox="0 0 44 44" fill="currentColor" className={className} aria-hidden focusable="false">
-      <path
-        fillRule="evenodd"
-        d="M9 5C5.69 5 3 7.69 3 11V33C3 36.31 5.69 39 9 39H35C38.31 39 41 36.31 41 33V11C41 7.69 38.31 5 35 5H9ZM12 11C10.9 11 10 11.9 10 13V21C10 22.1 10.9 23 12 23H19C20.1 23 21 22.1 21 21V13C21 11.9 20.1 11 19 11H12ZM31 24C28.52 24 26.5 26.02 26.5 28.5C26.5 30.98 28.52 33 31 33C33.48 33 35.5 30.98 35.5 28.5C35.5 26.02 33.48 24 31 24ZM22 16C21.45 16 21 16.45 21 17C21 17.55 21.45 18 22 18H26C27.1 18 28 18.9 28 20V21H30V20C30 17.79 28.21 16 26 16H22Z"
-      />
+    <svg viewBox="0 0 44 44" fill="currentColor" stroke="currentColor" strokeWidth={2} strokeLinejoin="round" className={className} aria-hidden focusable="false">
+      <path d={CANVAS_TRIANGLE} />
+      <rect x="4" y="25" width="15" height="15" rx="3" />
+      <circle cx="32" cy="32.5" r="7.5" />
+    </svg>
+  );
+}
+
+// «Телефония» (ADR-0137 §5): a handset on the same 3…41 frame with the set's 2-unit line (the
+// Lucide handset scaled ×1.8, its stroke scaled back to 2 units); filled when open, one silhouette.
+const PHONE_HANDSET =
+  'M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384';
+const PHONE_FIT = 'translate(0.4 0.4) scale(1.8)';
+
+/** «Телефония»: a handset; outline at rest. */
+export function PhoneIdleIcon({ className }: IconProps): ReactNode {
+  return (
+    <svg viewBox="0 0 44 44" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden focusable="false">
+      <path d={PHONE_HANDSET} transform={PHONE_FIT} strokeWidth={1.11} />
+    </svg>
+  );
+}
+
+/** «Телефония», filled: the same handset, solid. */
+export function PhoneActiveIcon({ className }: IconProps): ReactNode {
+  return (
+    <svg viewBox="0 0 44 44" fill="currentColor" stroke="currentColor" strokeLinejoin="round" className={className} aria-hidden focusable="false">
+      <path d={PHONE_HANDSET} transform={PHONE_FIT} strokeWidth={1.11} />
     </svg>
   );
 }

@@ -142,6 +142,41 @@ export function createMetaBuilder(): MetaBuilder {
   };
 }
 
+/** A comment (canvas, meeting) as the grouping sees it: CommentRow.tsx draws it like a chat message. */
+export interface GroupItem {
+  key: string;
+  authorId: string;
+  ms: number;
+}
+
+/**
+ * The chat's grouping for comments (owner 23.10: comments look like the chat): date pills and runs
+ * of one author within GROUP_MS on one day; no «new» pill. Metas keep their objects per key while
+ * unchanged (`cache`), so memo rows re-render only where grouping changed.
+ */
+export function groupMetas(items: readonly GroupItem[], cache: Map<string, RowMeta>, firstDay = true): RowMeta[] {
+  const day = items.map((c) => new Date(c.ms).toDateString());
+  const joins = (i: number): boolean => {
+    const c = items[i];
+    const p = items[i - 1];
+    if (!c || !p || p.authorId !== c.authorId || day[i] !== day[i - 1]) return false;
+    const dt = c.ms - p.ms;
+    return dt >= 0 && dt < GROUP_MS;
+  };
+  const out = items.map((c, i): RowMeta => {
+    const m: RowMeta = { day: i === 0 ? firstDay : day[i] !== day[i - 1], isNew: false, first: !joins(i), last: !joins(i + 1) };
+    const old = cache.get(c.key);
+    const v = old && same(old, m) ? old : m;
+    cache.set(c.key, v);
+    return v;
+  });
+  if (cache.size > items.length * 2 + 64) {
+    const keep = new Set(items.map((c) => c.key));
+    for (const k of cache.keys()) if (!keep.has(k)) cache.delete(k);
+  }
+  return out;
+}
+
 /** Stable colour index (0..7) of a user; must match components/Avatar `colorOf`. */
 export function userColorIndex(id: string): number {
   let h = 0;

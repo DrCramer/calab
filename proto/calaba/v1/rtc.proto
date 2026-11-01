@@ -80,4 +80,6 @@ message UpdateVoiceSelfRequest {
   optional bool musician = 3;
   // Push-to-talk input mode of this device (ADR-0130, VoiceState.ptt). Sent on a mode change only.
   optional bool ptt = 4;
+  // This device parked the room for a phone call (ADR-0133, VoiceState.on_phone).
+  optional bool on_phone = 5;
 }

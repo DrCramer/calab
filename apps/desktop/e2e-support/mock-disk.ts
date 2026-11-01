@@ -136,6 +136,14 @@ export class DiskMock {
     if (!(bits & bit)) throw bits & V ? forbidden('missing disk permission') : notFound();
   }
 
+  /** «Редактирует Имя» changed (ADR-0143, the server's disk.Announce): the item's editors, as a DISK_ITEM_UPSERT. */
+  setEditors(id: string, editorIds: string[]): void {
+    const it = this.items.get(id);
+    if (!it) return;
+    it.editorIds = editorIds;
+    this.emit(it);
+  }
+
   private emit(it: DiskItem, removed = false): void {
     this.d.emit(it.workspaceId, it, removed, (u) => (this.bitsOf(it, it.workspaceId, u) & V) !== 0n);
   }

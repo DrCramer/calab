@@ -16,7 +16,7 @@ import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { AvatarButtons } from '../../components/AvatarPicker';
 import { RoomIcon } from '../../components/RoomIcon';
-import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Tip, Toggle, cx } from '../../components/ui';
+import { Button, Card, Field, IconButton, Input, Modal, Row, Select, Stepper, Tip, Toggle, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import { audioTierLabel } from '../../lib/audioTierLabel';
@@ -58,6 +58,7 @@ import { RoomLinkTab } from '../people/RoomLinkTab';
 import { RoomAccessCard } from './RoomAccessCard';
 import { AudioTierHint, AudioTierOptions } from './AudioTierOptions';
 import { capAudioKbps } from '../../lib/plan';
+import { joinLeaveSoundMax } from '../../lib/media/joinLeaveSound';
 import { reportPlanError } from '../../services/plan';
 
 const err = (e: unknown): string => errorText(e);
@@ -282,17 +283,19 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
   const wsDefaults = useWorkspaces((s) => (room ? s.byId[room.workspaceId]?.ws.mediaDefaults : undefined));
   const audioCap = useWorkspaces((s) => (room ? (s.byId[room.workspaceId]?.ws.plan?.limits?.audioTierMaxKbps ?? 0) : 0));
   // media_override replaces the whole override: always send every field.
-  const apply = (patch: { bitrate?: number | ''; preset?: number | ''; streams?: number | ''; cameras?: number | '' }): void => {
+  const apply = (patch: { bitrate?: number | ''; preset?: number | ''; streams?: number | ''; cameras?: number | ''; joinLeave?: number | '' }): void => {
     const bitrate = patch.bitrate !== undefined ? patch.bitrate : (ov?.audioBitrateKbps ?? '');
     const preset = patch.preset !== undefined ? patch.preset : (ov?.maxStreamPreset ?? '');
     const streams = patch.streams !== undefined ? patch.streams : (ov?.maxStreams ?? '');
     const cameras = patch.cameras !== undefined ? patch.cameras : (ov?.cameraLimit ?? '');
+    const joinLeave = patch.joinLeave !== undefined ? patch.joinLeave : (ov?.joinLeaveSoundMax ?? '');
     void patchRoom(roomId, {
       mediaOverride: create(RoomMediaOverrideSchema, {
         ...(bitrate !== '' ? { audioBitrateKbps: bitrate } : {}),
         ...(preset !== '' ? { maxStreamPreset: preset } : {}),
         ...(streams !== '' ? { maxStreams: streams } : {}),
         ...(cameras !== '' ? { cameraLimit: cameras } : {}),
+        ...(joinLeave !== '' ? { joinLeaveSoundMax: joinLeave } : {}),
       }),
     }).catch((e: unknown) => {
       if (!reportPlanError(e, room?.workspaceId)) toast.error(err(e));
@@ -350,6 +353,35 @@ function MediaTab({ roomId }: { roomId: string }): ReactNode {
             </option>
           ))}
         </Select>
+      </Row>
+      {/* A stepper over the effective value; the workspace value in the hint, «Как в пространстве»
+          resets an override back to it. */}
+      <Row
+        label={t('media.joinLeaveSoundMax')}
+        htmlFor={`join-leave-${roomId}`}
+        hint={
+          <>
+            {t('media.joinLeaveSoundMaxHint')}
+            <br />
+            {t('media.inheritHint', { v: String(joinLeaveSoundMax(wsDefaults)) })}
+          </>
+        }
+      >
+        <div className="flex items-center gap-2">
+          {ov?.joinLeaveSoundMax !== undefined ? (
+            <Button variant="ghost" size="sm" onClick={() => apply({ joinLeave: '' })}>
+              {t('media.inherit')}
+            </Button>
+          ) : null}
+          <Stepper
+            id={`join-leave-${roomId}`}
+            label={t('media.joinLeaveSoundMax')}
+            value={ov?.joinLeaveSoundMax ?? joinLeaveSoundMax(wsDefaults)}
+            min={0}
+            max={99}
+            onCommit={(n) => apply({ joinLeave: n })}
+          />
+        </div>
       </Row>
     </Card>
     <RecordingCard roomId={roomId} />

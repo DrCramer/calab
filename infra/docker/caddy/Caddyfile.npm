@@ -1,0 +1,36 @@
+{
+	import log.caddy
+}
+
+:8080 {
+	# Preserve upstream's handling of identity and calendar credentials in URLs.
+	log {
+		output discard
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy same-origin
+		Permissions-Policy "microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' wss://rtc.cramerstation.ru https://rtc.cramerstation.ru https://turn.cramerstation.ru; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-src https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+	@api path /api/* /gateway /healthz
+	handle @api {
+		reverse_proxy {$NPM_HOST_IP}:13000
+	}
+	handle {
+		root * /srv/web
+		@manifest path *.webmanifest
+		header @manifest Content-Type "application/manifest+json"
+		@hashed {
+			path /assets/*
+			file
+		}
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

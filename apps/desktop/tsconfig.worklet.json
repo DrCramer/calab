@@ -13,6 +13,7 @@
   "include": [
     "src/renderer/lib/media/worklets/**/*",
     "src/renderer/lib/media/micReport.ts",
-    "src/renderer/lib/media/denoiseSleep.ts"
+    "src/renderer/lib/media/denoiseSleep.ts",
+    "src/renderer/lib/media/frameFifo.ts"
   ]
 }

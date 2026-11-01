@@ -305,20 +305,15 @@ const es: Dict = {
     },
     web: 'O abre la {link} en Chrome, Edge, Safari o Firefox, también en el móvil. Las apps para iPhone y Android llegan pronto.',
     webLink: 'versión web',
-    whatsNew: 'Novedades:',
-    changelog: 'Registro de cambios',
-    releases: 'Versiones en GitHub',
   },
   pricing: {
     live: {
       perMonth: '≈ {amount} por persona en 30 días',
-      connect: 'Activar en la app',
+      buy: 'Comprar',
       request: 'Bajo consulta',
       switchLabel: 'Moneda de los precios',
       currencyRub: '₽',
       currencyUsd: '$',
-      pricesInRub: 'Precios en rublos rusos.',
-      pricesInUsd: 'Precios en dólares estadounidenses.',
       contactNote: 'Precios en dólares estadounidenses. Los planes de pago se activan bajo consulta.',
     },
     perSeatDay: 'por persona y día',
@@ -326,8 +321,11 @@ const es: Dict = {
     offerLink: 'Condiciones de pago y reembolso (en inglés)',
     eyebrow: 'Precios',
     title: 'Free, Team, Business y Enterprise',
+    accent: 'Business y Enterprise',
     lead: 'Empieza gratis. ¿Necesitas más? Team o Business en la nube, o Enterprise: Calab en tu propio servidor.',
-    startHere: 'Empieza aquí',
+    popular: 'Popular',
+    /** Footnote for the «*» on Business limits (owner, 24.10). */
+    quotaNote: 'Las cuotas pueden ampliarse a petición.',
     plans: {
       free: { name: 'Free', price: 'Gratis', note: 'Hasta 50 miembros' },
       team: { name: 'Team', price: '$0.10', note: 'Hasta 100 miembros' },
@@ -337,7 +335,6 @@ const es: Dict = {
     cta: {
       web: 'Web',
       download: 'Descargar',
-      contact: 'Contactar',
       license: 'Condiciones de la licencia',
     },
     table: {
@@ -361,6 +358,7 @@ const es: Dict = {
         boards: "Tableros de tareas",
         tempRooms: "Salas temporales por persona (hasta 30 días)",
         wiki: "Páginas de la wiki",
+        canvases: "Lienzos",
         calendar: "Calendario",
         caldav: "CalDAV",
         musician: "Modo músico",
@@ -392,6 +390,7 @@ const es: Dict = {
         boards: ["3", "30", "50", "∞"],
         tempRooms: ["3", "10", "50", "∞"],
         wiki: ["10", "50", "500", "∞"],
+        canvases: ["3", "30", "100", "∞"],
         calendar: ["✓", "✓", "✓", "✓"],
         caldav: ["—", "✓", "✓", "✓"],
         musician: ["—", "✓", "✓", "✓"],
@@ -419,6 +418,7 @@ const es: Dict = {
     contactLink: 'formulario de contacto',
     eyebrow: 'Preguntas',
     title: 'Lo esencial, en breve',
+    lead: 'Preguntas frecuentes',
     items: {
       server: {
         q: "¿Qué necesito para un servidor propio?",

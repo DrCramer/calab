@@ -46,6 +46,18 @@ type botRouteGroup struct {
 // decision; an unlisted pattern is denied to bots at run time. tools/gen-bot-routes.ts reads
 // this table for the docs (_routes.json): keep one route per line.
 var botRouteGroups = []botRouteGroup{
+	{access: botPublic, why: "calendar subscriptions: a revocable purpose-bound capability with fresh owner and workspace checks", routes: []string{
+		"GET /api/calendar-feed.ics",
+		"GET /api/calendar-connect",
+	}},
+	{access: botDeny, why: "personal calendar export and subscription credentials require a human session", routes: []string{
+		"GET /api/workspaces/{id}/calendar.ics",
+		"GET /api/events/{id}/calendar.ics",
+		"GET /api/workspaces/{id}/calendar-subscription",
+		"POST /api/workspaces/{id}/calendar-subscription",
+		"PUT /api/workspaces/{id}/calendar-subscription",
+		"DELETE /api/workspaces/{id}/calendar-subscription",
+	}},
 	// ---------------------------------------------------------------- public
 	{access: botPublic, why: "outside the API or before authentication; /gateway takes IDENTIFY with the bot token", routes: []string{
 		"GET /healthz",
@@ -74,6 +86,8 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/public/disk/{code}",
 		"GET /api/public/disk/{code}/content",
 		"GET /api/public/disk/{code}/thumbnail",
+		"GET /api/office/file/{token}",
+		"POST /api/office/callback/{token}",
 		"GET /api/public/wiki/{code}",
 		"GET /api/public/wiki/{code}/state",
 		"GET /api/public/wiki/{code}/files/{fileId}",
@@ -89,6 +103,9 @@ var botRouteGroups = []botRouteGroup{
 	}},
 	{access: botPublic, why: "the SIP registration agent (ADR-0121): its own bearer token (SIPREG_AGENT_TOKEN), never a user's or a bot's", routes: []string{
 		"GET /api/internal/sipreg-agent",
+	}},
+	{access: botPublic, why: "calendar widgets (ADR-0145): the handler accepts only a purpose-bound widget grant for a live human session, never a user's access token or a bot token", routes: []string{
+		"GET /api/calendar-widget",
 	}},
 	{access: botPublic, why: "signed deliveries of LiveKit, the payment providers and the repository hosting; public offers and the checkout return page", routes: []string{
 		"POST /api/rtc/webhook",
@@ -169,6 +186,7 @@ var botRouteGroups = []botRouteGroup{
 	{access: botAllow, why: "messages, DMs (members of shared workspaces, unless blocked), files and search by VIEW_ROOM / SEND_MESSAGES / MANAGE_MESSAGES (ADR-0033, ADR-0062)", routes: []string{
 		"GET /api/rooms/{id}/messages",
 		"GET /api/rooms/{id}/messages/{messageId}",
+		"GET /api/rooms/{id}/messages/{messageId}/readers", // the author only (ADR-0140)
 		"POST /api/rooms/{id}/messages",
 		"POST /api/rooms/{id}/messages/{mid}/forward",
 		"PATCH /api/messages/{id}",
@@ -306,7 +324,10 @@ var botRouteGroups = []botRouteGroup{
 		"DELETE /api/task-milestones/{id}",
 		"GET /api/boards/{id}/rules",
 		"GET /api/rules/{id}/runs",
+		"POST /api/boards/{id}/releases", // board task #101: a CI bot with EDIT_TASKS
+		"GET /api/boards/{id}/releases",
 		"GET /api/me/tasks",
+		"GET /api/me/task-notices",
 		"GET /api/workspaces/{id}/tasks/search",
 	}},
 	{access: botAllow, why: "board forms: MANAGE_BOARD to manage, the form's access list to submit (a closed form needs the bot in allowedUserIds)", routes: []string{
@@ -323,6 +344,7 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/workspaces/{id}/disk/items",
 		"POST /api/workspaces/{id}/disk/folders",
 		"POST /api/workspaces/{id}/disk/upload",
+		"POST /api/workspaces/{id}/disk/import",
 		"POST /api/workspaces/{id}/disk/trash/empty",
 		"GET /api/workspaces/{id}/disk/usage",
 		"GET /api/workspaces/{id}/disk/activity",
@@ -401,13 +423,14 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/boards/{id}/git",
 		"PUT /api/boards/{id}/git",
 		"DELETE /api/boards/{id}/git",
+		"PATCH /api/boards/{id}/git",
 		"GET /api/boards/{id}/webhook",
 		"PUT /api/boards/{id}/webhook",
 		"DELETE /api/boards/{id}/webhook",
 		"POST /api/boards/{id}/webhook/ping",
 		"PUT /api/boards/{id}/permissions",
 	}},
-	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0109: workspace integrations by MANAGE_INTEGRATIONS — web apps (members read them), GPTunneL pairing, telephony settings and test (the provider password is never returned) and the exchange — internal numbers, groups, voice menus (ADR-0117; the list of numbers is open to every member but guests), the live calls (ADR-0128; numbers masked without VIEW_JOURNALS), the AI provider and its check (CBF-60; the key is never returned); the calls journal by VIEW_JOURNALS", routes: []string{
+	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0109: workspace integrations by MANAGE_INTEGRATIONS — web apps (members read them), GPTunneL pairing, telephony settings and test (the provider password is never returned) and the exchange — internal numbers, groups, voice menus (ADR-0117; the list of numbers is open to every member but guests), the live calls (ADR-0128; numbers masked without VIEW_JOURNALS), the AI provider and its check (CBF-60; the key is never returned); the calls journal by VIEW_JOURNALS; the call journal of the telephony section (ADR-0137: the bot's own calls, all by VIEW_JOURNALS) and the telephony policy (retention, outbound limits; MANAGE_INTEGRATIONS); the working-hours schedule of the entry point (ADR-0138, MANAGE_INTEGRATIONS)", routes: []string{
 		"GET /api/workspaces/{id}/apps",
 		"POST /api/workspaces/{id}/apps",
 		"PATCH /api/workspace-apps/{appId}",
@@ -420,6 +443,11 @@ var botRouteGroups = []botRouteGroup{
 		"PUT /api/workspaces/{id}/sip",
 		"PUT /api/workspaces/{id}/sip/inbound",
 		"PUT /api/workspaces/{id}/sip/recording",
+		"PUT /api/workspaces/{id}/sip/policy",
+		"PUT /api/workspaces/{id}/sip/schedule",
+		"GET /api/workspaces/{id}/sip/journal",
+		"GET /api/workspaces/{id}/sip/journal/{cid}",
+		"POST /api/workspaces/{id}/sip/journal/seen",
 		"POST /api/workspaces/{id}/sip/test",
 		"POST /api/workspaces/{id}/sip/extensions",
 		"PATCH /api/workspaces/{id}/sip/extensions/{eid}",
@@ -446,6 +474,32 @@ var botRouteGroups = []botRouteGroup{
 		"DELETE /api/sip/inbound/{cid}",
 		"POST /api/workspaces/{id}/sip/calls/{cid}/transfer",
 		"DELETE /api/workspaces/{id}/sip/calls/{cid}/transfer",
+	}},
+	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0137 §2: the telephony section's phone book — read, create and edit by whoever sees the section (MANAGE_INTEGRATIONS, or telephony on and PLACE_CALLS, VIEW_JOURNALS or an internal number), delete by the author or MANAGE_INTEGRATIONS, CSV import / export by MANAGE_INTEGRATIONS (a CRM sync); an employee's phone behind a number is never told to a bot; ending a personal call (§3) is the caller's or MANAGE_INTEGRATIONS'", routes: []string{
+		"GET /api/workspaces/{id}/sip/contacts",
+		"POST /api/workspaces/{id}/sip/contacts",
+		"GET /api/workspaces/{id}/sip/contacts/export.csv",
+		"POST /api/workspaces/{id}/sip/contacts/import",
+		"GET /api/workspaces/{id}/sip/contacts/{cid}",
+		"PATCH /api/workspaces/{id}/sip/contacts/{cid}",
+		"DELETE /api/workspaces/{id}/sip/contacts/{cid}",
+		"DELETE /api/workspaces/{id}/sip/calls/{cid}",
+	}},
+	{access: botDeny, why: "ADR-0143: the office editor is a person's session in a browser (the Document Server's frame, co-editing presence); a bot reads and writes the same files through the Disk API (by path and sha256), never through an editor session", routes: []string{
+		"GET /api/office/capabilities",
+		"GET /api/office/config",
+		"POST /api/disk/items/{id}/office/convert",
+		"POST /api/workspaces/{id}/office/convert",
+		"POST /api/workspaces/{id}/office/create",
+	}},
+	{access: botDeny, why: "ADR-0139: saved task searches are a person's left-panel filters in the app; a bot searches with GET …/tasks/search directly", routes: []string{
+		"GET /api/workspaces/{id}/task-searches",
+		"POST /api/workspaces/{id}/task-searches",
+		"PATCH /api/workspaces/{id}/task-searches/{sid}",
+		"DELETE /api/workspaces/{id}/task-searches/{sid}",
+	}},
+	{access: botDeny, why: "ADR-0137 §3: a personal phone call puts the caller's own LiveKit client into the call's room — a bot has none; bots call a number from a voice room (POST /api/rooms/{id}/calls)", routes: []string{
+		"POST /api/workspaces/{id}/sip/calls",
 	}},
 	{access: botAllow, onBehalf: onBehalfClosed, why: "ADR-0109: workspace content — camera backgrounds (MANAGE_WORKSPACE; members read them), the achievements catalog (MANAGE_WORKSPACE) and grants (MANAGE_MEMBERS; never to a bot or oneself)", routes: []string{
 		"GET /api/workspaces/{id}/backgrounds",
@@ -657,6 +711,7 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/workspaces/{id}/members/birthdays",
 		"PATCH /api/workspaces/{id}/members/{userId}/birthday",
 		"GET /api/me/events/today",
+		"POST /api/me/calendar-widget",
 		"GET /api/me/caldav",
 		"POST /api/me/caldav",
 		"PUT /api/me/caldav",
@@ -747,6 +802,7 @@ var botAudited = map[string]bool{
 	"DELETE /api/rules/{id}":                                              true,
 	"PUT /api/boards/{id}/git":                                            true,
 	"DELETE /api/boards/{id}/git":                                         true,
+	"PATCH /api/boards/{id}/git":                                          true,
 	"PUT /api/boards/{id}/webhook":                                        true,
 	"DELETE /api/boards/{id}/webhook":                                     true,
 	"PUT /api/boards/{id}/permissions":                                    true,
@@ -759,6 +815,8 @@ var botAudited = map[string]bool{
 	"PUT /api/workspaces/{id}/sip/inbound":                                true,
 	"PUT /api/workspaces/{id}/sip/recording":                              true,
 	"POST /api/workspaces/{id}/sip/test":                                  true, // a real call billed to the workspace
+	"POST /api/workspaces/{id}/sip/contacts/import":                       true, // ADR-0137: a bulk write of personal data
+	"GET /api/workspaces/{id}/sip/contacts/export.csv":                    true, // ADR-0137: the whole phone book leaves
 	"POST /api/workspaces/{id}/sip/extensions":                            true,
 	"PATCH /api/workspaces/{id}/sip/extensions/{eid}":                     true,
 	"DELETE /api/workspaces/{id}/sip/extensions/{eid}":                    true,
@@ -885,6 +943,8 @@ var memberClosed = map[string]bool{
 	"PUT /api/disk/items/{id}/permissions":                 true,
 	"PUT /api/workspaces/{id}/disk/settings":               true,
 	"PUT /api/workspaces/{id}/wiki/settings":               true,
+	// ADR-0140: who read the member's messages is other people's reading, not the member's data.
+	"GET /api/rooms/{id}/messages/{messageId}/readers": true,
 }
 
 // onBehalfAllowedFor is onBehalfAllowed for id: a member's consent (ADR-0111) also closes

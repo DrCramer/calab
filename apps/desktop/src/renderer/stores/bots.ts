@@ -8,7 +8,9 @@ import { create } from 'zustand';
  *   - `cards` — bot cards by user id (description, commands; owner only when the list gave it);
  *   - `commands` — composer hints per room (GET /api/rooms/{id}/bot-commands), refetched after
  *     COMMANDS_TTL_MS or when a BOT_* event / a bot joining or leaving drops them;
- *   - `blocked` — bots I blocked (GET /api/me/blocked-bots), null until loaded.
+ *   - `blocked` — bots I blocked (GET /api/me/blocked-bots), null until loaded;
+ *   - `mine` — the bots I own (READY.my_bot_ids, then BOT_CREATE / BOT_UPDATE with my id as the
+ *     owner): their tasks are mine for author rights (isTaskAuthor, ADR-0151).
  * BOT_CREATE / BOT_UPDATE / BOT_DELETE patch it (services/bots.ts).
  */
 
@@ -25,6 +27,7 @@ interface BotsState {
   cards: Record<string, Bot>;
   commands: Record<string, RoomCommands>;
   blocked: Record<string, true> | null;
+  mine: ReadonlySet<string>;
   setWorkspace: (workspaceId: string, bots: readonly Bot[]) => void;
   /** A bot joined or changed (BOT_CREATE / BOT_UPDATE, or a mutation's response). */
   upsert: (workspaceId: string, bot: Bot) => void;
@@ -36,6 +39,10 @@ interface BotsState {
   dropCommands: () => void;
   setBlocked: (ids: readonly string[]) => void;
   setBlockedOne: (botUserId: string, blocked: boolean) => void;
+  /** READY.my_bot_ids: replaces the set. */
+  setMine: (ids: readonly string[]) => void;
+  /** A bot of mine appeared (BOT_CREATE / BOT_UPDATE with owner_user_id = me). */
+  addMine: (botUserId: string) => void;
   reset: () => void;
 }
 
@@ -62,6 +69,7 @@ export const useBots = create<BotsState>()((set) => ({
   cards: {},
   commands: {},
   blocked: null,
+  mine: new Set(),
   setWorkspace: (workspaceId, bots) =>
     set((s) => {
       const cards = { ...s.cards };
@@ -102,8 +110,13 @@ export const useBots = create<BotsState>()((set) => ({
       else delete next[botUserId];
       return { blocked: next };
     }),
-  reset: () => set({ byWorkspace: {}, cards: {}, commands: {}, blocked: null }),
+  setMine: (ids) => set({ mine: new Set(ids) }),
+  addMine: (botUserId) => set((s) => (s.mine.has(botUserId) ? {} : { mine: new Set([...s.mine, botUserId]) })),
+  reset: () => set({ byWorkspace: {}, cards: {}, commands: {}, blocked: null, mine: new Set() }),
 }));
+
+/** The bots I own (READY.my_bot_ids): their tasks count as mine for author rights (ADR-0151). */
+export const myBotIds = (): ReadonlySet<string> => useBots.getState().mine;
 
 /** Cached hints of a room are still fresh (not dropped, younger than the TTL). */
 export function commandsFresh(entry: RoomCommands | undefined, now = Date.now()): boolean {

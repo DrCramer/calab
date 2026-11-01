@@ -32,4 +32,58 @@ function parseWebOrigin(raw) {
   return url.origin;
 }
 
-module.exports = { WebOriginError, parseWebOrigin };
+/** A DNS hostname as `URL.hostname` prints it: lowercase LDH labels, a letter in the last one (no IPs). */
+const HOSTNAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?=[a-z0-9-]*[a-z])[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/**
+ * The hosts whose https links open the app (ADR-0142): universal links on iOS, verified app links
+ * on Android, and the hosts the app accepts an incoming https link from. `raw` is the
+ * space-separated `EXPO_PUBLIC_CALAB_LINK_HOSTS` (read by app.config.ts for the native config and
+ * inlined into the bundle for App.tsx); absent or blank, it is the host of `origin` alone, or no
+ * hosts at all without an origin. Every entry must be a bare lowercase hostname — no scheme, port,
+ * path, wildcard or IP — otherwise this throws, so a typo fails the build.
+ * @param {string | undefined} raw
+ * @param {string | null} [origin]
+ * @returns {string[]}
+ */
+function parseLinkHosts(raw, origin = null) {
+  const names = (raw ?? '').split(/[ \t\n]+/).filter(Boolean);
+  if (names.length === 0) {
+    if (!origin) return [];
+    const hostname = new URL(origin).hostname;
+    // The same check as an explicit host: an IP or a non-DNS origin (`parseWebOrigin` does not
+    // reject those) must fail the build too, not reach native config unvalidated (review follow-up).
+    if (!HOSTNAME.test(hostname)) throw new Error(`EXPO_PUBLIC_CALAB_URL: ${JSON.stringify(hostname)} is not a lowercase hostname`);
+    return [hostname];
+  }
+  for (const name of names) {
+    if (!HOSTNAME.test(name)) throw new Error(`EXPO_PUBLIC_CALAB_LINK_HOSTS: ${JSON.stringify(name)} is not a lowercase hostname`);
+  }
+  return [...new Set(names)];
+}
+
+/**
+ * Local defaults; store uploads must supply an identity checked against distribution history.
+ * `androidVersionCode` (CALAB_ANDROID_VERSION_CODE) defaults to `buildNumber`, so one env number
+ * drives both stores unless Android needs to move ahead on its own (Play rejects a re-upload of
+ * the same versionCode).
+ * @param {string} [version]
+ * @param {string} [buildNumber]
+ * @param {string} [androidVersionCode]
+ * @returns {{ version: string; buildNumber: string; versionCode: number }}
+ */
+function parseReleaseIdentity(version = '0.1.0', buildNumber = '1', androidVersionCode) {
+  if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(version) || version.trim() !== version) {
+    throw new Error('CALAB_APP_VERSION must be three non-negative integers (for example 1.2.3)');
+  }
+  if (!/^[1-9][0-9]{0,3}$/.test(buildNumber) || buildNumber.trim() !== buildNumber) {
+    throw new Error('CALAB_IOS_BUILD_NUMBER must be an integer from 1 to 9999');
+  }
+  const versionCodeRaw = androidVersionCode === undefined || androidVersionCode === '' ? buildNumber : androidVersionCode;
+  if (!/^[1-9][0-9]{0,9}$/.test(versionCodeRaw) || versionCodeRaw.trim() !== versionCodeRaw || Number(versionCodeRaw) > 2100000000) {
+    throw new Error('CALAB_ANDROID_VERSION_CODE must be an integer from 1 to 2100000000');
+  }
+  return { version, buildNumber, versionCode: Number(versionCodeRaw) };
+}
+
+module.exports = { WebOriginError, parseWebOrigin, parseLinkHosts, parseReleaseIdentity };

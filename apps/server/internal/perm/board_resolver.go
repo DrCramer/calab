@@ -125,7 +125,8 @@ func (r *Resolver) taskRoom(ctx context.Context, roomID, userID uuid.UUID) (Room
 		return RoomAccess{}, err
 	}
 	live := !ref.TaskArchived // invitations count on live tasks only
-	author := ref.CreatedBy != nil && *ref.CreatedBy == userID
+	// A bot's task: its current owner is an author too (ADR-0151).
+	author := TaskAuthor(ref.CreatedBy, ref.BotOwner, userID)
 	bits := TaskRoom(TaskBits(b, live && ref.Assignee, live && ref.Approver, live && ref.Watcher, live && author), ref.TaskArchived, CommentsOff(b.DisabledFeatures))
 	if b.Archived || bits == 0 {
 		// A member who cannot see the board: the room exists but shows nothing (404 upstream).

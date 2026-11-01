@@ -70,15 +70,17 @@ ON CONFLICT DO NOTHING;
 DELETE FROM member_roles WHERE workspace_id = $1 AND user_id = $2 AND role_id = $3;
 
 -- name: ListWorkspaceMemberRoles :many
--- Every member's built-in role and role ids (highest first) and whether it is a bot: the
--- gateway's workspace state and guest visibility.
+-- Every member's built-in role and role ids (highest first), whether it is a bot and, for a
+-- bot, its owner (ADR-0151: author rights on the bot's tasks): the gateway's workspace state
+-- and guest visibility.
 SELECT m.user_id, m.role,
        coalesce((SELECT array_agg(mr.role_id ORDER BY wr.position DESC)
                  FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
                  WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id), '{}')::uuid[] AS role_ids,
-       u.is_bot
+       u.is_bot, bo.owner_user_id AS bot_owner
 FROM workspace_members m
 JOIN users u ON u.id = m.user_id
+LEFT JOIN bots bo ON bo.user_id = m.user_id AND bo.workspace_id = m.workspace_id
 WHERE m.workspace_id = $1;
 
 -- name: GetMemberAccess :one

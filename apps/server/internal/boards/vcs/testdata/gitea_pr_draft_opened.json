@@ -1,0 +1,18 @@
+{
+  "action": "opened",
+  "number": 4,
+  "pull_request": {
+    "id": 10,
+    "number": 4,
+    "user": {"id": 1, "login": "alice", "username": "alice"},
+    "title": "WIP: FNG-22 Menu",
+    "body": "",
+    "state": "open",
+    "html_url": "https://gitea.example.com/team/site/pulls/4",
+    "merged": false,
+    "head": {"ref": "fng-22-menu"},
+    "base": {"ref": "release/3"}
+  },
+  "repository": {"id": 2, "full_name": "team/site", "html_url": "https://gitea.example.com/team/site"},
+  "sender": {"login": "alice"}
+}

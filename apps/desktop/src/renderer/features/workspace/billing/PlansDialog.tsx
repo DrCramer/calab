@@ -28,6 +28,7 @@ import { currencyOf, offeredMethods, requestId, topupLimits } from '../../../lib
 import { formatMinor, formatMoney, minorOf } from '../../../lib/billing/money';
 import {
   IDENTITY_FEATURES,
+  PLAN_LINK_TIER,
   TIERS,
   clampSeats,
   currentTier,
@@ -40,6 +41,7 @@ import {
   seatsRange,
   seatsTopup,
   type IdentityFeature,
+  type PlanLink,
   type PlanStep,
   type PlanTier,
   type ScreenPhase,
@@ -88,18 +90,21 @@ function openCabinet(workspaceId: string): void {
 export function PlansDialog({
   workspaceId,
   welcome,
+  preselect,
   inSettings = false,
   onClose,
 }: {
   workspaceId: string;
   welcome: boolean;
+  /** The plan a `/plans?plan=` link names: its card is marked (nothing is chosen for the person). */
+  preselect?: PlanLink;
   /** Opened by «Сменить тариф» in settings → «Тариф» (owner, 10.10): the cabinet is right behind it. */
   inSettings?: boolean;
   onClose: () => void;
 }): ReactNode {
   const toCabinet = useCallback(() => (inSettings ? onClose() : openCabinet(workspaceId)), [inSettings, onClose, workspaceId]);
-  // ADR-0087: plan changes are BILLING_MANAGE (the owner has it); in the iOS shell nobody sees
-  // prices or pay paths (App Store rules) — the read-only view with a neutral line instead.
+  // ADR-0087: plan changes are BILLING_MANAGE (the owner has it); in a native shell, iOS or Android,
+  // nobody sees prices or pay paths (docs/adr/0148) — the read-only view with a neutral line instead.
   const manage = (useBillingBits(workspaceId) & BILLING_BITS.MANAGE) !== 0n;
   const payHere = billingPaymentsAllowed();
   const owner = manage && payHere;
@@ -183,6 +188,7 @@ export function PlansDialog({
         contact={contactOnly(data)}
         phase={phase}
         state={data.status?.state ?? state}
+        marked={preselect ? PLAN_LINK_TIER[preselect] : null}
         onChoose={(step) => {
           if (step.kind === 'pay') setChosen({ plan: step.plan, purpose: step.purpose });
           else if (step.kind === 'stop') setStopping(true);
@@ -206,7 +212,7 @@ export function PlansDialog({
   }
   return (
     <>
-      <Modal open initialFocus="body" onClose={onClose} wide title={title} description={mobile ? undefined : welcome ? t('billing.plans.welcomeText', { name }) : t('billing.plans.text')} footer={footer}>
+      <Modal open onClose={onClose} wide title={title} description={mobile ? undefined : welcome ? t('billing.plans.welcomeText', { name }) : t('billing.plans.text')} footer={footer}>
         <div className="pb-1" data-testid="billing-plans">
           {body}
         </div>
@@ -219,8 +225,8 @@ export function PlansDialog({
 
 /**
  * Without BILLING_MANAGE: the plan and the state, «управляет владелец или тот, кому он дал право»,
- * the limits in settings. `elsewhere`: a MANAGE holder in the iOS shell — the neutral «Управление
- * оплатой доступно в веб-версии и на компьютере», no link (App Store anti-steering).
+ * the limits in settings. `elsewhere`: a MANAGE holder in a native shell, iOS or Android — the neutral
+ * «Управление оплатой доступно в веб-версии и на компьютере», no link (docs/adr/0148, anti-steering).
  */
 function MemberView({ workspaceId, state, elsewhere, onClose }: { workspaceId: string; state: BillingState; elsewhere: boolean; onClose: () => void }): ReactNode {
   const plan = useWorkspaces((s) => workspacePlanName(s.byId[workspaceId]?.ws.plan));
@@ -329,6 +335,7 @@ function highlights(tier: PlanTier, l: PlanLimits | undefined): string[] {
     out.push(t('billing.plans.f.room', { n: countText(l.roomMembers) }));
     out.push(l.audioTierMaxKbps ? t('billing.plans.f.audio', { tier: audioTierLabel(l.audioTierMaxKbps) }) : t('billing.plans.f.mediaFree'));
     out.push(t('billing.plans.f.bots', { n: countText(l.bots) }));
+    out.push(t('billing.plans.f.canvases', { n: countText(l.canvases) }));
   }
   for (const f of IDENTITY_FEATURES[tier]) out.push(t(IDENTITY_KEY[f]));
   if (l) {
@@ -350,6 +357,7 @@ function PlanGrid({
   contact,
   phase,
   state,
+  marked,
   onChoose,
 }: {
   workspaceId: string;
@@ -363,6 +371,8 @@ function PlanGrid({
   contact: boolean;
   phase: ScreenPhase;
   state: BillingState;
+  /** The tier a deep link named (null: none). */
+  marked: PlanTier | null;
   onChoose: (s: PlanStep) => void;
 }): ReactNode {
   const billable = useWorkspaces((s) => billableOf(s.byId[workspaceId]?.members));
@@ -419,6 +429,7 @@ function PlanGrid({
             tier={tier}
             offer={offerOf(offers, tier)}
             current={tier === current}
+            marked={tier === marked}
             step={planStep(phase, accountPlan, tier)}
             people={people}
             payments={payments && forSale(offers, tier)}
@@ -438,6 +449,7 @@ function PlanCard({
   tier,
   offer,
   current,
+  marked,
   step,
   people,
   payments,
@@ -448,6 +460,8 @@ function PlanCard({
   tier: PlanTier;
   offer: BillingPlanOffer | undefined;
   current: boolean;
+  /** Named by the deep link: an accent ring (and first on a phone). */
+  marked: boolean;
   step: PlanStep;
   people: number;
   payments: boolean;
@@ -518,13 +532,20 @@ function PlanCard({
       role="listitem"
       aria-current={current ? 'true' : undefined}
       data-plan={Plan[tier]}
+      data-marked={marked ? 'true' : undefined}
       data-testid="plan-card"
       // Phone: the current plan first and Free (a step down) last, so «Выбрать …» of the next paid plan is on the first screen.
-      className={cx('flex flex-col gap-3 rounded-[var(--radius-card)] border bg-[var(--color-card)] p-4', current ? 'border-[var(--color-focus)] mobile:order-first' : 'border-line', !paid && !current && 'mobile:order-last')}
+      className={cx('flex flex-col gap-3 rounded-[var(--radius-card)] border bg-[var(--color-card)] p-4', current ? 'border-[var(--color-focus)] mobile:order-first' : 'border-line', marked && 'border-[var(--color-focus)] ring-2 ring-inset ring-[var(--color-focus)] mobile:order-first', !paid && !current && 'mobile:order-last')}
     >
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-headline font-semibold">{t(PLAN_LABEL[tier])}</h3>
-        {current ? <span className="inline-flex h-5 items-center rounded-full bg-accent-strong px-2 text-caption font-semibold text-accent-fg">{t('billing.plans.current')}</span> : null}
+        {current ? (
+          <span className="inline-flex h-5 items-center rounded-full bg-accent-strong px-2 text-caption font-semibold text-accent-fg">{t('billing.plans.current')}</span>
+        ) : marked ? (
+          <span className="inline-flex h-5 items-center rounded-full bg-accent-strong px-2 text-caption font-semibold text-accent-fg" data-testid="plan-marked">
+            {t('billing.plans.marked')}
+          </span>
+        ) : null}
       </div>
       <div className="flex min-h-[64px] flex-col gap-0.5 mobile:min-h-0">
         {!paid ? (

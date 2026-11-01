@@ -11,7 +11,7 @@ import { useDisk } from '../../stores/disk';
 import { myUserId } from '../../stores/session';
 import { useMemberName } from '../../stores/workspaces';
 import { LinkPanel } from './LinkPanel';
-import { ItemPicture } from './visuals';
+import { EditingLabel, ItemPicture } from './visuals';
 
 /**
  * The file card (CBF-20): thumbnail or type glyph, name, size / owner / modified, «Скачать»,
@@ -47,6 +47,7 @@ export const FileCardPanel = memo(function FileCardPanel({ itemId, onNavigate }:
             <dt className="text-muted">{t('disk.col.changed')}</dt>
             <dd className="min-w-0 truncate text-fg">{changed}</dd>
           </dl>
+          {item.editorIds.length ? <EditingLabel item={item} /> : null}
         </div>
       </div>
       <div className="flex flex-wrap gap-2">

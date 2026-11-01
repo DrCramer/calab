@@ -257,6 +257,21 @@ func TestCreateOnlyRouting(t *testing.T) {
 	if st.taskBits(bid, t2, erin) != 0 || st.taskBits(bid, t2, frank) != 0 || st.boardView(bid, frank).visible() {
 		t.Fatal("an author without create-only sees nothing")
 	}
+	// ADR-0151: the bot's task is its owner's: erin owns the bot and gets it, the bot does not;
+	// once the bot is gone (BOT_DELETE) its next task reaches erin no more.
+	st.setBotOwner(bot, erin)
+	t3, t4 := uuid.New(), uuid.New()
+	got = deliver(&v1.Task{Id: t3.String(), BoardId: bid.String(), RoomId: uuid.New().String(), CreatedBy: bot.String()})
+	if !same(got[erin], []string{"TaskCreate"}) || got[bot] != nil || got[frank] != nil {
+		t.Fatalf("erin's bot's task: %v", got)
+	}
+	if st.taskBits(bid, t3, erin) != perm.ViewBoard|perm.CreateTasks {
+		t.Fatal("erin edits her bot's task")
+	}
+	st.setBotOwner(bot, uuid.Nil)
+	if got = deliver(&v1.Task{Id: t4.String(), BoardId: bid.String(), RoomId: uuid.New().String(), CreatedBy: bot.String()}); got[erin] != nil {
+		t.Fatalf("a former bot's task: %v", got)
+	}
 	// erin loses create-only: the board goes; given VIEW_BOARD: delete + create in full form.
 	before := st.boardView(bid, erin)
 	closed := &v1.Board{Id: bid.String(), IsPrivate: true, PermissionOverrides: board.GetPermissionOverrides()[:1]}

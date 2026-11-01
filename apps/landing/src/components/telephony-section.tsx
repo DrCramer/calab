@@ -1,40 +1,49 @@
-import { Bot } from 'lucide-react';
+import { Bot, Hash, HardDrive, ListTree, Phone, PhoneForwarded, Users, type LucideIcon } from 'lucide-react';
 import { localePath, type Locale } from '@/i18n';
-import { getTelephony } from '@/i18n/telephony';
-import { Button, Container, SectionHeading } from './ui';
+import { getHome } from '@/i18n/home';
+import { Button, Card, FactCards, nb, Section, SectionHeading, Shot } from './ui';
 
-/** «Телефония» (CBF-86): static section, no motion, no client JS. Business and Enterprise (plans.TelephonyDisabled). */
+/** One icon per fact, in the order of `telephony.points` (all languages): number, extensions, IVR, groups, transfer, recording. */
+const POINT_ICONS: LucideIcon[] = [Phone, Hash, ListTree, Users, PhoneForwarded, HardDrive];
+
+/** «Телефония» (§4.5): the live calls, the IVR and the groups, the bot block, six one-line facts, the bot block. Business and Enterprise. */
 export function TelephonySection({ locale }: { locale: Locale }) {
-  const t = getTelephony(locale);
+  const t = getHome(locale);
+  const p = t.telephony;
+  // Two columns — the live calls and the IVR, the groups and the bot block — so every frame is ~628 px wide on 1440
+  // (0.9 of its 698 px crop) instead of three 410 px ones (0.59); the six facts run in two columns under them.
+  const [ivr, call, groups] = p.shots;
+  const figure = (s: (typeof p.shots)[number]) => (
+    <figure key={s.shot}>
+      <Shot scene={s.shot} locale={locale} alt={t.alts[s.shot]} sizes="(min-width: 1360px) 628px, (min-width: 1024px) 46vw, calc(100vw - 40px)" />
+      <figcaption className="caption">{nb(s.caption)}</figcaption>
+    </figure>
+  );
   return (
-    <section id="telephony" aria-labelledby="telephony-title" className="py-16 sm:py-24">
-      <Container>
-        <SectionHeading id="telephony-title" eyebrow={t.eyebrow} title={t.title} lead={t.lead} />
-        <ul className="mt-10 grid list-none gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {t.points.map((p) => (
-            <li key={p.title} className="rounded-[20px] bg-card p-5 sm:p-6">
-              <h3 className="text-[19px] leading-6 font-bold">{p.title}</h3>
-              <p className="mt-2 text-[15px] leading-6 text-pretty text-fg-2">{p.text}</p>
-            </li>
-          ))}
-        </ul>
-        <div className="mt-5 flex gap-4 rounded-[20px] bg-card p-5 sm:p-7">
-          <Bot aria-hidden="true" className="mt-0.5 size-6 shrink-0 text-accent" strokeWidth={2} />
-          <div className="min-w-0">
-            <h3 className="text-[19px] leading-6 font-bold">{t.botTitle}</h3>
-            <p className="mt-2 text-[15px] leading-6 text-pretty text-fg-2">{t.botText}</p>
+    <Section id="telephony" labelledBy="telephony-title" className="telephony">
+      <SectionHeading id="telephony-title" title={p.title} accent={p.accent} lead={p.lead} sticker="headphones" />
+      <div className="telephony-grid">
+        {figure(call)}
+        {figure(ivr)}
+        {figure(groups)}
+        <Card className="telephony-bot">
+          <Bot aria-hidden="true" size={24} strokeWidth={1.9} />
+          <div>
+            <h3 className="h3">{p.botTitle}</h3>
+            <p className="tile-text">{nb(p.botText)}</p>
+            <p className="caption">{nb(p.plan)}</p>
+            <div className="button-row">
+              <Button href={localePath(locale, 'docs/telephony/')} variant="secondary" size="md">
+                {p.docs}
+              </Button>
+              <Button href={localePath(locale, 'docs/bots/')} variant="secondary" size="md">
+                {p.botApi}
+              </Button>
+            </div>
           </div>
-        </div>
-        <p className="mt-5 text-[14px] leading-5 text-pretty text-fg-2">{t.plan}</p>
-        <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <Button href={localePath(locale, 'docs/telephony/')} variant="secondary" className="w-full max-w-[320px] sm:w-auto">
-            {t.docs}
-          </Button>
-          <Button href={localePath(locale, 'docs/bots/')} variant="secondary" className="w-full max-w-[320px] sm:w-auto">
-            {t.botDocs}
-          </Button>
-        </div>
-      </Container>
-    </section>
+        </Card>
+      </div>
+      <FactCards id="telephony" className="telephony-points" items={p.points.map((text, i) => ({ icon: POINT_ICONS[i] ?? Phone, text }))} />
+    </Section>
   );
 }

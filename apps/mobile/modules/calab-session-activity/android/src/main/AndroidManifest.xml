@@ -1,0 +1,22 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Android 13+: runtime permission, requested only by the shared web client's prompt (ADR-0070). -->
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <application>
+    <!-- Data-only FCM messages (ADR-0070/0071, Android). Not exported: only Firebase delivers here. -->
+    <service
+      android:name="io.calab.host.CalabMessagingService"
+      android:exported="false">
+      <intent-filter>
+        <action android:name="com.google.firebase.MESSAGING_EVENT" />
+      </intent-filter>
+    </service>
+    <!-- A notification tap records an opaque reference and brings the app forward; no UI of its own. -->
+    <activity
+      android:name="io.calab.host.CalabPushOpenActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:noHistory="true"
+      android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+  </application>
+</manifest>

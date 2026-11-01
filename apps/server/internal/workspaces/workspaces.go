@@ -34,6 +34,7 @@ import (
 	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/rooms"
+	"github.com/calaba/calaba/server/internal/sip"
 	"github.com/calaba/calaba/server/internal/wsaudit"
 )
 
@@ -305,6 +306,31 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 			for _, c := range in {
 				sipCalls = append(sipCalls, pbconv.SipCall(c))
 			}
+			// The recipient's own personal call (ADR-0137 §3): «on a call» on every device.
+			mine, err := q.ListLivePersonalCallsForUser(ctx, sqlc.ListLivePersonalCallsForUserParams{WorkspaceID: ws.ID, StartedBy: &userID})
+			if err != nil {
+				return nil, err
+			}
+			for _, c := range mine {
+				sipCalls = append(sipCalls, pbconv.SipCall(c))
+			}
+			// Caller ID of the inbound and personal calls (ADR-0137 §2); never an employee's
+			// phone to a bot.
+			if err := sip.FillCallers(ctx, q, ws.ID, sipCalls); err != nil {
+				return nil, err
+			}
+			if viewerBot {
+				for _, c := range sipCalls {
+					c.CallerUserId = ""
+				}
+			}
+		}
+	}
+	// The missed calls badge (ADR-0137 §1): people only, never guests.
+	var sipMissed int32
+	if ws.SipEnabled && me.Role != perm.RoleGuest && !viewerBot {
+		if sipMissed, err = q.CountSipMissed(ctx, sqlc.CountSipMissedParams{WorkspaceID: ws.ID, UserID: userID}); err != nil {
+			return nil, err
 		}
 	}
 	// Task boards (ADR-0042 §4): the visible ones with the recipient's bits, and their unread tasks.
@@ -326,7 +352,7 @@ func Snapshot(ctx context.Context, q *sqlc.Queries, pl *plans.Service, ws sqlc.W
 	return &v1.WorkspaceSnapshot{Workspace: pbconv.ForViewer(pw, role), Role: role.Proto(), Rooms: rs, Members: members,
 		Permissions: bits, Categories: pbconv.Categories(cats), Recordings: recordings, Roles: pbconv.Roles(roles),
 		Badges: pbconv.Badges(badges), Backgrounds: pbconv.Backgrounds(backgrounds), Sounds: pbconv.Sounds(sounds),
-		Boards: bs, UnreadTaskIds: unread, SipCalls: sipCalls, Apps: pbconv.WorkspaceApps(apps), BoardCategories: boardCats,
+		Boards: bs, UnreadTaskIds: unread, SipCalls: sipCalls, SipMissed: uint32(max(sipMissed, 0)), Apps: pbconv.WorkspaceApps(apps), BoardCategories: boardCats, //nolint:gosec // ≤ 999
 		RoomLastMessages: lastMessages}, nil
 }
 
@@ -629,6 +655,13 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		}
 		v := int32(req.GetDefaultCameraLimit()) //nolint:gosec // validated
 		p.DefaultCameraLimit, mediaChanged = &v, true
+	}
+	if req.DefaultJoinLeaveSoundMax != nil {
+		if req.GetDefaultJoinLeaveSoundMax() > rooms.MaxJoinLeaveSoundMax {
+			return httpx.Validation("defaultJoinLeaveSoundMax", "join/leave sound limit must be 0..99")
+		}
+		v := int32(req.GetDefaultJoinLeaveSoundMax()) //nolint:gosec // validated
+		p.DefaultJoinLeaveSoundMax, mediaChanged = &v, true
 	}
 	p.AllowSelfNickname = req.AllowSelfNickname
 	if req.TimeFormat != nil {

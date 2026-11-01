@@ -1,13 +1,11 @@
 import { CircleAlert, CircleCheck, Info } from 'lucide-react';
-import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import { CloseButton, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import type { DeviceSwitch } from '../../lib/deviceSwitch';
-import { useMobile } from '../../lib/mobile';
-import { toastPlacement, type ToastPlacement } from '../../lib/toastPlacement';
 import { announceDeviceSwitch } from '../../services/deviceToast';
 import { useSession } from '../../stores/session';
-import { isSticky, stackInteraction, type Toast, type ToastAction } from '../../stores/toastQueue';
+import { isSticky, newestFirst, stackInteraction, type Toast, type ToastAction } from '../../stores/toastQueue';
 import { TOAST_MS, useToasts } from '../../stores/toasts';
 
 declare global {
@@ -20,50 +18,10 @@ declare global {
 }
 
 /**
- * Where the stack goes (lib/toastPlacement.ts): bottom-centre of the chat column
- * (`[data-toast-anchor]`, ChatPane), 16 px above its composer; follows the column's size and the
- * composer's height (--composer-height on the column's parent). Phones: null (CSS classes).
- */
-function useToastPlacement(active: boolean): ToastPlacement | null {
-  const mobile = useMobile();
-  const [placement, setPlacement] = useState<ToastPlacement | null>(null);
-  useLayoutEffect(() => {
-    if (mobile || !active) return;
-    const measure = (): void => {
-      const anchor = document.querySelector<HTMLElement>('[data-toast-anchor]');
-      const composer = anchor ? parseFloat(getComputedStyle(anchor).getPropertyValue('--composer-height')) || 0 : 0;
-      setPlacement(
-        toastPlacement({
-          mobile: false,
-          anchor: anchor?.getBoundingClientRect() ?? null,
-          viewport: { width: window.innerWidth, height: window.innerHeight },
-          composer,
-        }),
-      );
-    };
-    measure();
-    const anchor = document.querySelector<HTMLElement>('[data-toast-anchor]');
-    const ro = new ResizeObserver(measure);
-    const mo = new MutationObserver(measure);
-    if (anchor) {
-      ro.observe(anchor);
-      // --composer-height is written to the column's parent style; a room switch replaces the column.
-      if (anchor.parentElement) mo.observe(anchor.parentElement, { attributes: true, attributeFilter: ['style'], childList: true });
-    }
-    window.addEventListener('resize', measure);
-    return () => {
-      ro.disconnect();
-      mo.disconnect();
-      window.removeEventListener('resize', measure);
-    };
-  }, [mobile, active]);
-  return mobile ? null : placement;
-}
-
-/**
- * Toast stack (docs/09 #16, docs/08 «Тосты»): opaque mat-popover, bottom-centre of the chat
- * column 16 px above the composer, ≤ 480 px wide, growing upwards, newest at
- * the bottom. Each toast hides after TOAST_MS; the countdown pauses while the pointer or
+ * Toast stack (docs/09 #16, docs/08 «Тосты»): opaque mat-popover cards at the top right under the
+ * title bar (right margin = the page gutter), ≤ 420 px wide, newest on top, growing downwards;
+ * pure CSS placement (no measuring). With the inbox popover open the stack steps left of it; phones:
+ * under the top bar. Each toast hides after TOAST_MS; the countdown pauses while the pointer or
  * keyboard focus is in the stack and while the window is hidden (a toast raised in the
  * background waits to be seen). Errors are announced assertively (role="alert"), the rest
  * politely. Esc on a focused toast closes it.
@@ -99,17 +57,17 @@ export function Toasts(): ReactNode {
   }, [items]);
 
   const paused = hover || focus || hidden || visualTest;
-  const place = useToastPlacement(items.length > 0);
+  const ordered = useMemo(() => newestFirst(items), [items]);
   return (
     <section
       ref={stack}
       aria-label={t('toast.region')}
       // A web app's native view steps aside while the stack shows (features/webapps/AppScreen).
       data-app-occluder
-      // Phones: under the top bar (at the bottom it would cover the composer and the voice strip),
-      // and under the drawers and sheets, which the user is working in.
-      className="pointer-events-none fixed z-[var(--z-toast)] flex flex-col items-stretch gap-2 mobile:left-4 mobile:right-4 mobile:top-[calc(var(--safe-top)+56px)] mobile:z-[var(--z-popover)]"
-      style={place ? { left: place.centerX, bottom: place.bottom, width: place.width, transform: 'translateX(-50%)' } : undefined}
+      data-toast-stack
+      // Desktop: top right under the title bar; the inbox popover moves it aside (styles.css). Phones:
+      // under the top bar and under the drawers and sheets, which the user is working in.
+      className="pointer-events-none fixed right-4 top-[calc(var(--titlebar-height)+8px)] z-[var(--z-toast)] flex w-[420px] max-w-[calc(100vw-var(--rail-width)-32px)] flex-col items-stretch gap-2 [:root.web_&]:top-[calc(var(--titlebar-height-web)+8px)] mobile:left-4 mobile:right-4 mobile:top-[calc(var(--safe-top)+56px)] mobile:z-[var(--z-popover)] mobile:w-auto mobile:max-w-none mobile:[:root.web_&]:top-[calc(var(--safe-top)+56px)]"
       onPointerEnter={() => interact({ type: 'enter' })}
       onPointerMove={() => interact({ type: 'enter' })}
       onPointerLeave={() => interact({ type: 'leave' })}
@@ -118,7 +76,7 @@ export function Toasts(): ReactNode {
         if (!e.currentTarget.contains(e.relatedTarget)) interact({ type: 'blur' });
       }}
     >
-      {items.map((x) => (
+      {ordered.map((x) => (
         <ToastItem key={x.id} toast={x} paused={paused} />
       ))}
     </section>
@@ -154,7 +112,7 @@ function ToastItem({ toast: x, paused }: { toast: Toast; paused: boolean }): Rea
           dismiss(x.id);
         }
       }}
-      className="mat-popover anim-in pointer-events-auto flex items-center gap-2.5 rounded-[20px] py-2.5 pl-4 pr-2.5 text-body text-fg"
+      className="mat-popover toast-card pointer-events-auto flex items-center gap-2.5 rounded-[20px] py-2.5 pl-4 pr-2.5 text-body text-fg"
     >
       <Icon className={cx('size-[18px] shrink-0', x.kind === 'error' ? 'text-danger' : x.kind === 'success' ? 'text-ok' : 'text-accent')} aria-hidden />
       <div className="flex min-w-0 flex-1 flex-col items-start gap-1.5">

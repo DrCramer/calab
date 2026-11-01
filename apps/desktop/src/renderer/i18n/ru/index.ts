@@ -47,8 +47,12 @@ import { ruTemp } from './temp';
 import { ruContacts } from './contacts';
 import { ruSip } from './sip';
 import { ruPbx } from './pbx';
+import { ruTelephony } from './telephony';
+import { ruTelephonySettings } from './telephonySettings';
+import { ruTelephonyContacts } from './telephonyContacts';
 import { ruAi } from './ai';
 import { ruSmartTask } from './smartTask';
+import { ruTaskSearch } from './taskSearch';
 import { ruWebApps } from './webapps';
 
 /** Russian UI strings. Keys are flat, dotted; `{param}` placeholders. Area files are merged in. */
@@ -68,8 +72,12 @@ export const ru = {
   ...ruContacts,
   ...ruSip,
   ...ruPbx,
+  ...ruTelephony,
+  ...ruTelephonySettings,
+  ...ruTelephonyContacts,
   ...ruAi,
   ...ruSmartTask,
+  ...ruTaskSearch,
   ...ruWebApps,
   ...ruDm,
   ...ruNotes,
@@ -393,6 +401,10 @@ export const ru = {
   'voice.connecting': 'Подключение…',
   'voice.pendingMember': 'Подключается…',
   'voice.reconnecting': 'Переподключение…',
+  'voice.audioBlocked': 'Вы не слышите собеседников',
+  'voice.audioBlockedAction': 'Включить звук',
+  'voice.micRecovering': 'Ждём микрофон',
+  'voice.micUnheard': 'Вас не слышно',
   'voice.connected': 'Голос подключён',
   'voice.blocked': 'Голос недоступен',
   'voice.quality': 'Качество связи · задержка {rtt} мс · потери {loss} %',
@@ -460,6 +472,7 @@ export const ru = {
   'voice.pttMac': 'macOS: нужны разрешения «Универсальный доступ» и «Мониторинг ввода».',
   'voice.rnnoise': 'Шумоподавление',
   'voice.rnnoiseHint': 'Убирает стук клавиатуры и фоновый шум. Нагружает процессор — по умолчанию выключено',
+  'voice.rnnoisePlatform': 'На этом устройстве шум убирает сама система — второй шумодав поверх неё искажает голос',
   'voice.red': 'Устойчивость к плохой сети',
   'voice.redHint': 'Меньше обрывов голоса на слабом Wi‑Fi или VPN, но вдвое больше трафика',
   'voice.myBitrate': 'Качество моего голоса',
@@ -704,6 +717,7 @@ export const ru = {
   'unit.mb': '{n} МБ',
   'unit.gb': '{n} ГБ',
   'date.todayAt': 'сегодня в {time}',
+  'date.yesterdayAt': 'вчера в {time}',
   'date.yesterday': 'вчера',
   'perm.granted': 'Разрешено',
   'perm.denied': 'Запрещено',

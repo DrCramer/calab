@@ -441,14 +441,18 @@ type BoardFormUpload struct {
 }
 
 type BoardGit struct {
-	BoardID     uuid.UUID
-	Provider    string
-	SecretEnc   []byte
-	CreatedBy   *uuid.UUID
-	CreatedAt   time.Time
-	LastEventAt *time.Time
-	LastError   string
-	EventsCount int32
+	BoardID       uuid.UUID
+	Provider      string
+	SecretEnc     []byte
+	CreatedBy     *uuid.UUID
+	CreatedAt     time.Time
+	LastEventAt   *time.Time
+	LastError     string
+	EventsCount   int32
+	Backlink      bool
+	ApiTokenEnc   []byte
+	GitlabUrl     string
+	BacklinkError string
 }
 
 type BoardLabel struct {
@@ -473,6 +477,19 @@ type BoardPermission struct {
 	TargetID   string
 	Allow      int64
 	Deny       int64
+}
+
+type BoardRelease struct {
+	ID          uuid.UUID
+	BoardID     uuid.UUID
+	Environment string
+	Sha         string
+	Name        string
+	Url         string
+	CreatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	TasksCount  int32
 }
 
 type BoardRule struct {
@@ -667,6 +684,13 @@ type CaldavPush struct {
 	CreatedAt time.Time
 }
 
+type CalendarSubscription struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	CreatedAt   time.Time
+}
+
 type CanvasActivity struct {
 	ID          uuid.UUID
 	WorkspaceID uuid.UUID
@@ -833,6 +857,14 @@ type DiskActivity struct {
 	Private     bool
 }
 
+type DiskFileVersion struct {
+	ID        uuid.UUID
+	ItemID    uuid.UUID
+	FileID    uuid.UUID
+	ActorID   *uuid.UUID
+	CreatedAt time.Time
+}
+
 type DiskItem struct {
 	ID          uuid.UUID
 	WorkspaceID uuid.UUID
@@ -985,6 +1017,8 @@ type ExternalBusy struct {
 	Etag      string
 	Recurring bool
 	WebUrl    string
+	StartDate string
+	EndDate   string
 }
 
 type ExternalRemindersSent struct {
@@ -993,6 +1027,11 @@ type ExternalRemindersSent struct {
 	OccurrenceAt time.Time
 	Minutes      int16
 	SentAt       time.Time
+}
+
+type FeatureEpoch struct {
+	Name      string
+	StartedAt time.Time
 }
 
 type File struct {
@@ -1150,6 +1189,24 @@ type MessageReaction struct {
 	UserID    uuid.UUID
 	Emoji     string
 	CreatedAt time.Time
+}
+
+type MetrikaConversion struct {
+	ID            uuid.UUID
+	DedupeKey     string
+	Goal          string
+	ClientID      string
+	OccurredAt    time.Time
+	AmountMinor   int64
+	Currency      string
+	Plan          string
+	TransactionID string
+	Attempts      int32
+	NextAt        time.Time
+	SentAt        *time.Time
+	FailedAt      *time.Time
+	Error         string
+	CreatedAt     time.Time
 }
 
 type OauthAuthorizationCode struct {
@@ -1353,37 +1410,48 @@ type PushIntent struct {
 	CompletedAt     *time.Time
 }
 
+type ReadSpan struct {
+	RoomID  uuid.UUID
+	UptoID  uuid.UUID
+	UserID  uuid.UUID
+	AfterID *uuid.UUID
+	FirstAt time.Time
+	LastAt  time.Time
+}
+
 type ReadState struct {
 	UserID            uuid.UUID
 	RoomID            uuid.UUID
 	LastReadMessageID uuid.UUID
+	SeenMessageID     *uuid.UUID
 }
 
 type Room struct {
-	ID               uuid.UUID
-	WorkspaceID      *uuid.UUID
-	Type             string
-	Name             string
-	Topic            string
-	Position         int32
-	IsPrivate        bool
-	AudioBitrateKbps *int32
-	MaxStreamPreset  *string
-	MaxStreams       *int32
-	CreatedAt        time.Time
-	ArchivedAt       *time.Time
-	CategoryID       *uuid.UUID
-	UserLimit        int32
-	VoiceStatus      *string
-	CameraLimit      *int32
-	DmKey            *string
-	AllowRecording   bool
-	Restricted       bool
-	Emoji            string
-	GuestApproval    bool
-	ExpiresAt        *time.Time
-	CreatedBy        *uuid.UUID
-	IconFileID       *uuid.UUID
+	ID                uuid.UUID
+	WorkspaceID       *uuid.UUID
+	Type              string
+	Name              string
+	Topic             string
+	Position          int32
+	IsPrivate         bool
+	AudioBitrateKbps  *int32
+	MaxStreamPreset   *string
+	MaxStreams        *int32
+	CreatedAt         time.Time
+	ArchivedAt        *time.Time
+	CategoryID        *uuid.UUID
+	UserLimit         int32
+	VoiceStatus       *string
+	CameraLimit       *int32
+	DmKey             *string
+	AllowRecording    bool
+	Restricted        bool
+	Emoji             string
+	GuestApproval     bool
+	ExpiresAt         *time.Time
+	CreatedBy         *uuid.UUID
+	IconFileID        *uuid.UUID
+	JoinLeaveSoundMax *int32
 }
 
 type RoomAdmission struct {
@@ -1520,47 +1588,60 @@ type SessionWorkspaceAssurance struct {
 }
 
 type SipAccount struct {
-	WorkspaceID         uuid.UUID
-	Provider            string
-	Host                string
-	Transport           string
-	Username            string
-	AuthUsername        string
-	Port                int32
-	PasswordEnc         []byte
-	CallerID            string
-	OutboundPrefix      string
-	AllowedPrefixes     []string
-	TrunkID             string
-	Enabled             bool
-	LastError           string
-	UpdatedAt           time.Time
-	UpdatedBy           *uuid.UUID
-	InboundEnabled      bool
-	InboundKind         string
-	InboundMenuID       *uuid.UUID
-	InboundExtensionID  *uuid.UUID
-	InboundGroupID      *uuid.UUID
-	InboundAllowedCidrs []string
-	InboundTrunkID      string
-	InboundRuleID       string
-	InboundMode         string
-	RegRegistrar        string
-	RegDomain           string
-	RegExpires          int32
-	RegKeepaliveSec     int32
-	RegContactUser      string
-	RegAuthUsername     string
-	RegPasswordEnc      []byte
-	RegTrunkPasswordEnc []byte
-	RegStatus           string
-	RegError            string
-	RegRegisteredAt     *time.Time
-	RegExpiresAt        *time.Time
-	RegContact          string
-	RegStatusAt         *time.Time
-	RecordInbound       bool
-	RecordOutbound      bool
+	WorkspaceID          uuid.UUID
+	Provider             string
+	Host                 string
+	Transport            string
+	Username             string
+	AuthUsername         string
+	Port                 int32
+	PasswordEnc          []byte
+	CallerID             string
+	OutboundPrefix       string
+	AllowedPrefixes      []string
+	TrunkID              string
+	Enabled              bool
+	LastError            string
+	UpdatedAt            time.Time
+	UpdatedBy            *uuid.UUID
+	InboundEnabled       bool
+	InboundKind          string
+	InboundMenuID        *uuid.UUID
+	InboundExtensionID   *uuid.UUID
+	InboundGroupID       *uuid.UUID
+	InboundAllowedCidrs  []string
+	InboundTrunkID       string
+	InboundRuleID        string
+	InboundMode          string
+	RegRegistrar         string
+	RegDomain            string
+	RegExpires           int32
+	RegKeepaliveSec      int32
+	RegContactUser       string
+	RegAuthUsername      string
+	RegPasswordEnc       []byte
+	RegTrunkPasswordEnc  []byte
+	RegStatus            string
+	RegError             string
+	RegRegisteredAt      *time.Time
+	RegExpiresAt         *time.Time
+	RegContact           string
+	RegStatusAt          *time.Time
+	RecordInbound        bool
+	RecordOutbound       bool
+	RetentionMonths      int16
+	OutPerHour           int32
+	OutPerUserHour       int32
+	ScheduleEnabled      bool
+	ScheduleTz           string
+	ScheduleHours        []byte
+	ScheduleHolidays     string
+	OffHoursKind         string
+	OffHoursMenuID       *uuid.UUID
+	OffHoursExtensionID  *uuid.UUID
+	OffHoursGroupID      *uuid.UUID
+	OffHoursNoticeFileID *uuid.UUID
+	OffHoursNoticeMs     int32
 }
 
 type SipCall struct {
@@ -1584,6 +1665,35 @@ type SipCall struct {
 	RingingUserIds      []uuid.UUID
 	Via                 string
 	ProviderCallID      string
+	Origin              string
+	PeerE164            string
+	Missed              bool
+	Extension           string
+}
+
+type SipCallEvent struct {
+	CallID     uuid.UUID
+	Seq        int32
+	At         time.Time
+	Kind       string
+	UserID     *uuid.UUID
+	PeerUserID *uuid.UUID
+	TargetKind string
+	TargetID   *uuid.UUID
+	TargetName string
+	Digits     string
+	Reason     string
+}
+
+type SipCallParty struct {
+	CallID      uuid.UUID
+	UserID      uuid.UUID
+	WorkspaceID uuid.UUID
+	StartedAt   time.Time
+	Placed      bool
+	Rang        bool
+	Answered    bool
+	Transferred bool
 }
 
 type SipCallRecording struct {
@@ -1603,6 +1713,29 @@ type SipCallRecording struct {
 	SizeBytes   int64
 	FileID      *uuid.UUID
 	DiskItemID  *uuid.UUID
+}
+
+type SipContact struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Name        string
+	Company     string
+	Note        string
+	CreatedBy   *uuid.UUID
+	UpdatedBy   *uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	SortKey     *string
+	SearchKey   *string
+	SortGroup   *int16
+}
+
+type SipContactPhone struct {
+	ContactID   uuid.UUID
+	WorkspaceID uuid.UUID
+	Number      string
+	Label       string
+	Position    int16
 }
 
 type SipExtension struct {
@@ -1812,6 +1945,9 @@ type TaskGitLink struct {
 	Author    string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	Draft     bool
+	Seen      []string
+	MergeShas []string
 }
 
 type TaskLabel struct {
@@ -1832,12 +1968,44 @@ type TaskMilestone struct {
 	UpdatedAt   time.Time
 }
 
+type TaskNoticeLog struct {
+	ID          uuid.UUID
+	UserID      uuid.UUID
+	TaskID      uuid.UUID
+	Kind        int16
+	ActorID     *uuid.UUID
+	MessageID   *uuid.UUID
+	Text        string
+	RuleID      *uuid.UUID
+	ReRequested bool
+	DueOn       string
+	DaysLeft    int32
+	CreatedAt   time.Time
+}
+
 type TaskRelation struct {
 	TaskID    uuid.UUID
 	RelatedID uuid.UUID
 	Kind      string
 	CreatedBy *uuid.UUID
 	CreatedAt time.Time
+}
+
+type TaskRelease struct {
+	TaskID      uuid.UUID
+	Environment string
+	ReleaseID   uuid.UUID
+	CreatedAt   time.Time
+}
+
+type TaskSearch struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	Name        string
+	Query       []byte
+	Position    int32
+	CreatedAt   time.Time
 }
 
 type TaskSubscriber struct {
@@ -1885,6 +2053,19 @@ type User struct {
 	Phone                          *string
 	TaskNotifyOff                  []string
 	TaskNotifyBots                 []uuid.UUID
+	CalendarZones                  []byte
+}
+
+type UserAttribution struct {
+	UserID      uuid.UUID
+	UtmSource   string
+	UtmMedium   string
+	UtmCampaign string
+	UtmContent  string
+	UtmTerm     string
+	Yclid       string
+	YmClientID  string
+	CreatedAt   time.Time
 }
 
 type UserNote struct {
@@ -2010,30 +2191,31 @@ type WikiPermission struct {
 }
 
 type Workspace struct {
-	ID                      uuid.UUID
-	Slug                    string
-	Name                    string
-	IconFileID              *uuid.UUID
-	Visibility              string
-	OwnerID                 uuid.UUID
-	CreatedAt               time.Time
-	DefaultAudioBitrateKbps int32
-	DefaultMaxStreamPreset  string
-	DefaultMaxStreams       int32
-	StorageQuotaBytes       int64
-	StorageUsedBytes        int64
-	AllowSelfNickname       bool
-	DefaultCameraLimit      int32
-	SuspendedAt             *time.Time
-	SuspendedReason         string
-	SuspendedBy             *uuid.UUID
-	TimeFormat              string
-	SipEnabled              bool
-	DiskTrashDays           *int32
-	WikiTrashDays           *int32
-	TempArchiveDays         int32
-	OwnerSeesPrivate        bool
-	CanvasTrashDays         *int32
+	ID                       uuid.UUID
+	Slug                     string
+	Name                     string
+	IconFileID               *uuid.UUID
+	Visibility               string
+	OwnerID                  uuid.UUID
+	CreatedAt                time.Time
+	DefaultAudioBitrateKbps  int32
+	DefaultMaxStreamPreset   string
+	DefaultMaxStreams        int32
+	StorageQuotaBytes        int64
+	StorageUsedBytes         int64
+	AllowSelfNickname        bool
+	DefaultCameraLimit       int32
+	SuspendedAt              *time.Time
+	SuspendedReason          string
+	SuspendedBy              *uuid.UUID
+	TimeFormat               string
+	SipEnabled               bool
+	DiskTrashDays            *int32
+	WikiTrashDays            *int32
+	TempArchiveDays          int32
+	OwnerSeesPrivate         bool
+	CanvasTrashDays          *int32
+	DefaultJoinLeaveSoundMax int32
 }
 
 type WorkspaceAdminLog struct {
@@ -2266,6 +2448,7 @@ type WorkspaceMember struct {
 	AchievementCount int32
 	LastActiveAt     *time.Time
 	SipExtension     string
+	SipSeenAt        time.Time
 }
 
 type WorkspaceNotificationSetting struct {

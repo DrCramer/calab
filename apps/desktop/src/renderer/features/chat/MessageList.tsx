@@ -12,6 +12,7 @@ import { EMPTY_ROOM_MESSAGES, WINDOW_CAP, findByKey, firstUnreadIndex, keyIndex,
 import { useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { streamCoversChat, useVoice } from '../../stores/voice';
+import { voice } from '../../services/voice';
 import { useStreamFullscreen } from '../voice/fullscreen';
 import { toast } from '../../stores/toasts';
 import { useChatView } from './chatView';
@@ -253,7 +254,7 @@ function Feed({ workspaceId, room, perms, newMarker }: { workspaceId: string; ro
   useEffect(() => {
     if (!atBottom || !lastSentId || covered) return;
     const mark = (): void => {
-      if (document.hasFocus()) markRead(roomId, lastSentId);
+      if (document.hasFocus()) markRead(roomId, lastSentId, true);
     };
     mark();
     window.addEventListener('focus', mark);
@@ -540,6 +541,9 @@ const FeedOverlays = memo(function FeedOverlays({
   const scrolling = useSyncExternalStore(view.subscribe, view.scrolling);
   const readMarker = useRooms((s) => s.readState[roomId] ?? '');
   const newestKnown = useRooms((s) => s.lastMessage[roomId] ?? '');
+  // The stream stage lies over this feed: scrolling it to the first unread would happen out of
+  // sight (issue #110), so the banner opens the chat as the stage's «Chat» button does.
+  const covered = useVoice((s) => streamCoversChat(s, roomId));
 
   const firstUnread = useMemo(() => firstUnreadIndex(items, readMarker, me), [items, readMarker, me]);
   const unread = useMemo(() => {
@@ -576,12 +580,13 @@ const FeedOverlays = memo(function FeedOverlays({
       {showBanner && firstUnreadMsg ? (
         <div
           className={cx(
-            'absolute inset-x-0 z-[var(--z-sticky)] flex h-8 items-center gap-2 bg-accent-strong pl-4 pr-2 text-body text-accent-fg shadow-[var(--shadow-card)]',
-            mini ? 'top-11 mobile:top-12' : 'top-0',
+            'absolute z-[var(--z-sticky)] flex h-8 items-center gap-2 bg-accent-strong pl-4 pr-2 text-body text-accent-fg shadow-[var(--shadow-card)]',
+            // Over a stream stage: below its streamer chip / «Chat» button row, not on top of them.
+            covered ? 'inset-x-3 top-[3.75rem] rounded-[var(--radius-control)]' : cx('inset-x-0', mini ? 'top-11 mobile:top-12' : 'top-0'),
           )}
           data-testid="unread-banner"
         >
-          <button type="button" className="min-w-0 flex-1 truncate text-left font-medium hover:underline" onClick={toFirstUnread}>
+          <button type="button" className="min-w-0 flex-1 cursor-pointer truncate text-left font-medium hover:underline" onClick={covered ? () => voice.setStage('pip') : toFirstUnread}>
             {plural('chat.unreadBanner', unread, {
               n: `${unread}${moreUnread ? '+' : ''}`,
               time: fmt.time(toDate(firstUnreadMsg.msg.createdAt)),
@@ -589,7 +594,7 @@ const FeedOverlays = memo(function FeedOverlays({
           </button>
           <button
             type="button"
-            className="shrink-0 rounded-[var(--radius-control)] px-2 py-1 font-semibold hover:bg-[rgb(255_255_255/15%)]"
+            className="shrink-0 cursor-pointer rounded-[var(--radius-control)] px-2 py-1 font-semibold hover:bg-[rgb(255_255_255/15%)]"
             onClick={() => markRead(roomId, newestKnown > lastSentId ? newestKnown : lastSentId)}
           >
             {t('chat.markRead')}

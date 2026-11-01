@@ -7,7 +7,7 @@ import { usePrefs } from '../stores/prefs';
 import { useSession } from '../stores/session';
 import { useUi } from '../stores/ui';
 
-vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined, attention: () => undefined } } }));
+vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined, attention: () => undefined, showWindow: () => undefined } } }));
 const opened = vi.hoisted(() => ({ hits: [] as Array<{ ws: string; id: string }> }));
 vi.mock('./canvas', () => ({
   openCanvasHit: (ws: string, ref: { itemId: string }) => {

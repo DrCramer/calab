@@ -5,6 +5,8 @@ package app_test
 import (
 	"bytes"
 	"context"
+	"image"
+	"image/png"
 	"testing"
 
 	"github.com/google/uuid"
@@ -88,5 +90,69 @@ func TestThumbnailSizes(t *testing.T) {
 	smallLarge := blob.LargeThumbKey(blob.FileKey(uuid.MustParse(ws.GetId()), uuid.MustParse(small.GetId())))
 	if _, err := testStore.Stat(ctx, smallLarge); err == nil {
 		t.Fatal("1024 thumbnail stored for an image that fits 512")
+	}
+}
+
+// TestThumbnailBackfill (owner 28.10: an image.png shown as a plain file): an image file whose
+// upload made no thumbnail has no thumbnail_url, and clients drew it as a file chip. The
+// upload-time thumbnail is best-effort (a read or decode failure, a cancelled request, a picture
+// over MaxPixels leave none); GET …/thumbnail now makes the missing one, re-sniffs a wrong stored
+// type and saves both, so the next listing has thumbnail_url.
+func TestThumbnailBackfill(t *testing.T) {
+	o, _, ws, _ := setupTeam(t)
+	ctx := context.Background()
+
+	// A picture over MaxPixels (a long Retina screenshot, flat, small file): the type and the size
+	// are stored, the thumbnail is not, and none is made later either.
+	var bb bytes.Buffer
+	if err := png.Encode(&bb, image.NewGray(image.Rect(0, 0, 2880, 9000))); err != nil {
+		t.Fatal(err)
+	}
+	_, f, _ := upload(t, o, "/api/workspaces/"+ws.GetId()+"/files", "image.png", bb.Bytes())
+	if f.GetMime() != "image/png" || f.GetThumbnailUrl() != "" || f.GetWidth() != 2880 || f.GetHeight() != 9000 {
+		t.Fatalf("over MaxPixels: %q thumb=%q %dx%d", f.GetMime(), f.GetThumbnailUrl(), f.GetWidth(), f.GetHeight())
+	}
+	if resp, _ := get(t, o, "/api/files/"+f.GetId()+"/thumbnail", nil); resp.StatusCode != 404 {
+		t.Fatalf("over MaxPixels thumbnail: %d, want 404", resp.StatusCode)
+	}
+
+	// A PNG stored without its thumbnail and with a wrong type (the state a failed upload-time
+	// thumbnail or an old row leaves): the first thumbnail request repairs it.
+	_, p, _ := upload(t, o, "/api/workspaces/"+ws.GetId()+"/files", "image.png", pngBytes(640, 480))
+	if p.GetThumbnailUrl() == "" {
+		t.Fatal("normal png: no thumbnail at upload")
+	}
+	id := uuid.MustParse(p.GetId())
+	thumbKey := blob.FileKey(uuid.MustParse(ws.GetId()), id) + ".thumb"
+	_ = testStore.Delete(ctx, thumbKey)
+	if _, err := testDB.Pool.Exec(ctx, `UPDATE files SET thumbnail_key = NULL, mime = 'application/octet-stream', width = NULL, height = NULL WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	resp, b := get(t, o, "/api/files/"+p.GetId()+"/thumbnail", nil)
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "image/webp" {
+		t.Fatalf("backfill: %d %v", resp.StatusCode, resp.Header)
+	}
+	if cfg, err := xwebp.DecodeConfig(bytes.NewReader(b)); err != nil || cfg.Width != 512 || cfg.Height != 384 {
+		t.Fatalf("backfilled thumbnail %v %v", cfg, err)
+	}
+	row, err := testDB.Q.GetFile(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.Mime != "image/png" || row.ThumbnailKey == nil || *row.ThumbnailKey != thumbKey ||
+		row.Width == nil || *row.Width != 640 || row.Height == nil || *row.Height != 480 {
+		t.Fatalf("row not repaired: %q %v %v %v", row.Mime, row.ThumbnailKey, row.Width, row.Height)
+	}
+
+	// Not a picture behind an image name: no thumbnail, the row keeps its type.
+	_, n, _ := upload(t, o, "/api/workspaces/"+ws.GetId()+"/files", "fake.png", []byte("just some text, not a picture"))
+	if n.GetThumbnailUrl() != "" {
+		t.Fatal("text with a .png name got a thumbnail")
+	}
+	if resp, _ := get(t, o, "/api/files/"+n.GetId()+"/thumbnail", nil); resp.StatusCode != 404 {
+		t.Fatalf("fake png thumbnail: %d, want 404", resp.StatusCode)
+	}
+	if row, _ := testDB.Q.GetFile(ctx, uuid.MustParse(n.GetId())); row.Mime != n.GetMime() || row.ThumbnailKey != nil {
+		t.Fatalf("fake png row changed: %q %v", row.Mime, row.ThumbnailKey)
 	}
 }

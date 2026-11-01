@@ -12,7 +12,7 @@ import { useSession } from '../../stores/session';
  */
 export function WindowVibrancy(): null {
   const os = useSession((s) => s.appInfo?.platform);
-  const visualTest = useSession((s) => s.appInfo?.visualTest === true);
+  const visualTest = useSession((s) => s.appInfo?.visualTest === true && s.appInfo.visualVibrancy !== true);
   const reducedTransparency = useMediaQuery('(prefers-reduced-transparency: reduce)');
   const on =
     platform.kind === 'electron' &&

@@ -96,11 +96,11 @@ describe('sticky colors', () => {
     }
   });
 
-  it('keeps the original light look of existing documents', () => {
+  it('keeps the token names of existing documents, with the FigJam-style values (23.10)', () => {
     const p = defaultPalette('light');
-    expect(resolveSticky(p, 'yellow')).toEqual({ bg: '#fde68a', fg: '#3b2f0b' });
-    expect(resolveSticky(p, 'gray')).toEqual({ bg: '#e5e7eb', fg: '#1f2937' });
-    expect(resolveSticky(p, 'purple').bg).toBe('#ddd6fe');
+    expect(resolveSticky(p, 'yellow')).toEqual({ bg: '#ffe866', fg: '#3b2f0b' });
+    expect(resolveSticky(p, 'gray')).toEqual({ bg: '#e6e8ec', fg: '#1f2937' });
+    expect(resolveSticky(p, 'purple').bg).toBe('#d9ccff');
   });
 
   it('draws an unknown id (from a newer client) neutral, a hex as itself', () => {
@@ -141,9 +141,9 @@ describe('shape / text / connector colors', () => {
     }
   });
 
-  it('keeps the original hue values and the neutral fallback for unknown ids', () => {
+  it('resolves the hue tokens and the neutral fallback for unknown ids', () => {
     const p = defaultPalette('light');
-    expect(resolveColor(p, 'red')).toBe('#dc2626');
+    expect(resolveColor(p, 'red')).toBe('#e5352b');
     expect(resolveColor(p, 'gray')).toBe('#6b7280');
     expect(resolveColor(p, 'no-such-color')).toBe(p.ink);
   });

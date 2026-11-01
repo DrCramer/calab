@@ -1,27 +1,14 @@
 import {
   ArrowRight,
-  AppWindow,
-  AudioLines,
-  Bot,
   CalendarCheck,
   CalendarClock,
   CalendarSync,
   Check,
-  DoorOpen,
-  FolderOpen,
   KeyRound,
-  LayoutGrid,
   Lock,
-  MessagesSquare,
-  BookOpenText,
-  Server,
   ShieldCheck,
   Globe,
   Guitar,
-  Headphones,
-  Phone,
-  Mail,
-  Search,
   type LucideIcon,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -29,25 +16,23 @@ import type { Dict, Locale } from '@/i18n';
 import { localePath } from '@/i18n/locales';
 import { fmt } from '@/lib/rich';
 import type { ScreenName } from '@/lib/screens';
+import type { SceneName } from '@/i18n/home';
 import { BotCode } from './bot-code';
-import { Container, Frame, Screen, cx } from './ui';
+import { getCatalog } from '@/i18n/catalog';
+import { getHome } from '@/i18n/home';
+import { getPageCopy } from '@/i18n/pages';
+import { Container, nb, Shot, cx } from './ui';
 
 type T = Dict['features'];
 
-/** Section title block: an icon chip + eyebrow, a large title, the text. */
-function Intro({ id, icon: Icon, eyebrow, title, text, center }: { id: string; icon: LucideIcon; eyebrow: string; title: string; text: string; center?: boolean }) {
+/** Section title block: a large title and the text (no eyebrow above headings, owner 24.10). */
+function Intro({ id, title, text, center }: { id: string; title: string; text: string; center?: boolean }) {
   return (
     <div className={center ? 'mx-auto max-w-[760px] text-center' : undefined}>
-      <p className={cx('flex items-center gap-2 text-[15px] leading-5 font-semibold text-accent-text', center && 'justify-center')}>
-        <span className="inline-flex size-7 items-center justify-center rounded-lg bg-accent-tint">
-          <Icon aria-hidden="true" className="size-4" strokeWidth={2} />
-        </span>
-        {eyebrow}
-      </p>
-      <h2 id={id} className="editorial-title mt-5 text-balance">
-        {title}
+      <h2 id={id} className="h2">
+        {nb(title)}
       </h2>
-      <p className="mt-4 text-[17px] leading-7 text-pretty text-fg-2 sm:text-[19px] sm:leading-8">{text}</p>
+      <p className="lead">{nb(text)}</p>
     </div>
   );
 }
@@ -68,7 +53,7 @@ function Points({ items, className }: { items: string[]; className?: string }) {
 /** Text beside a screenshot (40 / 60), stacked on phones; `flip` puts the picture first on wide screens. */
 function Split({ id, flip, alt, text, shot }: { id: string; flip?: boolean; alt?: boolean; text: ReactNode; shot: ReactNode }) {
   return (
-    <section id={id} aria-labelledby={`${id}-title`} className={cx('editorial-section py-20 sm:py-28', alt && 'surface-alt bg-bg-alt')}>
+    <section id={id} aria-labelledby={`${id}-title`} className={cx('section', alt && 'surface-alt')}>
       <Container className="grid items-center gap-10 lg:grid-cols-12 lg:gap-14">
         <div className={cx('min-w-0 lg:col-span-5', flip && 'lg:order-2')}>{text}</div>
         <div className={cx('min-w-0 lg:col-span-7', flip && 'lg:order-1')}>{shot}</div>
@@ -77,15 +62,13 @@ function Split({ id, flip, alt, text, shot }: { id: string; flip?: boolean; alt?
   );
 }
 
-const shot = (name: ScreenName, locale: Locale, alt: string, sizes = '(min-width: 1232px) 660px, (min-width: 1024px) 55vw, calc(100vw - 32px)') => (
-  <Frame>
-    <Screen name={name} locale={locale} alt={alt} sizes={sizes} />
-  </Frame>
+const shot = (name: ScreenName | SceneName, locale: Locale, alt: string, sizes = '(min-width: 1232px) 660px, (min-width: 1024px) 55vw, calc(100vw - 32px)') => (
+  <Shot scene={name} locale={locale} alt={alt} sizes={sizes} />
 );
 
 function Card({ icon: Icon, title, text }: { icon: LucideIcon; title: string; text: string }) {
   return (
-    <li className="rounded-[6px] border border-line bg-card p-6">
+    <li className="card">
       <Icon aria-hidden="true" className="size-6 text-accent" strokeWidth={1.75} />
       <h3 className="mt-3 text-[17px] leading-6 font-semibold">{title}</h3>
       <p className="mt-1.5 text-[15px] leading-6 text-pretty text-fg-2">{text}</p>
@@ -98,7 +81,7 @@ const BAND_KHZ = [4, 8, 12, 20] as const;
 
 function QualityLadder({ t }: { t: T['sound'] }) {
   return (
-    <div className="rounded-[20px] border border-line bg-card p-6 sm:p-8">
+    <div className="card">
       <h3 className="text-[17px] leading-6 font-semibold">{t.tiersTitle}</h3>
       <p className="mt-1 text-[14px] leading-5 text-fg-2">{t.bandHint}</p>
       <ol className="mt-6 flex flex-col gap-5">
@@ -121,12 +104,10 @@ function QualityLadder({ t }: { t: T['sound'] }) {
   );
 }
 
-const figure = (name: ScreenName, locale: Locale, alt: string, caption: string, sizes: string) => (
+const figure = (name: ScreenName | SceneName, locale: Locale, alt: string, caption: string, sizes: string) => (
   <figure className="min-w-0">
-    <Frame>
-      <Screen name={name} locale={locale} alt={alt} sizes={sizes} />
-    </Frame>
-    <figcaption className="mt-3 text-center text-[15px] leading-6 text-fg-2">{caption}</figcaption>
+    <Shot scene={name} locale={locale} alt={alt} sizes={sizes} />
+    <figcaption className="caption mt-3 text-center">{caption}</figcaption>
   </figure>
 );
 
@@ -136,13 +117,17 @@ const figure = (name: ScreenName, locale: Locale, alt: string, caption: string, 
  * language with that language's team; nothing here needs JS.
  */
 export function Features({ t, locale }: { t: T; locale: Locale }) {
+  const x = getPageCopy(locale).features;
+  const home = getHome(locale);
+  const notify = getCatalog(locale).notify;
   return (
     <div id="features">
       <Split
         id="voice"
         text={
           <>
-            <Intro id="voice-title" icon={AudioLines} {...t.voice} />
+            <span id="video" className="anchor-alias" />
+            <Intro id="voice-title" {...t.voice} />
             <Points items={t.voice.points} className="mt-7" />
           </>
         }
@@ -155,7 +140,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
         flip
         text={
           <>
-            <Intro id="sound-title" icon={Headphones} {...t.sound} />
+            <Intro id="sound-title" {...t.sound} />
             <Points items={t.sound.points} className="mt-7" />
             <div id="musician" className="mt-8 rounded-[20px] border border-line bg-card p-6">
               <p className="flex items-center gap-2 text-[14px] leading-5 font-semibold text-accent-text">
@@ -170,11 +155,12 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
         shot={<QualityLadder t={t.sound} />}
       />
 
-      <section id="sip" aria-labelledby="sip-title" className="py-20 sm:py-28">
+      <section id="telephony" aria-labelledby="sip-title" className="section">
+        <span id="sip" className="anchor-alias" />
         <Container>
           <div className="grid items-center gap-10 lg:grid-cols-12 lg:gap-14">
             <div className="min-w-0 lg:col-span-5">
-              <Intro id="sip-title" icon={Phone} {...t.sip} />
+              <Intro id="sip-title" {...t.sip} />
               <Points items={t.sip.points} className="mt-7" />
               <p className="mt-5 text-[14px] leading-5 text-fg-2">{t.sip.note}</p>
             </div>
@@ -196,16 +182,40 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
         flip
         text={
           <>
-            <Intro id="chat-title" icon={MessagesSquare} {...t.chat} />
+            <Intro id="chat-title" {...t.chat} />
             <Points items={t.chat.points} className="mt-7" />
           </>
         }
         shot={shot('chat', locale, t.chat.alt)}
       />
 
-      <section id="calendar" aria-labelledby="calendar-title" className="py-20 sm:py-28">
+      <Split
+        id="canvas"
+        flip
+        text={
+          <>
+            <Intro id="canvas-title" {...x.canvas} />
+            <Points items={x.canvas.points} className="mt-7" />
+          </>
+        }
+        shot={shot('canvas-panel', locale, home.alts['canvas-panel'])}
+      />
+
+      <Split
+        id="recording"
+        alt
+        text={
+          <>
+            <Intro id="recording-title" {...x.recording} />
+            <Points items={x.recording.points} className="mt-7" />
+          </>
+        }
+        shot={shot('recording-focus', locale, home.alts['recording-focus'])}
+      />
+
+      <section id="calendar" aria-labelledby="calendar-title" className="section">
         <Container>
-          <Intro id="calendar-title" icon={CalendarCheck} center {...t.calendar} />
+          <Intro id="calendar-title" center {...t.calendar} />
           <ul className="mt-10 grid gap-4 md:grid-cols-3">
             <Card icon={CalendarCheck} {...t.calendar.cards.invites} />
             <Card icon={CalendarClock} {...t.calendar.cards.find} />
@@ -218,11 +228,11 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
         </Container>
       </section>
 
-      <section id="boards" aria-labelledby="boards-title" className="surface-alt bg-bg-alt py-20 sm:py-28">
+      <section id="boards" aria-labelledby="boards-title" className="section surface-alt">
         <Container>
           <div className="grid gap-8 lg:grid-cols-12 lg:items-end">
             <div className="lg:col-span-7">
-              <Intro id="boards-title" icon={LayoutGrid} {...t.boards} />
+              <Intro id="boards-title" {...t.boards} />
             </div>
             <div className="lg:col-span-5">
               <Points items={t.boards.points} />
@@ -243,7 +253,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
         id="mail"
         text={
           <>
-            <Intro id="mail-title" icon={Mail} {...t.mail} />
+            <Intro id="mail-title" {...t.mail} />
             <Points items={t.mail.points} className="mt-7" />
             <p className="mt-5 text-[14px] leading-5 text-fg-2">{t.mail.note}</p>
           </>
@@ -257,15 +267,13 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
         flip
         text={
           <>
-            <Intro id="search-title" icon={Search} {...t.search} />
+            <Intro id="search-title" {...t.search} />
             <Points items={t.search.points} className="mt-7" />
           </>
         }
         shot={
           <div className="mx-auto max-w-[560px]">
-            <Frame>
-              <Screen name="search" locale={locale} alt={t.search.alt} sizes="(min-width: 1024px) 560px, calc(100vw - 32px)" />
-            </Frame>
+            <Shot scene="search" locale={locale} alt={t.search.alt} sizes="(min-width: 1024px) 560px, calc(100vw - 32px)" />
           </div>
         }
       />
@@ -274,7 +282,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
         id="wiki"
         text={
           <>
-            <Intro id="wiki-title" icon={BookOpenText} {...t.wiki} />
+            <Intro id="wiki-title" {...t.wiki} />
             <Points items={t.wiki.points} className="mt-7" />
           </>
         }
@@ -287,7 +295,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
         flip
         text={
           <>
-            <Intro id="disk-title" icon={FolderOpen} {...t.disk} />
+            <Intro id="disk-title" {...t.disk} />
             <Points items={t.disk.points} className="mt-7" />
           </>
         }
@@ -298,7 +306,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
         id="guests"
         text={
           <>
-            <Intro id="guests-title" icon={DoorOpen} {...t.guests} />
+            <Intro id="guests-title" {...t.guests} />
             <Points items={t.guests.points} className="mt-7" />
           </>
         }
@@ -306,7 +314,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
           // The waiting card on a stage of the app's background (the guest's whole window is mostly empty).
           <div className="guest-stage flex items-center justify-center rounded-[20px] px-4 py-10 sm:py-14">
             <div className="w-full max-w-[420px]">
-              <Screen name="guest" locale={locale} alt={t.guests.alt} sizes="420px" />
+              <Shot scene="guest" locale={locale} alt={t.guests.alt} sizes="420px" />
             </div>
           </div>
         }
@@ -318,7 +326,7 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
         flip
         text={
           <>
-            <Intro id="webapps-title" icon={AppWindow} {...t.webapps} />
+            <Intro id="webapps-title" {...t.webapps} />
             <Points items={t.webapps.points} className="mt-7" />
           </>
         }
@@ -326,19 +334,43 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
       />
 
       <Split
+        id="notifications"
+        text={
+          <>
+            <Intro id="notifications-title" title={notify.title} text={notify.lead} />
+            <Points items={notify.levels} className="mt-7" />
+          </>
+        }
+        shot={shot('notifyrelay', locale, notify.alt)}
+      />
+
+      <Split
+        id="ai"
+        alt
+        flip
+        text={
+          <>
+            <Intro id="ai-title" {...x.ai} />
+            <Points items={x.ai.points} className="mt-7" />
+          </>
+        }
+        shot={shot('aitask', locale, home.alts.aitask)}
+      />
+
+      <Split
         id="bots"
         text={
           <>
-            <Intro id="bots-title" icon={Bot} {...t.bots} />
+            <Intro id="bots-title" {...t.bots} />
             <Points items={t.bots.points} className="mt-7" />
-            <a href={localePath(locale, 'bots/')} className="link mt-7 inline-flex items-center gap-1 text-[16px] leading-6 font-medium">
+            <a href={localePath(locale, 'developers/')} className="link mt-7 inline-flex items-center gap-1 text-[16px] leading-6 font-medium">
               {t.bots.link}
               <ArrowRight aria-hidden="true" className="size-4" strokeWidth={2} />
             </a>
           </>
         }
         shot={
-          <Frame className="bg-[#16171b]">
+          <div className="code-window">
             <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
               <span aria-hidden="true" className="size-3 rounded-full bg-[#ff5f57]" />
               <span aria-hidden="true" className="size-3 rounded-full bg-[#febc2e]" />
@@ -348,16 +380,17 @@ export function Features({ t, locale }: { t: T; locale: Locale }) {
             <pre className="overflow-x-auto px-5 py-5 font-mono text-[13px] leading-6 text-[#e8e8ed] sm:text-[14px]" lang="en">
               <BotCode />
             </pre>
-          </Frame>
+          </div>
         }
       />
 
-      <section id="self-hosted" aria-labelledby="self-hosted-title" className="py-20 sm:py-28">
+      <section id="self-hosted" aria-labelledby="self-hosted-title" className="section">
+        <span id="roles" className="anchor-alias" />
         <Container>
-          <Intro id="self-hosted-title" icon={Server} center {...t.selfhost} />
+          <Intro id="self-hosted-title" center {...t.selfhost} />
           <ol className="mt-12 grid gap-4 md:grid-cols-3 md:gap-6">
             {(['server', 'install', 'invite'] as const).map((id, i) => (
-              <li key={id} className="rounded-[20px] border border-line bg-card p-6 sm:p-8">
+              <li key={id} className="card">
                 <span aria-hidden="true" className="flex size-8 items-center justify-center rounded-full bg-accent-strong text-[15px] font-semibold text-white">
                   {i + 1}
                 </span>

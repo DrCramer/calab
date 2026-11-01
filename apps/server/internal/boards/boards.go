@@ -56,12 +56,18 @@ type Service struct {
 	// CreateLimit / SearchLimit: per-user budgets of task creation and of ⌘K task search
 	// (security review 1.1.0; comments are messages under the message limit). nil = none.
 	CreateLimit, SearchLimit                                   Limiter
+	ReleaseLimit                                               Limiter // POST /api/boards/{id}/releases, per board (board task #101)
 	FormReadLimit, FormIPLimit, FormUserLimit, FormSubmitLimit Limiter
 	// FormUploadLimit: staged uploads of FILE fields per IP ("ip:") or user ("user:");
 	// FormUploadFormLimit: per form (ADR-0064 v2). nil = none.
 	FormUploadLimit, FormUploadFormLimit Limiter
 	// Now is the clock (tests move it).
 	Now func() time.Time
+	// searchSlots bounds the task searches running at once in this process (ADR-0139): a burst
+	// of workspace-wide searches must not take the whole database pool. nil = unbounded.
+	searchSlots chan struct{}
+	// SearchTimeout is the statement budget of a task search query (0 = TaskSearchTimeout).
+	SearchTimeout time.Duration
 	// Relay passes the users' task notices on to the bots they chose (ADR-0090); nil = off.
 	Relay NoticeRelay
 	// AI is the workspace's model of smart tasks (CBF-68); nil = the route answers 404.
@@ -77,7 +83,8 @@ type Service struct {
 
 // New creates the service; p and f may be nil (no plan limit, no uploads).
 func New(d *db.DB, ev events.Publisher, p *plans.Service, f Uploader) *Service {
-	return &Service{db: d, ev: ev, plans: p, files: f, system: messages.NewSystem(d, ev), Now: time.Now}
+	return &Service{db: d, ev: ev, plans: p, files: f, system: messages.NewSystem(d, ev), Now: time.Now,
+		searchSlots: make(chan struct{}, TaskSearchSlots)}
 }
 
 // Routes registers the routes; wrap applies auth + the permission resolver.
@@ -141,7 +148,12 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	h("GET /api/tasks/{id}/activity", s.taskActivity)
 	h("GET /api/t/{key}", s.lookup)
 	h("GET /api/me/tasks", s.myTasks)
+	h("GET /api/me/task-notices", s.listNotices)
 	h("GET /api/workspaces/{id}/tasks/search", s.search)
+	h("GET /api/workspaces/{id}/task-searches", s.listSavedSearches)
+	h("POST /api/workspaces/{id}/task-searches", s.createSavedSearch)
+	h("PATCH /api/workspaces/{id}/task-searches/{sid}", s.updateSavedSearch)
+	h("DELETE /api/workspaces/{id}/task-searches/{sid}", s.deleteSavedSearch)
 	h("GET /api/workspaces/{id}/board-categories", s.listCategories)
 	h("POST /api/workspaces/{id}/board-categories", s.createCategory)
 	h("PATCH /api/board-categories/{id}", s.updateCategory)
@@ -160,6 +172,7 @@ func (s *Service) Routes(mux httpx.Router, wrap func(http.Handler) http.Handler)
 	s.webhookRoutes(mux, wrap)
 	s.ruleRoutes(mux, wrap)
 	s.repoRoutes(mux, wrap)
+	s.releaseRoutes(mux, wrap)
 }
 
 func uid(r *http.Request) uuid.UUID { return auth.MustFromContext(r.Context()).UserID }

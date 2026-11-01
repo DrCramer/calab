@@ -1,14 +1,14 @@
 import { LOCALE_STORAGE_KEY, type Locale } from '@/i18n/locales';
 
 export const PREFERENCES_KEY = 'calab.site-preferences';
-export const PREFERENCES_VERSION = 1;
+export const PREFERENCES_VERSION = 2; // 2: analytics (Yandex Metrika) became a real purpose; v1 choices ask again
 export const PREFERENCES_TTL = 180 * 24 * 60 * 60 * 1000;
 export const PREFERENCES_CHANGED = 'calab:preferences-changed';
 export const OPEN_PREFERENCES = 'calab:open-preferences';
 
-// No vendors are connected yet. Adding one requires a disclosed provider/purpose,
-// a version bump (fresh choice), and consent-gated loading, including after withdrawal.
-export const AVAILABLE_PURPOSES = { language: true, analytics: false, marketing: false } as const;
+// Connected vendors: analytics = Yandex Metrika (components/yandex-metrika.tsx). Adding one requires a
+// disclosed provider/purpose, a version bump (fresh choice), and consent-gated loading, including after withdrawal.
+export const AVAILABLE_PURPOSES = { language: true, analytics: true, marketing: false } as const;
 export type OptionalPurpose = keyof typeof AVAILABLE_PURPOSES;
 export type SitePreferences = {
   version: number;
@@ -28,7 +28,7 @@ export function parsePreferences(raw: string | null | undefined, now = Date.now(
     if (p.version !== PREFERENCES_VERSION || typeof p.savedAt !== 'number' || !Number.isFinite(p.savedAt) ||
       typeof p.expiresAt !== 'number' || !Number.isFinite(p.expiresAt) || p.savedAt > now ||
       p.expiresAt <= now || p.expiresAt > p.savedAt + PREFERENCES_TTL ||
-      typeof p.language !== 'boolean' || p.analytics !== false || p.marketing !== false) return null;
+      typeof p.language !== 'boolean' || typeof p.analytics !== 'boolean' || p.marketing !== false) return null;
     return p as SitePreferences;
   } catch {
     return null;
@@ -54,11 +54,11 @@ export function rememberLocale(locale: Locale) {
   try { localStorage.setItem(LOCALE_STORAGE_KEY, locale); } catch { /* Navigation still works. */ }
 }
 
-export function savePreferences(language: boolean, locale: Locale): boolean {
+export function savePreferences(language: boolean, locale: Locale, analytics = false): boolean {
   const now = Date.now();
   const preferences: SitePreferences = {
     version: PREFERENCES_VERSION, savedAt: now, expiresAt: now + PREFERENCES_TTL,
-    language, analytics: false, marketing: false,
+    language, analytics, marketing: false,
   };
   try {
     // Remove a previous grant first, so a failed write never grants optional storage.

@@ -52,6 +52,9 @@ export function pushToast(items: Toast[], next: Toast): Toast[] {
   return out;
 }
 
+/** The stack is drawn newest on top (top right of the window); the store keeps the oldest first. */
+export const newestFirst = (items: readonly Toast[]): Toast[] => items.slice().reverse();
+
 /** Pointer/keyboard interaction with the toast stack; while either is set the auto-hide is paused. */
 export interface StackInteraction {
   hover: boolean;

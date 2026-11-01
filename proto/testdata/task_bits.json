@@ -1,5 +1,5 @@
 {
-  "_comment": "perm.TaskBits (Go) / taskPermissions (TS), ADR-0059 §2 + ADR-0076 §3 + ADR-0115 (create-only). bits: the board bits of the viewer (VIEW_BOARD 131072, CREATE_TASKS 262144, EDIT_TASKS 524288; 262144 alone with scoped = create-only); scoped: BoardAccess.TaskScoped / Board.taskScoped; assignee/approver/watcher/author: the viewer's role on a live task (author absent = false); want: the expected task bits.",
+  "_comment": "perm.TaskBits (Go) / taskPermissions (TS), ADR-0059 §2 + ADR-0076 §3 + ADR-0115 (create-only). bits: the board bits of the viewer (VIEW_BOARD 131072, CREATE_TASKS 262144, EDIT_TASKS 524288; 262144 alone with scoped = create-only); scoped: BoardAccess.TaskScoped / Board.taskScoped; assignee/approver/watcher/author: the viewer's role on a live task (author absent = false); creator (ADR-0151, instead of author): who created the task — \"my_bot\" (a bot the viewer owns: perm.TaskAuthor / isTaskAuthor make the viewer its author) or \"other_bot\" (someone else's bot); want: the expected task bits.",
   "cases": [
     { "name": "viewer keeps the board bits", "bits": 393216, "scoped": false, "assignee": false, "approver": false, "watcher": false, "want": 393216 },
     { "name": "viewer assigned keeps the board bits", "bits": 131072, "scoped": false, "assignee": true, "approver": true, "watcher": true, "want": 131072 },
@@ -23,6 +23,11 @@
     { "name": "create-only bits, not scoped (bot / guest / archived board)", "bits": 262144, "scoped": false, "assignee": true, "approver": true, "watcher": true, "author": true, "want": 0 },
     { "name": "not scoped, invited (guest / bot / archived board)", "bits": 0, "scoped": false, "assignee": true, "approver": true, "watcher": true, "want": 0 },
     { "name": "not scoped, watcher only", "bits": 0, "scoped": false, "assignee": false, "approver": false, "watcher": true, "want": 0 },
-    { "name": "no access", "bits": 0, "scoped": false, "assignee": false, "approver": false, "watcher": false, "author": true, "want": 0 }
+    { "name": "no access", "bits": 0, "scoped": false, "assignee": false, "approver": false, "watcher": false, "author": true, "want": 0 },
+    { "name": "create-only, my bot's task", "bits": 262144, "scoped": true, "assignee": false, "approver": false, "watcher": false, "creator": "my_bot", "want": 393216 },
+    { "name": "create-only, someone else's bot's task", "bits": 262144, "scoped": true, "assignee": false, "approver": false, "watcher": false, "creator": "other_bot", "want": 0 },
+    { "name": "invitee, my bot's task does not count (not create-only)", "bits": 0, "scoped": true, "assignee": false, "approver": false, "watcher": false, "creator": "my_bot", "want": 0 },
+    { "name": "viewer, my bot's task keeps the board bits", "bits": 393216, "scoped": false, "assignee": false, "approver": false, "watcher": false, "creator": "my_bot", "want": 393216 },
+    { "name": "create-only bits not scoped, my bot's task (guest / archived board)", "bits": 262144, "scoped": false, "assignee": false, "approver": false, "watcher": false, "creator": "my_bot", "want": 0 }
   ]
 }

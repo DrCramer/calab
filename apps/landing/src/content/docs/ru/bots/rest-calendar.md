@@ -37,7 +37,8 @@ order: 9
 
 ## Создать встречу
 
-`CreateCalendarEventRequest`: `title` (1..120), `description` (≤ 4000), `roomId` (голосовая комната, пусто — без комнаты), `startsAt`, `endsAt` (позже начала, не дальше 7 дней), `allDay`, `tz` (IANA; пусто — пояс профиля, иначе UTC), `record`, `repeat` (`EVENT_REPEAT_DAILY`, `…_WEEKLY`, `…_BIWEEKLY`, `…_MONTHLY`), `repeatUntil`, `attendees: [{userId, required} | {email}]`.
+`CreateCalendarEventRequest`: `title` (1..120), `description` (≤ 4000), `roomId` (голосовая комната, пусто — без комнаты), `startsAt`, `endsAt` (позже начала, не дальше 7 дней), `allDay`, `tz` (IANA; пусто — пояс профиля, иначе UTC), `record`, `repeat` (`EVENT_REPEAT_DAILY`, `…_WEEKLY`, `…_BIWEEKLY`, `…_MONTHLY`, `…_WORKDAYS`), `repeatUntil`, `attendees: [{userId, required} | {email}]`.
+`…_WORKDAYS` — рабочие дни: пн–пт, а в российском пространстве — по производственному календарю РФ (праздники пропускаются, рабочие субботы по переносу входят); какой именно — поле события `holidayCalendar` (`"ru"` или пусто), фиксируется при выборе повтора.
 
 - Бот — организатор (`organizerId` = id бота), но не участник: указать себя в `attendees` — `422`. Боты и гости участниками встреч не бывают.
 - Приглашения и `invite.ics` уходят с системного адреса как «Пространство (от имени бота X)», без `Reply-To` и без гостевых ссылок на комнату: внешние участники получают ссылку на страницу встречи.

@@ -448,15 +448,15 @@ body {
  * desktop shell is up on macOS with «Прозрачность окна» on (not with Reduce transparency, «Слабый
  * компьютер» or in visual tests). Main has put an NSVisualEffectView (`sidebar`, follows the key
  * state) behind a clear page: the body stops painting, the window layer (title bar, section rail)
- * becomes a calm ~86 % tint over the native material (dark darker, light lighter, so red badges do not
+ * becomes a calm ~62 % tint (owner 23.10: was 76 %) over the native material (dark darker, light lighter, so red badges do not
  * pop); the room / DM column (`mat-sidebar-window`) is SOLID again (owner 07.10), as is everything
  * else. Text ≥ 4.5:1. Tokens stay solid: other `var(--color-rail)` users are unaffected.
  */
 :root.vibrancy {
-  --vibrancy-rail: rgb(23 23 25 / 76%);
+  --vibrancy-rail: rgb(23 23 25 / 62%);
 }
 :root.vibrancy[data-theme='light'] {
-  --vibrancy-rail: rgb(240 240 244 / 76%);
+  --vibrancy-rail: rgb(240 240 244 / 62%);
 }
 :root.vibrancy body {
   background: transparent;
@@ -490,6 +490,50 @@ body {
 }
 .island-fade-rail {
   --island-fade-color: var(--color-rail);
+}
+/* The island folded into my avatar (ADR-0146, docs/08 «Нижний островок»): the full island grows
+   out of the avatar — opacity + scale around the avatar's centre (28 px in from the island's
+   bottom-left corner), so the avatar itself never moves. Transitions run only while it opens or
+   closes; nothing when idle. Closed: hidden after the fade (no hit-testing, out of the Tab order).
+   The folded avatar on top hides only once the island is fully in, and is back at once on close. */
+.island-pop {
+  transform-origin: 28px calc(100% - 28px);
+  opacity: 0;
+  transform: scale(0.96);
+  visibility: hidden;
+  transition:
+    opacity var(--motion-island) ease-out,
+    transform var(--motion-island) ease-out,
+    visibility 0s linear var(--motion-island);
+}
+.island-pop[data-open] {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  transition:
+    opacity var(--motion-island) ease-out,
+    transform var(--motion-island) ease-out,
+    visibility 0s;
+}
+/* While the folded island is open, frames (the office editor) let the pointer through to the page,
+   so leaving the island onto them is seen (BottomIsland). */
+:root[data-island-open] iframe {
+  pointer-events: none;
+}
+.island-face[data-open] {
+  opacity: 0;
+  transition: opacity 0s linear var(--motion-island);
+}
+:root {
+  --motion-island: 150ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-island: 0ms;
+  }
+}
+:root[data-low-end='true'] {
+  --motion-island: 0ms;
 }
 /* macOS pop-up button chevron (↕, 10 px, 8 px from the right edge). In CSS, not a Tailwind
    arbitrary value: the SVG has spaces, which a class attribute would split. */
@@ -943,6 +987,33 @@ body:has(.mat-sheet) [data-radix-popper-content-wrapper]:not(:has(> .tip)) {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+/* Toast cards (top right, newest on top): the entry is one short opacity + translate run, only while a card
+   appears (a removal is immediate: the focus/pause lifecycle of #45 relies on it); reduced motion: none. */
+@keyframes calaba-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.toast-card {
+  animation: calaba-toast-in var(--motion-fast) ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast-card {
+    animation: none;
+  }
+}
+/* The inbox popover (380 px, top right) opens over the toast column: the stack steps left of it. */
+@media (min-width: 769px) {
+  body:has([data-inbox-popover]) [data-toast-stack] {
+    right: calc(380px + 24px);
+    max-width: calc(100vw - var(--rail-width) - 380px - 56px);
   }
 }
 .anim-in {

@@ -17,6 +17,7 @@ import {
   ROLES_V2_PERMISSIONS,
   WORKSPACE_ONLY_PERMISSIONS,
   taskPermissions,
+  isTaskAuthor,
   taskRoomPermissions,
   computeMemberBoardPermissions,
   computeMemberRoomPermissions,
@@ -401,13 +402,31 @@ describe('roles (ADR-0026)', () => {
       createdBy: author ? me : 'u4',
     });
     const table = JSON.parse(readFileSync(new URL('../../../proto/testdata/task_bits.json', import.meta.url), 'utf8')) as {
-      cases: { name: string; bits: number; scoped: boolean; assignee: boolean; approver: boolean; watcher: boolean; author?: boolean; want: number }[];
+      cases: {
+        name: string;
+        bits: number;
+        scoped: boolean;
+        assignee: boolean;
+        approver: boolean;
+        watcher: boolean;
+        author?: boolean;
+        creator?: 'my_bot' | 'other_bot';
+        want: number;
+      }[];
     };
-    expect(table.cases.length).toBeGreaterThanOrEqual(20);
+    expect(table.cases.length).toBeGreaterThanOrEqual(25);
     for (const c of table.cases) {
       const board = { permissions: BigInt(c.bits), taskScoped: c.scoped };
-      expect(taskPermissions(board, task(c.assignee, c.approver, c.watcher, false, c.author ?? false), me), c.name).toBe(BigInt(c.want));
+      const x = task(c.assignee, c.approver, c.watcher, false, c.author ?? false);
+      // ADR-0151: created by a bot — the viewer's own (in myBots) or someone else's.
+      const card = c.creator ? { ...x, createdBy: 'bot1' } : x;
+      const myBots = new Set(c.creator === 'my_bot' ? ['bot1'] : ['bot2']);
+      expect(taskPermissions(board, card, me, myBots), c.name).toBe(BigInt(c.want));
     }
+    expect(isTaskAuthor({ createdBy: me }, me)).toBe(true);
+    expect(isTaskAuthor({ createdBy: 'bot1' }, me, new Set(['bot1']))).toBe(true);
+    expect(isTaskAuthor({ createdBy: 'bot1' }, me)).toBe(false);
+    expect(isTaskAuthor({ createdBy: '' }, '', new Set(['']))).toBe(false);
     // ADR-0115: a create-only author of an archived task no longer sees it.
     expect(taskPermissions({ permissions: PERMISSION_BITS.CREATE_TASKS, taskScoped: true }, task(false, false, false, true, true), me)).toBe(0n);
     // An archived task: the invitation no longer counts (the server passes live flags only).

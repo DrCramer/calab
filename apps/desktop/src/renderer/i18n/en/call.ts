@@ -48,6 +48,10 @@ export const enCall: DictShape<typeof ruCall> = {
   'call.sipTaken': 'The call was already taken or ended',
   'call.sipNotify': 'Incoming call from {number}',
   'call.sipPanel': 'Call · {number}',
+  'call.sipParked': 'Room: {room} — on hold',
+  'call.sipParkedLeave': 'Leave the room',
+  'call.sipParkedAfter': 'You will join the room after the call',
+  'call.onPhone': 'On a phone call',
   // transfer of a phone call (ADR-0132)
   'call.sipTransfer': 'Transfer',
   'call.sipTransferPick': 'Transfer the call to',

@@ -1,7 +1,9 @@
 import { RoomType, type FileMeta, type PermissionBits } from '@calaba/protocol';
 import * as ContextMenu from '../../components/radix/context-menu';
-import { Copy, CornerUpLeft, Download, Forward, Link2, ListPlus, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { CheckCheck, ChevronDown, Copy, CornerUpLeft, Download, Forward, Link2, ListPlus, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { TICKS_READ, useReadReceipt } from '../../stores/readReceipts';
+import { ReadersList } from './ReadReceipts';
 import { confirmAction } from '../../components/Confirm';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -28,7 +30,7 @@ export const menuItem =
   'flex h-8 cursor-default items-center gap-2 rounded-[6px] px-2.5 text-body text-fg outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-accent-strong data-[highlighted]:text-accent-fg';
 
 /** Text selected inside this message, if any (copy copies the selection first, like Telegram). */
-function selectionWithin(key: string): string {
+export function selectionWithin(key: string): string {
   const sel = window.getSelection();
   const text = sel?.toString() ?? '';
   if (!text || !sel?.anchorNode) return '';
@@ -55,7 +57,7 @@ function downloadImage(f: FileMeta): void {
 }
 
 /** Right click / long press on a bubble (docs/09 #38); also «Ещё…» of the hover bar (MessageActions.tsx). */
-export function MessageMenu({ c, own, roomId, perms, image }: { c: ChatMessage; own: boolean; roomId: string; perms: PermissionBits; image?: FileMeta }): ReactNode {
+export function MessageMenu({ c, own, roomId, workspaceId, perms, image }: { c: ChatMessage; own: boolean; roomId: string; workspaceId: string; perms: PermissionBits; image?: FileMeta }): ReactNode {
   const m = c.msg;
   const canSend = can(perms, 'SEND_MESSAGES');
   const canManage = can(perms, 'MANAGE_MESSAGES');
@@ -77,6 +79,7 @@ export function MessageMenu({ c, own, roomId, perms, image }: { c: ChatMessage; 
   return (
     <ContextMenu.Portal>
       <ContextMenu.Content className={menuBox} aria-label={t('chat.menu')} collisionPadding={menuPadding()}>
+        {own && c.status === 'sent' ? <ReadByItem roomId={roomId} messageId={m.id} workspaceId={workspaceId} /> : null}
         {canSend ? (
           <>
             {/* Phone card (≤ 360 px): eight 44 px targets edge to edge; the narrowest phones (card < 352 px) drop the last one. */}
@@ -152,6 +155,39 @@ export function MessageMenu({ c, own, roomId, perms, image }: { c: ChatMessage; 
         ) : null}
       </ContextMenu.Content>
     </ContextMenu.Portal>
+  );
+}
+
+/**
+ * «Прочитали» (ADR-0140) on top of my message's menu (right click; long press on the phone) in a
+ * chat of several people once someone saw it: the row opens the list in place (the menu stays).
+ */
+function ReadByItem({ roomId, messageId, workspaceId }: { roomId: string; messageId: string; workspaceId: string }): ReactNode {
+  const read = useReadReceipt(roomId, messageId) === TICKS_READ;
+  const group = useRooms((s) => {
+    const type = s.byId[roomId]?.type;
+    return type !== RoomType.DM && type !== RoomType.NOTES;
+  });
+  const [open, setOpen] = useState(false);
+  if (!read || !group) return null;
+  return (
+    <>
+      <ContextMenu.Item
+        className={menuItem}
+        aria-expanded={open}
+        data-testid="message-read-by"
+        onSelect={(e) => {
+          e.preventDefault();
+          setOpen((v) => !v);
+        }}
+      >
+        <CheckCheck className="size-4" aria-hidden />
+        <span className="flex-1">{t('chat.readBy')}</span>
+        <ChevronDown className={cx('size-4 transition-transform duration-[var(--motion-fast)]', open && 'rotate-180')} aria-hidden />
+      </ContextMenu.Item>
+      {open ? <ReadersList roomId={roomId} messageId={messageId} workspaceId={workspaceId} title={false} /> : null}
+      <ContextMenu.Separator className="mx-1 my-1 h-px bg-line" />
+    </>
   );
 }
 

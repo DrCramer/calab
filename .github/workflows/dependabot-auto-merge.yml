@@ -30,6 +30,9 @@ jobs:
 
       - id: decide
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
           UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
           ECOSYSTEM: ${{ steps.meta.outputs.package-ecosystem }}
           DEPS: ${{ steps.meta.outputs.dependency-names }}
@@ -47,6 +50,15 @@ jobs:
           esac
           # uiohook-napi carries patches/uiohook-napi@1.5.5.patch — every bump needs the patch re-applied by hand
           case ",$DEPS," in *uiohook-napi*) reason="uiohook-napi: patches/uiohook-napi@*.patch must be re-applied" ;; esac
+          # Review SDK-sensitive pins; shared test/lint devDeps may still auto-merge.
+          changed_files=$(gh pr view "$PR" --json files --jq '.files[].path')
+          if printf '%s\n' "$changed_files" | grep -qxF 'apps/mobile/package.json'; then
+            sdk_deps=${DEPS// /}
+            case ",$sdk_deps," in
+              *,react,*|*,react-dom,*|*,@types/react,*|*,typescript,*)
+                reason="mobile SDK pins: review compatibility and native build" ;;
+            esac
+          fi
           # values come from commit messages: one line only (no extra GITHUB_OUTPUT keys, no ::commands:: in the log)
           oneline() { local v="${1//[$'\r\n']/ }"; printf '%s' "${v//::/: :}"; }
           echo "reason=$(oneline "$reason")" >> "$GITHUB_OUTPUT"

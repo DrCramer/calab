@@ -20,7 +20,8 @@ describe('textKind', () => {
 describe('previewKind', () => {
   it('picks the viewer', () => {
     expect(previewKind(file('a.png', 'image/png', 10, 'x'), false)).toBe('image');
-    expect(previewKind(file('a.png', 'image/png'), false)).toBe('card');
+    expect(previewKind(file('a.png', 'image/png'), false)).toBe('image'); // no thumbnail yet: still a picture (owner 28.10)
+    expect(previewKind(file('a.svg', 'image/svg+xml'), false)).toBe('card');
     expect(previewKind(file('a.mp4', 'video/mp4'), false)).toBe('video');
     expect(previewKind(file('a.pdf', 'application/pdf'), false)).toBe('pdf');
     expect(previewKind(file('a.pdf', 'application/pdf'), true)).toBe('card');

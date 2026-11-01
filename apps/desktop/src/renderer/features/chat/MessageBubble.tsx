@@ -1,10 +1,8 @@
-import { RoomType, type FileMeta, type Message, type PermissionBits } from '@calaba/protocol';
-import { useRooms } from '../../stores/rooms';
+import { type FileMeta, type Message, type PermissionBits } from '@calaba/protocol';
 import * as ContextMenu from '../../components/radix/context-menu';
-import { AlertCircle, Check, CheckCheck, Clock3, Download, FileText, RotateCw } from 'lucide-react';
+import { AlertCircle, Clock3, Download, FileText, RotateCw } from 'lucide-react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type PointerEvent, type ReactNode, type SyntheticEvent } from 'react';
 import { Avatar } from '../../components/Avatar';
-import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { thumbnailPath } from '../../lib/api/endpoints';
@@ -13,11 +11,15 @@ import { fmt, toDate, useTimeFormat } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
 import { firstLink, isEmojiOnly, parseMarkdown } from '../../lib/markdown/parse';
 import { filePreview } from '../../lib/filePreview';
-import { openAttachment } from '../../services/files';
+import { officeOpens } from '../disk/office/bridge';
+import { isImageAttachment } from '../../lib/imageAttachment';
+import type { LightboxImage } from '../../lib/lightbox';
+import { AttachmentImg } from '../../components/AttachmentImg';
+import { downloadFile, openAttachment } from '../../services/files';
 import { can } from '../../lib/permissions';
 import { retrySend, setEmbedsHidden, toggleReaction } from '../../services/chat';
 import { messageById, useMessages, type ChatMessage, type PendingUpload } from '../../stores/messages';
-import { useReadReceipt } from '../../stores/readReceipts';
+import { Ticks } from './ReadReceipts';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { memberName, useFormerInfo, useResolveUnknown, useWorkspaces } from '../../stores/workspaces';
@@ -25,6 +27,7 @@ import { useChatView } from './chatView';
 import { ReactionTip } from './ReactionTip';
 import { userColorIndex, type RowMeta } from './grouping';
 import { LinkPreview } from './LinkPreview';
+import { CanvasLinkCard, firstCanvas } from '../canvas/CanvasLinkCard';
 import { WikiLinkCard, firstWikiPage } from '../wiki/WikiLinkCard';
 import { DiskLinkChip, firstDiskItem } from '../disk/DiskLinkChip';
 import { MessageActions, hasMessageActions } from './MessageActions';
@@ -68,7 +71,7 @@ const IMAGE_MAX_H = 460;
 const IMAGE_MAX_VH = 60;
 
 /** Mention chip in a message: my mentions (me, @everyone, @here) on a warm tint, others accent. */
-function MentionChip({ workspaceId, v, own }: { workspaceId: string; v: string; own: boolean }): ReactNode {
+export function MentionChip({ workspaceId, v, own }: { workspaceId: string; v: string; own: boolean }): ReactNode {
   const me = useSession((s) => s.me?.user?.id ?? '');
   const label = useMentionLabel(workspaceId, v);
   const special = v === 'everyone' || v === 'here';
@@ -86,7 +89,8 @@ function MentionChip({ workspaceId, v, own }: { workspaceId: string; v: string; 
   );
 }
 
-export const isImage = (f: FileMeta): boolean => f.mime.startsWith('image/') && !!f.thumbnailUrl;
+/** A picture attachment (lib/imageAttachment: by type and name, a server thumbnail is not required). */
+export const isImage = (f: FileMeta): boolean => isImageAttachment(f);
 
 export interface RowProps {
   c: ChatMessage;
@@ -113,34 +117,30 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
   const reply = useCallback(() => useUi.getState().setReply(roomId, m.id), [roomId, m.id]);
   const { ref: swipeRef, icon: swipeIcon, active: swiping, handlers: swipeHandlers } = useReplySwipe(mobile && c.status === 'sent' && can(perms, 'SEND_MESSAGES'), reply);
   return (
-    // overflow-x-clip: nothing in a row widens the feed (no horizontal scroll, docs/09 #74); clip,
-    // not hidden, so the action bar over a bubble's top edge still shows above the row.
-    <div className={cx('overflow-x-clip pl-4', own ? 'pr-6' : 'pr-4', meta.first ? 'pt-2' : 'pt-0.5')} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
+    <div className={rowLane(own, meta.first)} data-message-id={c.key} data-day-start={meta.day ? '1' : undefined}>
       {meta.day ? <DatePill date={toDate(m.createdAt)} /> : null}
       {meta.isNew ? <NewMessagesPill /> : null}
       <div
         ref={swipeRef}
         {...swipeHandlers}
         className={cx(
-          'relative flex items-end gap-3 rounded-[var(--radius-card)] transition-[background-color,box-shadow] duration-[var(--motion-fast)]',
+          rowInner(own, highlighted),
           // the browser never pans the feed sideways: a horizontal move is the reply swipe's
           mobile && 'touch-pan-y',
-          // Telegram tints the message whose menu is open (Radix marks the trigger data-state=open).
-          'has-[>[data-state=open]]:bg-[var(--color-bubble-highlight)] has-[>[data-state=open]]:shadow-[0_0_0_4px_var(--color-bubble-highlight)]',
-          own ? 'justify-end' : 'justify-start',
-          highlighted && 'row-highlight',
         )}
       >
         {!own ? (
           // Phone: under a bubble with inline buttons the avatar stays beside the bubble itself (top),
           // not at the bottom of the buttons where it reads as a stray one.
-          <div className={cx('w-9 shrink-0 self-end', !!m.inlineKeyboard?.rows.length && !m.forward && c.status === 'sent' && 'mobile:self-start')}>
-            {meta.last ? (
-              <AuthorTarget workspaceId={workspaceId} userId={m.authorId} name={name} className="rounded-full">
-                <Avatar userId={m.authorId} name={name} fileId={author?.avatarFileId || undefined} size={36} former={former} />
-              </AuthorTarget>
-            ) : null}
-          </div>
+          <RowAvatar
+            workspaceId={workspaceId}
+            userId={m.authorId}
+            name={name}
+            fileId={author?.avatarFileId}
+            former={former}
+            show={meta.last}
+            className={cx(!!m.inlineKeyboard?.rows.length && !m.forward && c.status === 'sent' && 'mobile:self-start')}
+          />
         ) : null}
         <Bubble c={c} meta={meta} own={own} name={name} workspaceId={workspaceId} roomId={roomId} perms={perms} />
         {swiping ? <ReplySwipeIcon icon={swipeIcon} /> : null}
@@ -149,6 +149,88 @@ export const MessageRow = memo(function MessageRow({ c, meta, own, workspaceId, 
     </div>
   );
 });
+
+/**
+ * The pieces of a feed row shared with comment rows (CommentRow.tsx: canvas and meeting comments
+ * look like the chat, owner 23.10). One place for the lane, the avatar column, the bubble box and
+ * its corners, the author line and the time — no parallel copy of the styles.
+ */
+export const rowLane = (own: boolean, first: boolean, tight = false): string =>
+  // overflow-x-clip: nothing in a row widens the feed (no horizontal scroll, docs/09 #74); clip,
+  // not hidden, so the action bar over a bubble's top edge still shows above the row.
+  // `tight`: a narrow column (comments): half the side padding, room for the tail kept.
+  cx('overflow-x-clip', tight ? 'pl-2' : 'pl-4', own ? (tight ? 'pr-4' : 'pr-6') : tight ? 'pr-2' : 'pr-4', first ? 'pt-2' : 'pt-0.5');
+
+export const rowInner = (own: boolean, highlighted: boolean): string =>
+  cx(
+    'relative flex items-end gap-3 rounded-[var(--radius-card)] transition-[background-color,box-shadow] duration-[var(--motion-fast)]',
+    // Telegram tints the message whose menu is open (Radix marks the trigger data-state=open).
+    'has-[>[data-state=open]]:bg-[var(--color-bubble-highlight)] has-[>[data-state=open]]:shadow-[0_0_0_4px_var(--color-bubble-highlight)]',
+    own ? 'justify-end' : 'justify-start',
+    highlighted && 'row-highlight',
+  );
+
+/** The bubble's hover / menu box (the context-menu trigger). */
+export const bubbleBox = (own: boolean, wide = false): string =>
+  cx('relative min-w-0 rounded-[var(--radius-bubble)]', wide ? 'max-w-[85%]' : 'max-w-[min(70%,640px)] mobile:max-w-[85%]', own ? 'bubble-out' : 'bubble-in');
+
+/** The bubble's shape (background, shadow); the corners come from bubbleRadius. */
+export const BUBBLE_SHAPE = 'relative max-w-full bg-[var(--bubble-bg)] shadow-[var(--shadow-bubble)]';
+
+/** The text block of a bubble. */
+export const BUBBLE_TEXT = 'selectable whitespace-pre-wrap break-words px-3 pb-1.5 text-list leading-5 [overflow-wrap:anywhere]';
+
+/** Corner radii: large outside, small where bubbles of one group touch, none under the tail. */
+export function bubbleRadius(own: boolean, first: boolean, last: boolean, tail: boolean): CSSProperties {
+  const r = 'var(--radius-bubble)';
+  const ri = 'var(--radius-bubble-inner)';
+  const radius: CSSProperties = own
+    ? { borderRadius: `${r} ${first ? r : ri} ${tail ? '0' : ri} ${r}` }
+    : { borderRadius: `${first ? r : ri} ${r} ${r} ${tail ? '0' : ri}` };
+  if (last && !tail) Object.assign(radius, own ? { borderBottomRightRadius: r } : { borderBottomLeftRadius: r });
+  return radius;
+}
+
+/** The avatar column of someone else's row: the avatar on the last bubble of a group. */
+export function RowAvatar({ workspaceId, userId, name, fileId, former, show, className }: { workspaceId: string; userId: string; name: string; fileId: string | undefined; former: boolean; show: boolean; className?: string | undefined }): ReactNode {
+  return (
+    <div className={cx('w-9 shrink-0 self-end', className)}>
+      {show ? (
+        <AuthorTarget workspaceId={workspaceId} userId={userId} name={name} className="rounded-full">
+          <Avatar userId={userId} name={name} fileId={fileId || undefined} size={36} former={former} />
+        </AuthorTarget>
+      ) : null}
+    </div>
+  );
+}
+
+/** The author line on the first bubble of someone else's group: coloured name, badges, «через бота». */
+export function AuthorLine({ workspaceId, userId, name, bot, via }: { workspaceId: string; userId: string; name: string; bot: boolean; via?: string | undefined }): ReactNode {
+  return (
+    <div className="truncate px-3 pt-1.5 text-body font-semibold leading-[18px]" style={{ color: `var(--name-${userColorIndex(userId) + 1})` }} title={name}>
+      <AuthorTarget workspaceId={workspaceId} userId={userId} name={name} className="max-w-full truncate hover:underline">
+        {name}
+      </AuthorTarget>
+      <MemberBadge workspaceId={workspaceId} userId={userId} className="ml-1.5 inline-block align-[-3px]" />
+      <FormerChip workspaceId={workspaceId} userId={userId} className="ml-1.5 align-[1px]" />
+      {bot ? <BotBadge className="ml-1.5 align-[1px]" /> : null}
+      {via ? <ViaBot botId={via} className="ml-1.5 text-caption text-[color:var(--bubble-meta)]" /> : null}
+    </div>
+  );
+}
+
+/** «изм.» + the time (the full date in the tip): the bubble's meta line; `children` adds status icons. */
+export function TimeMeta({ at, edited, children }: { at: Date; edited: boolean; children?: ReactNode }): ReactNode {
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap text-caption leading-none text-[color:var(--bubble-meta)]">
+      {edited ? <span>{t('chat.editedShort')}</span> : null}
+      <Tip label={fmt.full(at)}>
+        <span>{fmt.time(at)}</span>
+      </Tip>
+      {children}
+    </span>
+  );
+}
 
 /**
  * A system message (Message.kind SYSTEM, ADR-0025): no bubble or avatar — the date / «new» pills
@@ -215,7 +297,7 @@ export const SystemRow = memo(function SystemRow({ c, meta, workspaceId, perms, 
  * member menu (not the message menu around it). In a workspace only (a DM peer has no member
  * menu); out of the Tab order — the feed's keyboard path is the message itself.
  */
-function AuthorTarget({ workspaceId, userId, name, className, children }: { workspaceId: string; userId: string; name: string; className?: string; children: ReactNode }): ReactNode {
+export function AuthorTarget({ workspaceId, userId, name, className, children }: { workspaceId: string; userId: string; name: string; className?: string; children: ReactNode }): ReactNode {
   // A DM has no workspace and no member menu: the profile still opens (a shared workspace's card).
   if (!workspaceId) return <ProfileTarget userId={userId} name={name} className={className}>{children}</ProfileTarget>;
   return (
@@ -299,8 +381,10 @@ function Bubble({
   const link = useMemo(() => (m.embedsHidden ? null : firstLink(nodes)), [nodes, m.embedsHidden]);
   // A wiki page link of this server (owner 14.10): the page card in place of the web preview.
   const wikiPage = useMemo(() => (link ? firstWikiPage(nodes) : null), [link, nodes]);
+  // A canvas link of this server (owner 23.10): the same card, a canvas tile.
+  const canvasItem = useMemo(() => (link && !wikiPage ? firstCanvas(nodes) : null), [link, wikiPage, nodes]);
   // A Disk file link of this server (CBF-20): the compact chip in place of the web preview.
-  const diskItem = useMemo(() => (link && !wikiPage ? firstDiskItem(nodes) : null), [link, wikiPage, nodes]);
+  const diskItem = useMemo(() => (link && !wikiPage && !canvasItem ? firstDiskItem(nodes) : null), [link, wikiPage, canvasItem, nodes]);
   const canHideEmbed = c.status === 'sent' && (own || can(perms, 'MANAGE_MESSAGES'));
   const bar = useActionBar(hasMessageActions(c));
   const images = m.attachments.filter(isImage);
@@ -342,16 +426,12 @@ function Bubble({
   const voiceOnly = rows.length === 1 && !!rows[0] && isVoice(rows[0]) && c.status === 'sent' && !hasText && !images.length && !videos.length && !m.reactions.length;
   const width = images.length ? imageBoxWidth(images) : videos.length ? VIDEO_WIDTH : undefined;
 
-  const metaNode = <MetaInfo c={c} own={own} />;
+  const metaNode = <MetaInfo c={c} own={own} workspaceId={workspaceId} />;
+  // The invisible copy that reserves the time's room on the last line: no interactive ticks.
+  const metaSpacer = <MetaInfo c={c} own={own} workspaceId={workspaceId} spacer />;
   const tail = meta.last && !sticker;
 
-  // Corner radii: large outside, small where bubbles of one group touch, none under the tail.
-  const r = 'var(--radius-bubble)';
-  const ri = 'var(--radius-bubble-inner)';
-  const radius: CSSProperties = own
-    ? { borderRadius: `${r} ${meta.first ? r : ri} ${tail ? '0' : ri} ${r}` }
-    : { borderRadius: `${meta.first ? r : ri} ${r} ${r} ${tail ? '0' : ri}` };
-  if (meta.last && !tail) Object.assign(radius, own ? { borderBottomRightRadius: r } : { borderBottomLeftRadius: r });
+  const radius = bubbleRadius(own, meta.first, meta.last, tail);
 
   // A sticker message (Telegram Desktop): the picture alone, no bubble; the time + status and the
   // reactions ride dark pills over its bottom-right corner, like on a lone image.
@@ -388,7 +468,7 @@ function Bubble({
     // data-focus-shape: keyboard focus draws the ring on this shape (body + tail), app/styles.css.
     <div
       // max-w-full: a media box's fixed width never outgrows the bubble (a phone's 85 % lane, owner 14.10).
-      className="relative max-w-full bg-[var(--bubble-bg)] shadow-[var(--shadow-bubble)]"
+      className={BUBBLE_SHAPE}
       style={{ ...radius, ...(width ? { width } : {}) }}
       data-focus-shape
     >
@@ -399,15 +479,7 @@ function Bubble({
             <ViaBot botId={via} bare />
           </div>
         ) : showName ? (
-          <div className="truncate px-3 pt-1.5 text-body font-semibold leading-[18px]" style={{ color: `var(--name-${userColorIndex(m.authorId) + 1})` }} title={name}>
-            <AuthorTarget workspaceId={workspaceId} userId={m.authorId} name={name} className="max-w-full truncate hover:underline">
-              {name}
-            </AuthorTarget>
-            <MemberBadge workspaceId={workspaceId} userId={m.authorId} className="ml-1.5 inline-block align-[-3px]" />
-            <FormerChip workspaceId={workspaceId} userId={m.authorId} className="ml-1.5 align-[1px]" />
-            {authorBot ? <BotBadge className="ml-1.5 align-[1px]" /> : null}
-            {via ? <ViaBot botId={via} className="ml-1.5 text-caption text-[color:var(--bubble-meta)]" /> : null}
-          </div>
+          <AuthorLine workspaceId={workspaceId} userId={m.authorId} name={name} bot={authorBot} via={via} />
         ) : null}
         {fwd ? (
           <ForwardLine
@@ -431,19 +503,19 @@ function Bubble({
         ) : null}
         {uploads.length ? <Uploads uploads={uploads} /> : null}
         {hasText ? (
-          <div className={cx('selectable whitespace-pre-wrap break-words px-3 pb-1.5 text-list leading-5 [overflow-wrap:anywhere]', fwd ? 'pt-0.5' : 'pt-1.5')}>
+          <div className={cx(BUBBLE_TEXT, fwd ? 'pt-0.5' : 'pt-1.5')}>
             <Markdown text={shown} mention={mention} highlight={highlight} />
             {!link && !files.length && !m.reactions.length ? (
               // Reserve room for the time on the last line (it is drawn absolutely, Telegram-style).
               <span className="invisible ml-2 inline-flex select-none" aria-hidden>
-                {metaNode}
+                {metaSpacer}
               </span>
             ) : null}
           </div>
         ) : null}
         {link && hasText ? (
           <div className="px-3 pb-1">
-            {wikiPage ? <WikiLinkCard pageId={wikiPage} /> : diskItem ? <DiskLinkChip itemId={diskItem} workspaceId={workspaceId} sharedBy={m.authorId} /> : <LinkPreview url={link} onHide={canHideEmbed ? () => void setEmbedsHidden(m, true) : undefined} />}
+            {wikiPage ? <WikiLinkCard pageId={wikiPage} /> : canvasItem ? <CanvasLinkCard itemId={canvasItem} /> : diskItem ? <DiskLinkChip itemId={diskItem} workspaceId={workspaceId} sharedBy={m.authorId} /> : <LinkPreview url={link} onHide={canHideEmbed ? () => void setEmbedsHidden(m, true) : undefined} />}
           </div>
         ) : null}
         {rows.length ? (
@@ -479,11 +551,7 @@ function Bubble({
     <ContextMenu.Root modal={false} onOpenChange={onMenuOpenChange}>
       <ContextMenu.Trigger asChild disabled={c.status !== 'sent'}>
         <div
-          className={cx(
-            'relative min-w-0 max-w-[min(70%,640px)] rounded-[var(--radius-bubble)] mobile:max-w-[85%]',
-            own ? 'bubble-out' : 'bubble-in',
-            c.status === 'pending' && 'opacity-80',
-          )}
+          className={cx(bubbleBox(own), c.status === 'pending' && 'opacity-80')}
           data-testid="message-bubble"
           data-own={own || undefined}
           // Keyboard: Tab reaches the message, which shows its action bar (docs/09 #47).
@@ -505,7 +573,7 @@ function Bubble({
           ) : null}
         </div>
       </ContextMenu.Trigger>
-      <MessageMenu c={c} own={own} roomId={roomId} perms={perms} image={menuImage} />
+      <MessageMenu c={c} own={own} roomId={roomId} workspaceId={workspaceId} perms={perms} image={menuImage} />
     </ContextMenu.Root>
   );
 }
@@ -554,7 +622,7 @@ function StickerTarget({ sticker }: { sticker: NonNullable<Message['sticker']> }
  * mousedown would kill it too. A blur after the release leaves the selection alone.
  * Presses on the controls inside (reactions, links, the action bar) focus those as usual.
  */
-function useActionBar(enabled: boolean): {
+export function useActionBar(enabled: boolean): {
   enabled: boolean;
   visible: boolean;
   setPicker: (open: boolean) => void;
@@ -691,7 +759,7 @@ function useActionBar(enabled: boolean): {
  * bubble's top edge instead, clamped into the feed (placeActionBar). Measured once per showing,
  * before paint, and applied to the DOM directly: no second render.
  */
-function ActionBarSlot({ own, children }: { own: boolean; children: ReactNode }): ReactNode {
+export function ActionBarSlot({ own, children }: { own: boolean; children: ReactNode }): ReactNode {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const slot = ref.current;
@@ -718,7 +786,7 @@ function ActionBarSlot({ own, children }: { own: boolean; children: ReactNode })
 }
 
 /** Bubble tail (Telegram): a curved corner piece in the bubble colour at the bottom. */
-function Tail({ own }: { own: boolean }): ReactNode {
+export function Tail({ own }: { own: boolean }): ReactNode {
   return (
     <svg
       aria-hidden
@@ -732,41 +800,19 @@ function Tail({ own }: { own: boolean }): ReactNode {
   );
 }
 
-function MetaInfo({ c, own }: { c: ChatMessage; own: boolean }): ReactNode {
-  const d = toDate(c.msg.createdAt);
+function MetaInfo({ c, own, workspaceId, spacer = false }: { c: ChatMessage; own: boolean; workspaceId: string; spacer?: boolean }): ReactNode {
   return (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap text-caption leading-none text-[color:var(--bubble-meta)]">
-      {c.msg.editedAt ? <span>{t('chat.editedShort')}</span> : null}
-      <Tip label={fmt.full(d)}>
-        <span>{fmt.time(d)}</span>
-      </Tip>
+    <TimeMeta at={toDate(c.msg.createdAt)} edited={!!c.msg.editedAt}>
       {own ? (
         c.status === 'pending' ? (
           <Clock3 className="size-3.5" aria-label={t('chat.statusPending')} />
         ) : c.status === 'failed' ? (
           <AlertCircle className="size-3.5 text-danger" aria-label={t('chat.failed')} />
         ) : (
-          <Ticks roomId={c.msg.roomId} messageId={c.msg.id} />
+          <Ticks roomId={c.msg.roomId} messageId={c.msg.id} workspaceId={workspaceId} spacer={spacer} />
         )
       ) : null}
-    </span>
-  );
-}
-
-/**
- * docs/08 «Галочки» (docs/09 #92): ✓ — the server has the message, ✓✓ — someone else read it
- * (the DM peer / another member). A leaf with a boolean selector: a READ_RECEIPT re-renders
- * only the ticks it flips, not the bubble or the feed.
- */
-function Ticks({ roomId, messageId }: { roomId: string; messageId: string }): ReactNode {
-  const read = useReadReceipt(roomId, messageId);
-  // A notes shelf (ADR-0039) has no readers: no ticks at all.
-  const shelf = useRooms((s) => s.byId[roomId]?.type === RoomType.NOTES);
-  if (shelf) return null;
-  return read ? (
-    <CheckCheck className="size-4" aria-label={t('chat.statusRead')} />
-  ) : (
-    <Check className="size-4" aria-label={t('chat.statusSent')} />
+    </TimeMeta>
   );
 }
 
@@ -848,15 +894,18 @@ function imageBoxPx(files: FileMeta[]): number {
   return Math.max(200, Math.round(h > IMAGE_MAX_H ? (IMAGE_MAX_H * f.width) / f.height : w));
 }
 
-/** The chat thumbnail of an image, with the 1024 px one for 2× screens when it is sharper (docs/09 #62). */
-function Thumb({ f, boxW, boxH }: { f: FileMeta; boxW: number; boxH: number }): ReactNode {
+/** The chat preview of an image, with the 1024 px thumbnail for 2× screens when it is sharper (docs/09 #62). */
+function Thumb({ f, boxW, boxH, onGone }: { f: FileMeta; boxW: number; boxH: number; onGone: () => void }): ReactNode {
   const path = thumbnailPath(f.id);
   const hi = wantsLargeThumb(f.width, f.height, boxW, boxH) ? thumbWidthPath(path, THUMB_LARGE) : undefined;
   // 1× keeps the bare path (= w=512): the same URL as the lightbox placeholder, loaded once.
+  // No thumbnail (owner 28.10): the server makes it on this request, else the original is shown.
   return (
-    <MediaImg
-      path={path}
-      hiDpiPath={hi}
+    <AttachmentImg
+      f={f}
+      thumb={path}
+      hiDpiThumb={hi}
+      onGone={onGone}
       alt={f.name}
       loading="lazy"
       decoding="async"
@@ -866,26 +915,17 @@ function Thumb({ f, boxW, boxH }: { f: FileMeta; boxW: number; boxH: number }): 
   );
 }
 
+/** The Lightbox list of a message's images. */
+const lightboxImages = (files: FileMeta[]): LightboxImage[] => files.map((g) => ({ fileId: g.id, name: g.name, mime: g.mime, width: g.width, height: g.height }));
+
 function ImageGrid({ files, padTop, overlay }: { files: FileMeta[]; padTop: boolean; overlay: ReactNode }): ReactNode {
-  const open = useUi((s) => s.openDialog);
   const single = files.length === 1 ? files[0] : undefined;
-  const aspect = single?.width && single.height ? `${single.width} / ${single.height}` : undefined;
   const boxPx = single ? imageBoxPx(files) : (IMAGE_MAX - 2) / 2; // grid: square cells, gap-0.5
+  const boxH = single ? (single.width && single.height ? (boxPx * single.height) / single.width : boxPx * 0.75) : boxPx;
   return (
     <div className={cx('relative grid gap-0.5', files.length > 1 && 'grid-cols-2', padTop && 'pt-1.5')} style={{ width: '100%' }}>
       {files.map((f, index) => (
-        <button
-          key={f.id}
-          type="button"
-          aria-label={t('chat.openImage', { name: f.name })}
-          onClick={() => open({ kind: 'image', images: files.map((g) => ({ fileId: g.id, name: g.name, mime: g.mime, width: g.width, height: g.height })), index })}
-          {...dragOutAttrs(f)}
-          {...dragOutHandlers}
-          className="block overflow-hidden bg-[color-mix(in_srgb,var(--bubble-accent)_10%,transparent)] focus-visible:outline-offset-[-2px]"
-          style={single ? { aspectRatio: aspect ?? '4 / 3', maxHeight: IMAGE_MAX_H, width: '100%' } : { aspectRatio: '1 / 1' }}
-        >
-          <Thumb f={f} boxW={boxPx} boxH={single ? (single.width && single.height ? (boxPx * single.height) / single.width : boxPx * 0.75) : boxPx} />
-        </button>
+        <ImageTile key={f.id} f={f} files={files} index={index} single={!!single} boxW={boxPx} boxH={boxH} />
       ))}
       {overlay ? (
         <span className="pointer-events-none absolute bottom-1.5 right-1.5 rounded-full bg-[rgb(0_0_0/50%)] px-1.5 py-1 [--bubble-meta:var(--color-on-accent)]">{overlay}</span>
@@ -894,17 +934,52 @@ function ImageGrid({ files, padTop, overlay }: { files: FileMeta[]; padTop: bool
   );
 }
 
+/**
+ * One picture of a message: the box keeps the picture's proportions before it loads (no jump); a
+ * click opens the Lightbox over the message's pictures. A file whose preview does not load at all
+ * (not a picture after all) stays in its box as a file: icon, name, a click downloads.
+ */
+function ImageTile({ f, files, index, single, boxW, boxH }: { f: FileMeta; files: FileMeta[]; index: number; single: boolean; boxW: number; boxH: number }): ReactNode {
+  const open = useUi((s) => s.openDialog);
+  const [gone, setGone] = useState(false);
+  const onGone = useCallback(() => setGone(true), []);
+  const aspect = f.width && f.height ? `${f.width} / ${f.height}` : undefined;
+  return (
+    <button
+      type="button"
+      aria-label={gone ? `${t('chat.download')} ${f.name}` : t('chat.openImage', { name: f.name })}
+      onClick={() => (gone ? downloadFile(f) : open({ kind: 'image', images: lightboxImages(files), index }))}
+      {...dragOutAttrs(f)}
+      {...dragOutHandlers}
+      className="block overflow-hidden bg-[color-mix(in_srgb,var(--bubble-accent)_10%,transparent)] focus-visible:outline-offset-[-2px]"
+      style={single ? { aspectRatio: aspect ?? '4 / 3', maxHeight: IMAGE_MAX_H, width: '100%' } : { aspectRatio: '1 / 1' }}
+      data-testid="chat-image"
+      data-state={gone ? 'file' : 'image'}
+    >
+      {gone ? (
+        <span className="flex size-full flex-col items-center justify-center gap-1.5 px-3 text-[color:var(--bubble-meta)]">
+          <FileText className="size-6" aria-hidden />
+          <span className="max-w-full truncate text-caption">{f.name}</span>
+        </span>
+      ) : (
+        <Thumb f={f} boxW={boxW} boxH={boxH} onGone={onGone} />
+      )}
+    </button>
+  );
+}
+
 function FileRow({ f }: { f: FileMeta }): ReactNode {
   // A PDF opens in the viewer (ADR-0103, its header has «Скачать»); anything else is saved.
-  const pdf = filePreview(f, useUi.getState().phone.on) === 'pdf';
+  const office = officeOpens(f.name);
+  const pdf = office || filePreview(f, useUi.getState().phone.on) === 'pdf';
   const download = (): void => openAttachment(f, [f]);
   return (
     <div className="group/file flex min-w-[min(220px,100%)] items-center gap-3 py-1">
-      <Tip label={t('chat.download')}>
+      <Tip label={office ? t('disk.open') : t('chat.download')}>
         <button
           type="button"
           onClick={download}
-          aria-label={`${t('chat.download')} ${f.name}`}
+          aria-label={`${office ? t('disk.open') : t('chat.download')} ${f.name}`}
           className="grid size-11 shrink-0 place-items-center rounded-full bg-[var(--bubble-chip-bg)] text-[color:var(--bubble-chip-fg)]"
         >
           <FileText className={cx('size-5', !pdf && 'group-hover/file:hidden')} aria-hidden />

@@ -338,8 +338,13 @@ func message(m *v1.Message) map[string]any {
 	for _, f := range m.GetAttachments() {
 		files = append(files, f.GetName())
 	}
+	// ADR-0140: who saw the bot's own message on screen (set by the API for the author only).
+	var readBy []map[string]any
+	for _, rd := range m.GetReadBy() {
+		readBy = append(readBy, map[string]any{"user": rd.GetUserId(), "at": ts(rd.GetReadAt())})
+	}
 	return compact(map[string]any{"id": m.GetId(), "author": m.GetAuthorId(), "text": text, "at": ts(m.GetCreatedAt()),
-		"reply_to": m.GetReplyToId(), "files": files})
+		"reply_to": m.GetReplyToId(), "files": files, "read_by": readBy})
 }
 
 // taskByRef reads a task by id or by key (GET /api/t/{key} over the bot's workspaces).

@@ -13,6 +13,7 @@ import { startLocale } from './services/locale';
 import { installPlayer } from './services/player';
 import { installCalls } from './services/call';
 import { installSipInbound } from './services/sipInbound';
+import { installSipOutbound } from './services/sipOutbound';
 import { installResumeVoice } from './services/resumeVoice';
 import { installTimeFormat } from './services/timeFormat';
 import { bootstrap } from './services/session';
@@ -46,6 +47,8 @@ installPlayer();
 installCalls();
 // Inbound phone calls (ADR-0117): leaving such a call's voice session hangs it up.
 installSipInbound();
+// Personal calls from «Телефония» (ADR-0137 §3): the same for their voice session.
+installSipOutbound();
 
 // After a restart for an update: back into the same room / call (docs/09 #126).
 installResumeVoice();

@@ -30,6 +30,7 @@
 | [1.1–1.2 Веб: сборка и локально](#11-сборка-и-проверка-бандла) | бандл без Electron-кода, e2e:web локально | Mac/Linux, pnpm, Docker (dev API + LiveKit) | 15 мин |
 | [1.3 Веб: ручной сценарий W1–W17](#13-ручной-сценарий-w1w12-chrome-плюс-firefox-по-возможности) | вход, cookie, чат, голос, стрим, приглашения в браузере, карточка ссылки «Открыть в Calab» (W13–W17) | Chrome + Firefox, микрофон, 2 аккаунта | 30 мин |
 | [1.4 Веб на стенде](#14-стенд-httpsappcalabru-и-httpsmeetgptunnelru) | статика, заголовки, CSP, e2e на app и meet | pnpm, Playwright; аккаунт из 0.2 | 20 мин |
+| [1.5 iPhone: голос после фона IA.1–IA.7](#15-iphone-голос-после-фона-и-блокировки-ia1ia7) | звук и микрофон после блокировки, чужого звука, bfcache, смены сети и наушников | iPhone + второй участник | 15 мин |
 | [2.1 Десктоп: установка](#21-установка-с-releasescalabru) | установщики с releases, подпись macOS, первый запуск | macOS / Windows / Linux | 10 мин на ОС |
 | [2.2–2.5 Десктоп: автотесты](#22-предусловия-локальный-api) | e2e Electron, визуальная регрессия, a11y | Mac, pnpm, Docker (LiveKit dev) | 20 мин |
 | [2.6 Десктоп: два клиента (2.1–2.34)](#26-два-клиента-на-одной-машине-онбординг-чат-голос-стрим-21234) | онбординг, чат, файлы, голос, модерация, стрим, сессии, переподключение | Mac, локальный API или стенд | 60 мин |
@@ -39,6 +40,8 @@
 | [2.12 Веб-камера C.1–C.6](#212-веб-камера-c1c6-v02-ветка-featwebcam) | кнопка «Камера», превью, публикация VP9 simulcast, плитки и PiP, лимит камер, модератор, «Не показывать видео», «Экономить трафик» | Mac, локальный API из `feat/webcam`, LiveKit dev; настоящая камера или `CALABA_FAKE_MEDIA=1` | 30 мин |
 | [2.13 Эхо на колонках E.1–E.3](#213-эхо-на-колонках-e1e3-ветка-featecho-hardening) | «собеседник слышит себя»: предупреждение, режимы «Динамики»/«Авто», «Проверка эха», флаги AEC | 2 машины (у одной — колонки, без наушников), 2 человека, сборка из `feat/echo-hardening` | 30 мин |
 | [2.13а Режим музыканта MU.1–MU.4](#213а-режим-музыканта-mu1mu4-adr-0052-ветка-featmusician-mode) | живой инструмент/пение без обработки, предупреждение про динамики, замок на Free | 2 машины, 2 человека, наушники у обоих, инструмент или голос; пространство Team и Free | 20 мин |
+| [2.13б Шумоподавление на телефоне NS.1–NS.3](#213б-шумоподавление-на-телефоне-ns1ns3-board-114) | на телефоне работает системный NS, без «кваканья» на краях фраз | десктоп + iPhone и Android | 10 мин |
+| [2.13в Устройство вывода и AirPods OD.1–OD.5](#213в-устройство-вывода-и-airpods-od1od5-cbf-108) | голоса и звуки на одном выводе при смене/пропаже устройства | Mac, AirPods, 3 участника | 15 мин |
 | [2.18 REST не зависает во время звонка AT.1–AT.4](#218-rest-не-зависает-во-время-звонка-at1at4-docs09-146) | видео-превью с перемоткой, смена Wi‑Fi, сон, блокировка API → всё грузится без перезапуска | Mac, сборка из ветки, стенд, видео ≥ 15 МБ | 20 мин |
 | [2.21 Холст CV.1–CV.15 (ADR-0126, ADR-0127)](#221-холст-cv115-adr-0126-adr-0127) | дерево, объекты, два человека, «только просмотр», версии, корзина, PNG, ⌘K, телефон, публичная ссылка, вращение/группы, шаблоны, мини-карта, голосование, таймер, комментарии | два пользователя (А, Б, В) и телефон; стенд или локальный API | 45 мин |
 | [3.1 Сервер: базовый прогон](#31-базовый-прогон-контракт-go-интеграционные-тесты-curl-образ) | proto, линт, unit/integration, curl: регистрация, права, refresh, rate limit | Docker, Go, buf, sqlc, jq | 20 мин |
@@ -202,6 +205,20 @@ Electron-E2E так же: `CALABA_LOGIN` + `CALABA_PASSWORD` или `CALABA_INVI
 CSP/RNNoise вручную: открыть `https://app.calab.io`, войти, зайти в голосовую комнату, DevTools → Console. Не должно быть `Refused to …`/`Content Security Policy` и `RNNoise unavailable, falling back…` (это предупреждение пишется, если worklet с WASM не стартовал за 2 с). Допустимо: `Unrecognized feature: 'speaker-selection'` (Chrome), `401` на первый `/api/auth/refresh` до входа. В «Настройки → Голос и устройства» строка «Вероятность речи (RNNoise)» показывает проценты, а не «нет — RNNoise выключен».
 
 ---
+
+### 1.5 iPhone: голос после фона и блокировки IA.1–IA.7
+
+iPhone (Safari и приложение) + второй участник на десктопе, оба в одной голосовой комнате; лог — Safari «Разработка» → консоль (`voice:`).
+
+| # | Шаг | Ожидается |
+|---|---|---|
+| IA.1 | iPhone: заблокировать экран на 10 с, разблокировать | без звуков отключения в кармане; голоса снова слышны, iPhone слышат; в логе `page visible after 10 s hidden` |
+| IA.2 | Заблокировать на 1–2 мин, разблокировать | сразу «Переподключение…» и вход без ожидания 5–30 с; без тоста об обрыве (длительность — только в логе `link back after N s`) |
+| IA.3 | Во время звонка включить музыку в другом приложении / записать кружок в Telegram, вернуться | в шапке панели «Ждём микрофон» жёлтым вместо «Голос подключён» (на телефоне в плашке голоса «Вас не слышно» жёлтым вместо названия комнаты), а не «Переподключение…», тостов нет; после возврата строка исчезает, вас снова слышно; не помогло за ~2 с — «Вас не слышно» |
+| IA.4 | Приложение (shell): во время звонка заблокировать на 1–2 мин, разблокировать, ничего не нажимать | звук не заблокирован — голоса слышны сами; заблокирован (`canPlaybackAudio=false` в логе) — тост «Вы не слышите собеседников» с кнопкой «Включить звук» (один, его не вытесняют другие), после «Включить звук» голоса слышны, тост закрыт |
+| IA.5 | Safari: уйти со страницы по ссылке и вернуться «Назад» в течение 2 мин | снова в той же комнате (`page restored from the back/forward cache`), микрофон как был |
+| IA.6 | Переключить Wi‑Fi ↔ LTE, не выходя из звонка | gateway не переподключается заново при живом сокете (`wake`), голос держится или возвращается сам |
+| IA.7 | В комнате с двумя-тремя людьми подключить и отключить наушники (AirPods / проводные), на телефоне и на компьютере | слышны все, а не только вошедшие после переключения; в логе `output devices changed, N remote audio element(s) re-bound` |
 
 ## 2. Десктоп
 
@@ -473,6 +490,26 @@ open apps/desktop/dist/mac-arm64/Calab.app   # при первом запуск�
 | MU.2 | А снимает наушники, выбирает вывод «Динамики MacBook», включает режим заново | При включении — красный липкий тост «Звук идёт в динамики (…)» с «Выключить режим музыканта»; в настройках — та же плашка. Б говорит — слышит себя (ожидаемо); через ≈ 7–10 с у А тост «Собеседники слышат себя…» |
 | MU.3 | А выходит из голоса и входит снова | Режим выключен, гитары у А нет |
 | MU.4 | То же в пространстве **Free** | Переключатель в настройках под замком «Доступно на тарифе Team и выше», в меню «…» — пункт с замком, клик — тост с «Связаться». Войти с включённым режимом из Team-комнаты в Free-комнату — режим выключается с тем же тостом |
+
+### 2.13б Шумоподавление на телефоне NS.1–NS.3 (board #114)
+А — на десктопе (RNNoise включён), Б — на телефоне (iPhone: Safari и приложение; Android: Chrome и приложение), одна голосовая комната.
+
+| # | Действие | Ожидается |
+|---|---|---|
+| NS.1 | Б открывает «Настройки → Голос и устройства» | «Шумоподавление» выключено и неактивно, подпись «На этом устройстве шум убирает сама система…» |
+| NS.2 | Б говорит короткие фразы с паузами 3 с, рядом шумит вентилятор/улица; А слушает | Начала и концы фраз чистые, без «кваканья» и бульканья; фон приглушён системой |
+| NS.3 | А открывает настройки на десктопе | RNNoise у А по-прежнему включён (настройка не сбросилась) |
+
+### 2.13в Устройство вывода и AirPods OD.1–OD.5 (CBF-108)
+macOS, AirPods + динамики MacBook; А в комнате с Б и В, Б говорит постоянно. Лог А — `main.log` (`voice:`).
+
+| # | Действие | Ожидается |
+|---|---|---|
+| OD.1 | А входит в голос с уже подключёнными AirPods (вывод «По умолчанию», микрофон AirPods) | голоса в AirPods и через 2–3 с после входа (переход AirPods в HFP), звуки интерфейса там же |
+| OD.2 | В настройках выбрать «Динамики MacBook», потом AirPods, потом «По умолчанию»; после каждого шага В выходит и входит | голоса и звуки на выбранном; вошедший заново В — там же, а не на устройстве, выбранном при входе |
+| OD.3 | Выбран AirPods; убрать AirPods в кейс, через 20 с достать | голоса уходят на динамики (звуки тоже), после возврата — снова в AirPods без действий; выбор в настройках не меняется |
+| OD.4 | Вывод «По умолчанию»; переключить вывод в macOS (Пункт управления → Звук) туда и обратно | голоса и звуки следуют за системой |
+| OD.5 | Запустить приложение с выбранными AirPods, когда они в кейсе, войти в голос, затем достать | сначала динамики, потом AirPods; ни на одном шаге «звуки слышны, голоса нет» |
 
 ### 2.14 Стрим: выбор источника, свой стрим, полный экран S.5–S.7 (ветка `feat/stream-ux`, docs/09 #17–18)
 Mac (лучше Retina + второй монитор), 2 клиента (2.6) в одной голосовой комнате.
@@ -2067,6 +2104,7 @@ CALABA_WEB_URL=http://127.0.0.1:39571 npx playwright test --config playwright.we
 | C.27 | «Удалить из календаря»: своё событие с участниками, чужое приглашение, вхождение серии («Только это событие»), серия; затем изменить событие у провайдера и удалить в Calab без синхронизации; календарь только для чтения | Текст подтверждения по роли; событие исчезает сразу и у провайдера (участникам — отмена); вхождение — остальные остаются; изменённое — тост «изменилось», событие на месте; read-only — тост; боту / гостю `DELETE /api/me/external-events` — 403 |
 | C.28 | ADR-0104. А и Bob открывают одну встречу (Bob — участник), Carol видит её комнату, Dave — нет (встреча без комнаты). Bob пишет комментарий (Enter), правит его («…» → «Изменить»), А удаляет комментарий Bob; Carol комментирует встречу в своей комнате; curl Dave `GET /api/events/<id>/comments`, гость — то же | Комментарий появляется у всех открытых карточек без перезагрузки (`EVENT_COMMENT_UPSERT`), «Комментарии — N» растёт; «изменено» после правки; у А «…» → «Удалить» на чужом, у Bob «Изменить» только на своём; Dave — 404, гость — 403; у отменённой встречи комментарии видны, поля ввода нет |
 | C.29 | Диалог встречи → «Добавить участников» → ввести `@all` → строка «@all · все участники пространства · N» | Чипы всех участников пространства без гостей и ботов; больше 12 — первые 10 и «+N», рядом с «Участники» число и «Убрать всех»; в пространстве > 99 человек строка неактивна «больше 99 — во встрече до 100 человек» |
+| C.30 | Bug board #85. Настройки → Календарь → «Добавить часовой пояс» → «kolk» → Kolkata; ещё New York, подпись «Нью-Йорк», ↑; третий добавить нельзя. День и неделя; диалог новой встречи; второе устройство того же аккаунта; телефон 375 px | Слева от основной шкалы две приглушённые колонки в строках сетки (Kolkata — «…:30»), в шапке подпись и «UTC+5:30»; пилюля даты в строке полуночи пояса («+1 д» в неделе); линия «сейчас» проходит через колонки; в диалоге — время встречи в обоих поясах; на втором устройстве те же пояса; × убирает колонку; у коллеги без поясов календарь прежний |
 
 Автотесты: `docs/20-calendar-testing.md` (Go-интеграционные `internal/app/events_*_integration_test.go`, unit десктопа, Playwright e2e против мока, прод-smoke).
 
@@ -2322,3 +2360,106 @@ are not current phone evidence. Visual suites remain disabled.
 5. Call the Caller ID from a phone: the menu / group rings as in direct mode; the journal row has `provider_call_id`. Hang up on either side — the other side ends.
 6. Switch back to «На адрес сервера»: the agent unregisters (Expires: 0); the line disappears.
 7. `docker compose stop sipreg`: within 30 s the line reads «Регистратор недоступен»; start it — «Зарегистрировано» again.
+
+## Telephony: contacts, dial pad, the personal call, tones (ADR-0137 T4)
+
+Stand with a real provider (telephony on, a Caller ID), member A with `PLACE_CALLS`, a second phone.
+
+1. «Телефония» → «Контакты» → «+»: name, company, the second phone's number as «8 916 …» → save. The card shows it as «+7 916 …»; the same number on another contact → «Номер уже у «…»» under the numbers (tap opens that contact).
+2. Admin (`MANAGE_INTEGRATIONS`): «…» → «Импорт CSV» with a `;` file (one new row, one with that number, one without a name) → preview «Будет добавлено: 1 · пропущено: 2» with reasons → «Импортировать»; «Экспорт CSV» downloads the book.
+3. Call the Caller ID from the second phone: the incoming sheet (and the system notification with the window hidden) shows the contact's name, company and number; decline.
+4. «Недавние»: the missed row shows the name; on a phone a tap calls back (desktop: 📞 on hover). With A in a voice room: «Вызов…» (phone) / «Набираем…» in the island, ring-back plays, the room is paused; answer on the second phone → the call band; hang up → back in the room.
+5. Answered call: «Клавиатура» → press 1 2 #; the second phone (or an IVR you call) hears / receives the tones. If not — record it in docs/12 (DTMF line).
+6. «Набор»: type «101» → «Имя · вн. 101», call → internal call; long press «0» → «+»; paste «Тел.: 8 (916) 123-45-67» → «8 916 123-45-67». Member without `PLACE_CALLS`: the note, the call button only for internal numbers.
+
+## Telephony: tones and an extension in a room call (ADR-0046 addendum 29.10)
+
+Stand with a real provider, an IVR that reads back keys (or an office PBX with extensions), A and B in one voice room; A has `PLACE_CALLS`, B is a plain member.
+
+1. A: «Позвонить на номер» → «+7 495 … доб. 101» (also try «…,101» and «…;101») → Enter. The row and the «В голосе» card show «доб. 101»; no «Клавиатура» while it rings.
+2. Answer: ~2 s later the IVR / PBX receives 1 0 1 (the provider's CDR, or the PBX connects extension 101). Only the number reached the trunk (the provider's log).
+3. A: island «Клавиатура» → «Тоновый набор: +7 495 … доб. 101» → press 2 #; the IVR reacts; a soft tick per key in A's speakers only (B hears no clicks).
+4. B (no `MUTE_MEMBERS`): no «Клавиатура» anywhere; a moderator (`MUTE_MEMBERS`) has it. Phone (iPhone): the header's people stack → the line row → «Клавиатура» card.
+5. A second room with its own line: keys pressed in room 1 never reach room 2's callee. Hang up mid-extension («…,,,,9») → no more tones, no errors.
+
+## Notifications lead to the source; «Упоминания» with task events (ADR-0141, #99)
+
+macOS desktop build, two workspaces, member B in both; A mentions and assigns B.
+
+1. B hides the window with the red button (app in the tray). A writes «@B» in #общий of the second workspace → the notification title is «#общий (Вторая) · A»; click → the window appears, the second workspace opens #общий at that message.
+2. B minimises the window (yellow button). A assigns B a task → «KEY-N · Название», body «A назначил(а) вас»; click → the window restores, the task opens.
+3. Same with the window open but another app in front; and with notifications grouped in the Notification Center (click an older one).
+4. Title bar «Упоминания»: the mention and the task event are listed (dot = unread); after reading them they stay, without the dot; a reload keeps both.
+
+## Office files in ONLYOFFICE (ADR-0143, #98)
+
+A Document Server per docs/ops/office-onlyoffice-deploy.md, `OFFICE_ENABLED=true`; desktop app, members A («Правка») and B («Просмотр» on folder «Отчёты»), a call going on.
+
+1. A: Disk → «+» shows Папка, Документ, Таблица, Презентация, Загрузить файлы → «Таблица»: «Новая таблица.xlsx» opens at once as a tab in the title bar; the island (mute, the self panel) stays, the editor's status bar is above it.
+2. Type in a cell, Ctrl+S → «Все изменения сохранены»; the Disk row shows the new size, «История» an edit entry; download it and open in Excel / LibreOffice and with openpyxl.
+3. «Создать → Таблица» again → «Новая таблица (2).xlsx». B opens the first one: view only, the row shows «Редактирует A» while A has it open.
+4. B: «+» in «Отчёты» is absent (no write); in the root it creates a «Документ» — Russian text is not underlined.
+5. A sends an xlsx in chat; B opens it: view only, «Сохранить в Диск» → a new Disk item opens editable. A legacy .doc: «Сохранить как .docx» makes a copy next to it.
+6. Close a tab with unsaved changes → the three-button dialog. Hide the window for 5 minutes, show it → the editor opens again.
+7. Phone: «Создать → Документ» → the file is in the list with the note «Править его можно на компьютере»; opening it views only.
+8. `OFFICE_ENABLED=false` + rollout: after a reconnect the office items and the editor are gone, xlsx opens its card as before.
+
+### CalDAV source DATE preservation (ADR-0144)
+
+- Unit: `go test -race ./internal/caldav` covers calendar-date preservation, recurrence across DST and batch encoding.
+- PG17: `go test -race -tags integration -run '^TestCalDAVDatePersistence$' ./internal/app` imports a DATE event, changes the profile timezone, checks persisted dates and legacy-column defaults.
+- Migration 00139 is additive; previously imported rows acquire original dates on their next successful normal sync.
+
+### Session-bound calendar widget feed (ADR-0145)
+
+- `go test -race ./internal/calendar ./internal/caldav` covers grant type/key separation, expiry and minimized projection.
+- PG17: `go test -race -tags integration -count=1 -run '^Test(CalendarWidget|CalDAVDatePersistence|BotRouteTable)' ./internal/app` covers exact-session revocation, bot/anonymous denial, own-only/SSO policy, workday/cancelled occurrences, source DATE values and bounds.
+- `make gen` and `pnpm -F @calaba/landing gen:routes --check` must have no generated drift.
+- Native widgets and physical acceptance belong to the dependent iOS change.
+
+## Git events: draft, review, approval, target branch (ADR-0060 §4, #101 stage A)
+- `go test -race ./internal/boards/...` — golden webhooks of GitHub/GitLab/Gitea for every new event, the draft→ready flow, redelivery, target-branch globs, template variables.
+- PG18 + Valkey: `go test -tags integration -count=1 -run TestBoardGit ./internal/app` — draft → «draft» rule only; ready → «MR открыт» rule; a repeated ready / approval with another body fires nothing; merge into `preprod` with filter `main` does not move the task.
+- Manually (GitLab): rules «Draft MR открыт → In Progress», «MR открыт → In Review», «MR влит» with «Целевая ветка» `main`; open a Draft MR `feature/dev-N-…`, mark it ready, approve twice, merge into `preprod`, then into `main`. Expected: In Progress → In Review → (no move) → Ready to Deploy; one journal line per approver.
+- Comment rule `Открыт MR !{pr_number}: {pr_title} {pr_url}` → the card shows the MR number, title and link; `@everyone` in the MR title notifies nobody.
+
+## Releases and the GitLab backlink (ADR-0060 §4, #101 stage B)
+- PG18 + Valkey: `go test -tags integration -count=1 -run 'TestBoardReleases|TestBoardGitBacklink' ./internal/app`.
+- Manually: a bot with `EDIT_TASKS` on DEV; rule «Задача вошла в релиз» `prod`, condition «Статус = Ready to Deploy», action → Deployed, comment `{release}`.
+- Merge an MR `feature/dev-N-…` into `main`; run the CI step of the bot docs «Релизы из CI» (`git log <prev>..<sha>`). Expected: DEV-N → Deployed, panel «Релиз: prod · <pipeline>» opens the pipeline, journal «задача вошла в релиз».
+- Repeat the same call: `created: false`, no new journal entry; `environment: stage` adds the tasks to stage without the prod rule.
+- List view → «Группировка: Релиз»; filter «Релиз» = the release / «Без релиза».
+- Git (GitLab) → «Ссылка на задачу в GitLab»: on, address + token with `api`; open an MR `feature/dev-M-…` → one note «Задача Calab: DEV-M — …»; redeliver → no second note; a bare mention in an MR description → none; a bad token → status names the `api` scope.
+## Stream annotations on Windows and the web (ADR-0028 amendment, #102)
+- Unit: `pnpm -F @calaba/desktop exec vitest run src/shared/annot.test.ts src/renderer/services/annot.test.ts` (display mapping, single-display fallback, «X указывает» indicator and its timer).
+- Matrix, each pair in both directions (presenter shares a **whole screen**, the viewer picks «Указка», then «Карандаш»): macOS ↔ Windows, Windows ↔ web (Chrome), macOS ↔ web.
+- Windows presenter: the pointer and strokes appear over the shared screen; the viewers' video has no doubled drawing (the overlay is excluded from capture). The panel under «Зрители могут рисовать» reads «Рисунки появятся поверх вашего экрана…», then «Имя указывает на экран».
+- Windows with two monitors (also one at 150 % scale): share each monitor in turn — the drawing lands on the shared one, aligned with the viewer's cursor.
+- If nothing shows over the Windows screen: send `%APPDATA%\Calab\logs\main.log` lines `[annot]` (display mapping, `overlay shown` with bounds/visible/onTop) and the renderer line `annot: first annotation of my stream`.
+- Web presenter (and a window share anywhere): the panel says «Рисунки видны в превью вашего стрима»; while a viewer annotates — «Имя рисует на экране» + «Показать», which opens the stream's pop-out with the drawings.
+- Viewers on Windows / web see each other's and the presenter's drawings on the stream tile (unchanged path, check once).
+
+## Calab links in chat open in the app (desktop)
+1. Signed in on `app.calab.io` (and once with a session on `app.calab.ru`), post links on both hosts and `meet.gptunnel.ru`: `/t/DEV-1`, `/t/dev-1000022`, `/b/<id>`, `/r/<code>`, `/join/<code>`, `/m/<room>/<msg>`, `/dm/<id>`, `/e/<id>`, `/wiki/<id>`, `/canvas/<id>`, `/disk/<id>`, `/plans?plan=team`, and `[text](https://app.calab.ru/t/DEV-1)`.
+2. Click each: plain, Cmd/Ctrl, middle button, the link card's title, inside a quote / forward, in a plain-text letter in Mail.
+Expected: the task / board / room / wiki / Disk / meeting opens in the app (another workspace's task switches the workspace); no browser.
+3. `/download/`, `/e/<id>/rsvp`, `/c/<code>`, `https://example.org`, `https://www.calab.io/t/DEV-1` open in the browser.
+4. On a self-hosted server `https://app.calab.io/t/DEV-1` opens in the browser.
+## Нижний островок в аватаре (ADR-0146)
+
+1. Запуск: `tools/dev-mock.sh --voice` (мок, Анна, в «Переговорке», открыт «Диск»). Ожидается: внизу слева на рейле только аватар с зелёной меткой звонка, список «Диска» идёт до низа окна.
+2. Навести на аватар. Ожидается: через долю секунды поверх контента открывается полный островок («Голос подключён» и панель «я»), аватар не сдвигается ни на пиксель.
+3. Выключить микрофон в островке, увести мышь. Ожидается: островок закрывается через ~0,25 с, на аватаре красный перечёркнутый микрофон. ⌘⇧M (mute) работает и в свёрнутом виде.
+4. Открыть ▾ у микрофона и увести мышь на меню и за него. Ожидается: пока меню открыто, островок не закрывается.
+5. Tab до аватара, Enter — открыт, Tab ходит по кнопкам островка, Esc — закрыт, фокус на аватаре.
+6. «Команда», «Доски», «Календарь», «Почта», офисный файл: в «Команде» полный островок как раньше, на остальных — аватар.
+7. Настройки → Основное → «Островок: сворачивать в аватар…» выключить. Ожидается: полный островок на всех экранах, как раньше.
+## Toasts at the top right, confirm before joining from a reminder
+- Raise several toasts (e.g. copy an invite link, disconnect the network): they stack at the top right under the title bar, newest on top, clear of the inbox / settings / help icons; open the inbox — the stack steps left of it. Phone: under the top bar.
+- Meeting with a voice room, reminder «Через 15 минут…» (system notification or toast): a click only brings the window forward and opens «Войти в комнату?» — nobody is joined until «Войти в комнату».
+- Esc / × / «Открыть встречу» close it without joining; «Открыть встречу» shows the meeting in the calendar.
+- Be in another voice room or a call first: the dialog says so, the button reads «Выйти и войти»; confirming leaves it and joins the meeting room.
+- Already in the meeting room: the click only shows the room, no dialog. «Перейти в комнату» in the event card still joins at once.
+
+- Task tabs (#104, #105): open a task, ⌘-click two others (three tabs), click a fourth card plainly — the three stay and a fourth tab appears; another plain click replaces only that fourth one.
+- Open the Mail section and click any task tab (also one of another workspace): the task opens over the mail, no click is lost.

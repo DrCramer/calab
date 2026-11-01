@@ -2,6 +2,7 @@ import type { MessageKey } from '../i18n';
 import { comboLabel, effectiveHotkeys, matchesCombo, type HotkeyAction } from '../lib/shortcuts';
 import { usePrefs } from '../stores/prefs';
 import { useUi } from '../stores/ui';
+import { goBack, goForward } from './navHistory';
 import { voice } from './voice';
 
 /**
@@ -82,12 +83,12 @@ export function installHotkeys(): () => void {
     }
     if (isNavBack(e)) {
       e.preventDefault();
-      useUi.getState().goBack();
+      goBack();
       return;
     }
     if (isNavForward(e)) {
       e.preventDefault();
-      useUi.getState().goForward();
+      goForward();
       return;
     }
     if (!mod || hotkeyCaptureActive()) return;

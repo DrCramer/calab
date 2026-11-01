@@ -1,6 +1,6 @@
 import * as ContextMenu from '../../components/radix/context-menu';
 import * as Dropdown from '../../components/radix/dropdown-menu';
-import { Archive, BrushCleaning, Check, ChevronDown, Flag, FolderInput, Forward, ListFilter, Mail, MailOpen, MessageSquareShare, PanelLeft, Paperclip, Plus, Reply, ReplyAll, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react';
+import { Archive, BrushCleaning, Check, ChevronDown, Flag, FolderInput, Forward, ListFilter, Mail, MailCheck, MailOpen, MessageSquareShare, PanelLeft, Paperclip, Plus, Reply, ReplyAll, RotateCw, Search, Trash2, TriangleAlert, X } from 'lucide-react';
 import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useShallow } from 'zustand/react/shallow';
@@ -35,12 +35,13 @@ import {
   trashBox,
   useMail,
   type MailBox,
+  markAllReadCount,
 } from '../../stores/mail';
 import { clearPicked, pickRange, togglePick, useMailUi } from '../../stores/mailUi';
 import { toast } from '../../stores/toasts';
 import { ColumnHeader, ROW_HOVER, ROW_SELECTED } from '../shell/ColumnHeader';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
-import { MAIL_KEYS, composeNew, deleteKeysForever, emptyTrash, moveKeys, replyOpen, toggleRowsFlag, toggleRowsRead } from './actions';
+import { MAIL_KEYS, composeNew, markAllRead, deleteKeysForever, emptyTrash, moveKeys, replyOpen, toggleRowsFlag, toggleRowsRead } from './actions';
 import { pickedSummary } from './BatchView';
 import { useMoveTargets } from './MailMessageView';
 import { MailStatusFooter } from './MailStatusFooter';
@@ -56,10 +57,20 @@ import { addressLabel, allLabel, folderLabel, mailErrorText, mailListTime } from
  */
 export function MailColumn(): ReactNode {
   const role = useMail((s) => (s.query ? null : boxRole(s, s.box)));
+  // The bottom island lies under the leftmost column (docs/08 «Нижний островок»): with the mailbox
+  // sidebar shown that is the sidebar, so here the island height is reset (`initial` → every
+  // `var(--island-height, …)` takes its fallback): no fade over the last rows, no bottom spacer.
+  const underIsland = useMailUi((s) => !s.sidebar);
   return (
-    <aside className="mat-sidebar mat-sidebar-window relative flex w-[clamp(300px,30vw,380px)] shrink-0 flex-col border-r border-line" aria-label={t('mbox.list')} data-testid="mail-column">
+    <aside
+      className={cx('mat-sidebar mat-sidebar-window island-fade flex w-[clamp(300px,30vw,380px)] shrink-0 flex-col border-r border-line', !underIsland && '[--island-height:initial]')}
+      aria-label={t('mbox.list')}
+      data-testid="mail-column"
+      data-under-island={underIsland || undefined}
+    >
       <ColumnHeader title={<BoxSwitcher />}>
         <SidebarToggle />
+        <MarkAllReadButton />
         <EmptyTrashButton />
         <SyncControl />
         <CreateButton label={t('mbox.compose')} data-testid="mail-compose" onClick={composeNew} />
@@ -106,6 +117,21 @@ const SyncControl = memo(function SyncControl(): ReactNode {
         </IconButton>
       )}
     </>
+  );
+});
+
+/**
+ * «Прочитать все» (#231): a quiet icon button while the shown folder (or «Все входящие») has unread
+ * mail. A leaf on one primitive selector: only the unread count of the box re-renders it.
+ */
+const MarkAllReadButton = memo(function MarkAllReadButton(): ReactNode {
+  useLocale();
+  const n = useMail((s) => markAllReadCount(s, s.box));
+  if (n === 0) return null;
+  return (
+    <IconButton label={t('mbox.markAll')} shortcut={MAIL_KEYS.markAll} onClick={() => void markAllRead()} data-testid="mail-mark-all-read">
+      <MailCheck className="size-4" strokeWidth={1.75} />
+    </IconButton>
   );
 });
 
@@ -650,6 +676,11 @@ const MailRow = memo(function MailRow({ k }: { k: string }): ReactNode {
   const userId = useMailUser(row?.from.address ?? '');
   // «Все входящие» with several accounts: the account under the sender (where the reply goes from).
   const account = useMail((s) => (s.box.scope === 'all' && s.accountIds.length > 1 && row ? (s.accounts[row.accountId]?.email ?? '') : ''));
+  // A search runs over all folders of the account: each row says where the message lives.
+  const where = useMail((s) => {
+    const f = s.query && row ? s.folderById[row.folderId] : undefined;
+    return f ? folderLabel(f) : '';
+  });
   if (!row) return null;
   const subject = row.subject.trim() || t('mbox.noSubject');
   const sender = addressLabel(row.from);
@@ -691,7 +722,11 @@ const MailRow = memo(function MailRow({ k }: { k: string }): ReactNode {
           ) : null}
         </div>
         <p className="line-clamp-2 text-[13px] leading-[18px] text-muted">{row.snippet}</p>
-        {account ? <span className="truncate text-micro text-faint">{account}</span> : null}
+        {account || where ? (
+          <span className="truncate text-micro text-faint" data-testid={where ? 'mail-row-folder' : undefined}>
+            {where && account ? `${where} · ${account}` : where || account}
+          </span>
+        ) : null}
       </div>
     </div>
   );

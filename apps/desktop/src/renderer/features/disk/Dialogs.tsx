@@ -1,3 +1,4 @@
+import { billingPaymentsAllowed } from '../../services/billing';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { DISK_BITS, type DiskActivity, type DiskItem } from '@calaba/protocol';
 import { ChevronRight, Folder, Send } from 'lucide-react';
@@ -338,9 +339,11 @@ function UsageDialog({ workspaceId, full, onClose }: { workspaceId: string; full
           <Button variant="secondary" onClick={onClose}>
             {t('common.close')}
           </Button>
-          <Button onClick={() => openBuyStorage(workspaceId)} data-testid="disk-buy-open">
-            {t('disk.buy.title')}
-          </Button>
+          {billingPaymentsAllowed() ? (
+            <Button onClick={() => openBuyStorage(workspaceId)} data-testid="disk-buy-open">
+              {t('disk.buy.title')}
+            </Button>
+          ) : null}
         </>
       }
     >

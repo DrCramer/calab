@@ -51,6 +51,7 @@ const api: CalabaApi = {
     openCheckout: (url) => ipcRenderer.invoke(IPC.appOpenCheckout, url),
     legal: () => ipcRenderer.invoke(IPC.appLegal),
     attention: () => void ipcRenderer.invoke(IPC.appAttention),
+    showWindow: () => void ipcRenderer.invoke(IPC.appShowWindow),
     setBadge: (n) => void ipcRenderer.invoke(IPC.appSetBadge, n),
     setTheme: (theme) => void ipcRenderer.invoke(IPC.appSetTheme, theme),
     setStrings: (s) => void ipcRenderer.invoke(IPC.appSetStrings, s),
@@ -115,6 +116,11 @@ const api: CalabaApi = {
     onState: (cb) => on(IPC.webAppState, cb),
     tipShow: (tip) => ipcRenderer.invoke(IPC.webAppTipShow, tip),
     tipHide: () => ipcRenderer.invoke(IPC.webAppTipHide),
+  },
+  office: {
+    openFrame: () => ipcRenderer.invoke(IPC.officeFrame, true),
+    closeFrame: () => ipcRenderer.invoke(IPC.officeFrame, false),
+    warm: (reason, kinds = []) => ipcRenderer.invoke(IPC.officeWarm, { reason, kinds }),
   },
   mail: {
     request: (call) => ipcRenderer.invoke(IPC.mailRequest, call),

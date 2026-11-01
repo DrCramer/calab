@@ -139,8 +139,15 @@ export interface VoiceStore {
   /** Human text (lib/media/errors.ts), never a raw error. */
   micError: string | null;
   micErrorAction: MediaErrorAction | null;
+  /** The system muted the mic (#255, services/voice setMicTrouble): the panel header and the phone strip say so. */
+  micTrouble: 'recovering' | 'unheard' | null;
   /** A moderator muted my mic (not me): shown as a red crossed mic, distinct from self-mute. */
   serverMuted: boolean;
+  /**
+   * My mic / deafen intent is not applied yet for the others for over 1.5 s (ADR-0134): the
+   * track's mute or PATCH /api/voice/self is still being retried on a flaky link.
+   */
+  micSyncLag: boolean;
   /**
    * userId → speaking, for the rings and bright names (lib/speaking.ts): remote LiveKit active
    * speakers of our room (any of a user's devices) + me from the local VAD / PTT; on at once,
@@ -165,6 +172,11 @@ export interface VoiceStore {
   link: VoiceLink;
   /** Recording of my room, if any (REC on the room card, the voice panel, the phone strip). */
   recording: VoiceRecording | null;
+  /**
+   * The workspace room parked by a phone call (ADR-0133): still my seat there for the others
+   * (connected, nothing sent or received), resumed when the call ends. Null otherwise.
+   */
+  parked: { roomId: string; workspaceId: string } | null;
   set: (p: Partial<VoiceStore>) => void;
 }
 
@@ -199,7 +211,9 @@ export const useVoice = create<VoiceStore>()((set) => ({
   ducking: false,
   micError: null,
   micErrorAction: null,
+  micTrouble: null,
   serverMuted: false,
+  micSyncLag: false,
   speaking: {},
   quality: 'unknown',
   rttMs: null,
@@ -215,6 +229,7 @@ export const useVoice = create<VoiceStore>()((set) => ({
   trackEpoch: 0,
   link: { rtcHost: null, attempts: 0, lastError: null, blockedHost: null },
   recording: null,
+  parked: null,
   set: (p) => set(p),
 }));
 

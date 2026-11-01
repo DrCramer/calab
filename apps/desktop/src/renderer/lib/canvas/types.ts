@@ -11,7 +11,7 @@ export const MAX_SIZE = 1e5;
 /** Largest snapshot state of a canvas (ADR-0126 §3): the sync never posts a bigger one. */
 export const MAX_STATE = 4 * 1024 * 1024;
 
-export type ObjectKind = 'sticky' | 'text' | 'shape' | 'connector';
+export type ObjectKind = 'sticky' | 'text' | 'shape' | 'connector' | 'image';
 export type ShapeKind =
   | 'rect' | 'ellipse' | 'diamond' | 'triangle' | 'rounded'
   | 'star' | 'hexagon' | 'parallelogram' | 'arrow' | 'bubble' | 'cylinder';
@@ -21,7 +21,8 @@ export const SHAPE_KINDS: readonly ShapeKind[] = [
 ];
 export type Side = 'auto' | 'top' | 'right' | 'bottom' | 'left';
 export type Arrow = 'none' | 'end' | 'both';
-export type RouteKind = 'straight' | 'elbow';
+/** A route written by a newer build reads as `straight` (ADR-0127); `curve` is read as straight by builds before 2026-10-23. */
+export type RouteKind = 'straight' | 'elbow' | 'curve';
 
 /** Connector end: glued to a side of an object, or free in the world. */
 export type Endpoint = { id: string; side: Side } | { x: number; y: number };
@@ -92,12 +93,37 @@ export interface ConnectorRec extends BaseRec {
   readonly stroke: string;
   readonly strokeWidth: number;
   readonly label: string;
-  /** Routed path, flat [x0, y0, x1, y1, …]. */
+  /**
+   * Routed path, flat [x0, y0, x1, y1, …]. A `curve` is flattened into it (hit tests, bounds, the mini-map use the
+   * polyline); the exact Bézier is in `curve`.
+   */
   readonly points: readonly number[];
+  /** Control points of a `curve` route, [c1x, c1y, c2x, c2y] (derived, never stored): the path is drawn as this cubic. */
+  readonly curve?: readonly number[];
 }
 
-export type ObjectRec = StickyRec | TextRec | ShapeRec | ConnectorRec;
-export type BoxRec = StickyRec | TextRec | ShapeRec;
+/**
+ * A picture on the board (ADR-0127, 2026-10-23): a sticker from a workspace pack. `src` is an API media path
+ * (`/api/files/{id}` or a built-in sticker), loaded with the app's auth; no text, no fill or stroke. Builds before
+ * it skip the kind (unknown kinds are not read).
+ */
+export interface ImageRec extends BaseRec {
+  readonly kind: 'image';
+  readonly src: string;
+  /** The sticker it came from (informational). */
+  readonly stickerId?: string;
+}
+
+export type ObjectRec = StickyRec | TextRec | ShapeRec | ConnectorRec | ImageRec;
+export type BoxRec = StickyRec | TextRec | ShapeRec | ImageRec;
+/** Boxes that carry text (everything but a picture). */
+export type TextBoxRec = StickyRec | TextRec | ShapeRec;
+
+export const hasText = (o: ObjectRec): o is TextBoxRec => o.kind === 'sticky' || o.kind === 'text' || o.kind === 'shape';
+
+const IMAGE_SRC = /^(\/api\/files\/[0-9A-Za-z-]{1,64}|\/api\/stickers\/builtin\/[0-9A-Za-z-]{1,64}\.webp)$/;
+/** Only the app's own media paths: the loader adds the auth header, so a picture never points anywhere else. */
+export const isImageSrc = (v: unknown): v is string => typeof v === 'string' && IMAGE_SRC.test(v);
 
 export const isConnector = (o: ObjectRec): o is ConnectorRec => o.kind === 'connector';
 export const isBox = (o: ObjectRec): o is BoxRec => o.kind !== 'connector';
@@ -127,6 +153,8 @@ export const DEFAULTS = {
   shapeFill: 'none',
   shapeStroke: 'stroke',
   connectorStroke: 'stroke',
+  /** Long side of a new picture (stickers are 512 px squares). */
+  imageSize: 200,
 } as const;
 
 /** Transform fields any creation call may carry (copy / paste keep them; `rot` is ignored for connectors). */
@@ -148,6 +176,7 @@ export type ObjectInit = InitExtras & (
   | { kind: 'text'; x: number; y: number; w?: number; size?: number; color?: string; text?: string }
   | { kind: 'shape'; shape?: ShapeKind; x: number; y: number; w?: number; h?: number; fill?: string; stroke?: string; strokeWidth?: number; text?: string }
   | { kind: 'connector'; from: Endpoint; to: Endpoint; arrow?: Arrow; route?: RouteKind; stroke?: string; strokeWidth?: number; label?: string }
+  | { kind: 'image'; x: number; y: number; w?: number; h?: number; src: string; stickerId?: string }
 );
 
 /** Patch of plain (non-text) fields; applied only to the keys valid for the object's kind. */

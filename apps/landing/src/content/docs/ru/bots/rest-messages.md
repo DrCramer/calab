@@ -23,6 +23,7 @@ order: 4
 |---|---|---|
 | `GET` | `/api/rooms/{id}/messages` | История комнаты, новые сверху: `?before=&after=&limit=` (`limit ≤ 100`); `?q=` — полнотекстовый поиск по комнате (`VIEW_ROOM`) |
 | `GET` | `/api/rooms/{id}/messages/{messageId}` | Одно сообщение — голый `Message` без обёртки (`VIEW_ROOM`) |
+| `GET` | `/api/rooms/{id}/messages/{messageId}/readers` | Кто из людей увидел **ваше** сообщение и когда → `{readers: [{userId, readAt}]}`; чужое — `403` |
 | `POST` | `/api/rooms/{id}/messages` | Отправить сообщение → `201 {message}` (`SEND_MESSAGES`) |
 | `POST` | `/api/rooms/{id}/messages/{mid}/forward` | Переслать в другую комнату `{toRoomId}` → `201 {message}` с полем `forward` |
 | `PATCH` | `/api/messages/{id}` | Править своё сообщение: текст и/или inline-клавиатуру → `{message}` |
@@ -196,6 +197,8 @@ await bot.unreact(messageId, '👍');
 `GET /api/rooms/{id}/messages` возвращает `{messages, hasMore}`, новые сверху. Листайте назад через `before=<id самого старого>`, вперёд — через `after=`.
 
 `GET /api/rooms/{id}/messages/{messageId}` возвращает **`200` с голым `Message`** — без обёртки `{message: …}`. Поля и подгрузка деталей те же, что в истории: `id`, `roomId`, `authorId`, `content`, `replyToId`, `attachments`, `reactions` (`me` — относительно вызывающего), метки времени, `kind`, `system`, `sticker`, `forward`. Поле `command` не заполнено — как во всех ответах REST.
+
+**Видел ли человек ваш призыв** (ADR-0140): у **своих** сообщений бота есть `readBy: [{userId, readAt}]` — в `GET …/messages/{messageId}` и в истории `GET …/messages`; у чужих сообщений поле всегда пустое. «Прочитал» — сообщение было на экране у человека (лента дошла до него), а не пришло уведомление; боты и сам автор в списке не бывают, сообщения до включения функции — без отметок. MCP-инструмент `read` отдаёт то же полем `read_by`.
 
 ```js tab="JavaScript"
 const { messages, hasMore } = await bot.messages(roomId, { limit: 50 });

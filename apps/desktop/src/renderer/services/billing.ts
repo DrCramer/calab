@@ -3,9 +3,11 @@ import type { CheckoutWindowOutcome } from '../../shared/ipc';
 import { restAdminApi, restOwnerApi, type AdminBillingApi, type BillingAdapters, type OwnerBillingApi } from '../lib/billing/api';
 import type { CheckoutPlace } from '../lib/billing/checkout';
 import { billingErrorText, billingNotFound, billingUnavailable } from '../lib/billing/errors';
+import { takePlanAfterCreate } from '../lib/billing/planLink';
 import { forSale } from '../lib/billing/plans';
 import type { FixPlace } from '../lib/billing/violations';
 import { openSection } from '../features/shell/sectionNav';
+import { openTelephonySettings } from '../features/telephony/settings/pages';
 import { openTab } from './phoneNav';
 import { log } from '../lib/log';
 import { queryClient } from '../lib/queryClient';
@@ -121,7 +123,7 @@ export function resyncBilling(workspaceIds: ReadonlySet<string>): void {
   }
 }
 
-/** Payment UI is offered here: everywhere but the iOS shell (App Store rules; services/plan planOffersAllowed). */
+/** Payment UI is offered here: everywhere but a native shell, iOS or Android (docs/adr/0148; services/plan planOffersAllowed). */
 export const billingPaymentsAllowed = (): boolean => planOffersAllowed();
 
 /** Opens «Тариф и оплата» of a workspace (links; the plan step after creating a workspace). */
@@ -138,8 +140,8 @@ export function openPlanSettings(workspaceId: string): void {
 }
 
 /**
- * Where a plan violation is fixed (ADR-0086, lib/billing/violations): a workspace settings tab, or
- * the boards section of the workspace (the open dialogs close first).
+ * Where a plan violation is fixed (ADR-0086, lib/billing/violations): a workspace settings tab, the
+ * boards section or the telephony settings of the workspace (the open dialogs close first).
  */
 export function openFixPlace(workspaceId: string, place: Exclude<FixPlace, null>): void {
   const ui = useUi.getState();
@@ -149,6 +151,10 @@ export function openFixPlace(workspaceId: string, place: Exclude<FixPlace, null>
   }
   ui.openDialog(null);
   if (ui.activeWorkspaceId !== workspaceId) ui.setWorkspace(workspaceId);
+  if (place.kind === 'telephony') {
+    openTelephonySettings('connection');
+    return;
+  }
   if (ui.phone.on) openTab('boards');
   else openSection('boards');
 }
@@ -159,6 +165,8 @@ export function openFixPlace(workspaceId: string, place: Exclude<FixPlace, null>
  * is already open; a 501 / 404 / error, or another dialog opened meanwhile, shows nothing.
  */
 export async function offerPlansAfterCreate(workspaceId: string): Promise<void> {
+  // A /plans?plan= link started the creation: its plan is marked in this dialog.
+  const linked = takePlanAfterCreate();
   // A new workspace has no account: only a self-serve server (READY.billing_self_serve) has a plan
   // to offer — with billing off no request at all.
   if (!billingPaymentsAllowed() || !(useSession.getState().billingSelfServe || MOCK)) return;
@@ -167,7 +175,7 @@ export async function offerPlansAfterCreate(workspaceId: string): Promise<void> 
   if (!data || !(data.selfServe || data.summary)) return;
   if (!forSale(data.offers, Plan.TEAM) && !forSale(data.offers, Plan.ENTERPRISE)) return;
   if (useUi.getState().dialog !== null) return;
-  useUi.getState().openDialog({ kind: 'billing-plans', workspaceId, welcome: true });
+  useUi.getState().openDialog({ kind: 'billing-plans', workspaceId, welcome: true, ...(linked ? { plan: linked } : {}) });
 }
 
 const checkoutReturnListeners = new Set<(outcome: CheckoutWindowOutcome) => void>();

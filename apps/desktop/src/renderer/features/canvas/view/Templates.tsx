@@ -1,5 +1,5 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Columns3, Grid2x2, LayoutTemplate, MessagesSquare, Network, Workflow, X, type LucideIcon } from 'lucide-react';
+import { Columns3, Grid2x2, File, LayoutTemplate, MessagesSquare, Network, Workflow, type LucideIcon } from 'lucide-react';
 import { memo, useCallback, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { IconButton, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
@@ -70,7 +70,7 @@ function TemplateRow({ id, onPick, as }: { id: TemplateId; onPick: () => void; a
       </span>
     </>
   );
-  const cls = 'flex w-full cursor-default items-center gap-3 rounded-[6px] px-2.5 py-1.5 hover:bg-hover data-[highlighted]:bg-hover';
+  const cls = 'flex min-h-12 w-full cursor-default items-center gap-3 rounded-[var(--radius-icon)] px-3 py-1.5 hover:bg-hover data-[highlighted]:bg-hover';
   return as === 'item' ? (
     <Dropdown.Item className={cls} onSelect={onPick} data-testid={`canvas-template-${id}`}>
       {body}
@@ -98,20 +98,31 @@ export const TemplatesCard = memo(function TemplatesCard({ engine, sync, focusCa
   const insert = useInsertTemplate(engine, focusCanvas);
   if (!empty || !synced || closed) return null;
   return (
-    <div className="pointer-events-none absolute inset-0 z-[5] grid place-items-center px-24" data-testid="canvas-templates-card-host">
-      <div className={cx(PANEL, 'pointer-events-auto flex w-[min(420px,100%)] flex-col gap-1 p-2')} role="region" aria-label={t('canvasBoard.templates.title')} data-testid="canvas-templates-card">
-        <div className="flex items-center justify-between px-2.5 pt-1">
-          <div className="flex flex-col">
-            <span className="text-title text-fg">{t('canvasBoard.templates.title')}</span>
-            <span className="text-caption text-muted">{t('canvasBoard.templates.hint')}</span>
-          </div>
-          <IconButton label={t('canvasBoard.templates.close')} size="sm" onMouseDown={keepFocus} onClick={() => setClosed(true)} data-testid="canvas-templates-close">
-            <X className="size-4" strokeWidth={1.75} aria-hidden />
-          </IconButton>
+    <div className="pointer-events-none absolute inset-0 z-[5] grid place-items-center px-24 py-16" data-testid="canvas-templates-card-host">
+      <div className={cx(PANEL, 'pointer-events-auto flex w-[min(460px,100%)] flex-col')} role="region" aria-label={t('canvasBoard.templates.title')} data-testid="canvas-templates-card">
+        <div className="flex flex-col gap-0.5 px-3 pb-2.5 pt-3">
+          <span className="text-title text-fg">{t('canvasBoard.templates.title')}</span>
+          <span className="text-caption text-muted">{t('canvasBoard.templates.hint')}</span>
         </div>
-        {TEMPLATE_IDS.map((id) => (
-          <TemplateRow key={id} id={id} onPick={() => insert(id)} as="button" />
-        ))}
+        <div className="flex flex-col gap-0.5">
+          {/* «Blank canvas» only puts the card away; the canvas stays as it is. */}
+          <button
+            type="button"
+            className="flex min-h-12 w-full cursor-default items-center gap-3 rounded-[var(--radius-icon)] px-3 py-1.5 text-left hover:bg-hover"
+            onMouseDown={keepFocus}
+            onClick={() => {
+              setClosed(true);
+              focusCanvas();
+            }}
+            data-testid="canvas-template-blank"
+          >
+            <File className="size-[18px] shrink-0 text-muted" strokeWidth={1.75} aria-hidden />
+            <span className="text-body text-fg">{t('canvasBoard.templates.blank')}</span>
+          </button>
+          {TEMPLATE_IDS.map((id) => (
+            <TemplateRow key={id} id={id} onPick={() => insert(id)} as="button" />
+          ))}
+        </div>
       </div>
     </div>
   );

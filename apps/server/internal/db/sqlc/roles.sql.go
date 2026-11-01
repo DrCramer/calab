@@ -325,21 +325,24 @@ SELECT m.user_id, m.role,
        coalesce((SELECT array_agg(mr.role_id ORDER BY wr.position DESC)
                  FROM member_roles mr JOIN workspace_roles wr ON wr.id = mr.role_id
                  WHERE mr.workspace_id = m.workspace_id AND mr.user_id = m.user_id), '{}')::uuid[] AS role_ids,
-       u.is_bot
+       u.is_bot, bo.owner_user_id AS bot_owner
 FROM workspace_members m
 JOIN users u ON u.id = m.user_id
+LEFT JOIN bots bo ON bo.user_id = m.user_id AND bo.workspace_id = m.workspace_id
 WHERE m.workspace_id = $1
 `
 
 type ListWorkspaceMemberRolesRow struct {
-	UserID  uuid.UUID
-	Role    string
-	RoleIds []uuid.UUID
-	IsBot   bool
+	UserID   uuid.UUID
+	Role     string
+	RoleIds  []uuid.UUID
+	IsBot    bool
+	BotOwner *uuid.UUID
 }
 
-// Every member's built-in role and role ids (highest first) and whether it is a bot: the
-// gateway's workspace state and guest visibility.
+// Every member's built-in role and role ids (highest first), whether it is a bot and, for a
+// bot, its owner (ADR-0151: author rights on the bot's tasks): the gateway's workspace state
+// and guest visibility.
 func (q *Queries) ListWorkspaceMemberRoles(ctx context.Context, workspaceID uuid.UUID) ([]ListWorkspaceMemberRolesRow, error) {
 	rows, err := q.db.Query(ctx, listWorkspaceMemberRoles, workspaceID)
 	if err != nil {
@@ -354,6 +357,7 @@ func (q *Queries) ListWorkspaceMemberRoles(ctx context.Context, workspaceID uuid
 			&i.Role,
 			&i.RoleIds,
 			&i.IsBot,
+			&i.BotOwner,
 		); err != nil {
 			return nil, err
 		}

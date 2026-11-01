@@ -8,7 +8,7 @@ import { Scene } from './scene';
 import { anchorFraction, contentRect, pointInShape, traceShape, type PathTarget } from './shapes';
 import { makeDoc } from './testing';
 import { TextLayouter } from './textLayout';
-import { SHAPE_KINDS, type BoxRec, type ShapeKind } from './types';
+import { SHAPE_KINDS, type BoxRec, type ShapeKind, type TextBoxRec } from './types';
 
 const NEW_KINDS: readonly ShapeKind[] = ['star', 'hexagon', 'parallelogram', 'arrow', 'bubble', 'cylinder'];
 const R = { x: 0, y: 0, w: 200, h: 120 };
@@ -128,7 +128,7 @@ describe('hit-test and connectors on the scene, rotated or not', () => {
 
 describe('contentRect of the new kinds', () => {
   it.each(NEW_KINDS)('%s: the text box lies inside the outline and has room', (k) => {
-    const box = { kind: 'shape', shape: k, id: 'a', z: 'a', x: 0, y: 0, w: 200, h: 120, fill: 'none', stroke: 'stroke', strokeWidth: 2, text: '' } as BoxRec;
+    const box = { kind: 'shape', shape: k, id: 'a', z: 'a', x: 0, y: 0, w: 200, h: 120, fill: 'none', stroke: 'stroke', strokeWidth: 2, text: '' } as TextBoxRec;
     const c = contentRect(box);
     expect(c.w).toBeGreaterThan(40);
     expect(c.h).toBeGreaterThan(20);

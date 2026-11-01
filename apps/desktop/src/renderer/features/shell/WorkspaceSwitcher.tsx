@@ -69,7 +69,7 @@ export function WorkspaceSwitcher({ testId, phone = false }: { testId?: string; 
         </button>
       </Dropdown.Trigger>
       <Dropdown.Portal>
-        <Dropdown.Content className={cx(menuBox, 'w-72')} sideOffset={4} align="start" collisionPadding={16} data-testid="workspace-switcher">
+        <Dropdown.Content className={cx(menuBox, 'w-72')} sideOffset={4} align={phone ? 'start' : 'end'} collisionPadding={16} data-testid="workspace-switcher">
           <SwitcherItems ws={ws} name={name} />
         </Dropdown.Content>
       </Dropdown.Portal>

@@ -163,7 +163,7 @@ func (s *Service) sendMails(ctx context.Context, b *bundle, tmpl mail.Template, 
 		}
 		p := mail.Params{
 			"title": b.ev.Title, "date": date, "when": when, "organizer": orgName(locale), "url": link,
-			"room": roomName, "repeat": repeatText(locale, b.series.Rule.Repeat), "attendees": attendees,
+			"room": roomName, "repeat": repeatText(locale, b.series.Rule), "attendees": attendees,
 			mail.ParamICS: invite, mail.ParamICSMethod: method,
 		}
 		if org.Email != nil && org.EmailVerifiedAt != nil { // an unconfirmed address proves nothing
@@ -274,17 +274,25 @@ func formatWhen(locale string, o Occurrence, allDay bool, loc *time.Location) (d
 	return date, when + en.Format("15:04") + " (" + loc.String() + ")"
 }
 
-var repeatTexts = map[string][5]string{
-	mail.LocaleEN:   {"", "every day", "every week", "every two weeks", "every month"},
-	mail.LocaleRU:   {"", "каждый день", "каждую неделю", "раз в две недели", "каждый месяц"},
-	mail.LocaleES:   {"", "cada día", "cada semana", "cada dos semanas", "cada mes"},
-	mail.LocaleZhCN: {"", "每天", "每周", "每两周", "每月"},
+// repeatTexts by EventRepeat; the last one is WORKDAYS on the Russian production calendar.
+var repeatTexts = map[string][7]string{
+	mail.LocaleEN: {"", "every day", "every week", "every two weeks", "every month",
+		"on working days (Mon–Fri)", "on working days (Russian production calendar)"},
+	mail.LocaleRU: {"", "каждый день", "каждую неделю", "раз в две недели", "каждый месяц",
+		"в рабочие дни (пн–пт)", "в рабочие дни (по производственному календарю РФ)"},
+	mail.LocaleES: {"", "cada día", "cada semana", "cada dos semanas", "cada mes",
+		"en días laborables (lun–vie)", "en días laborables (calendario laboral de Rusia)"},
+	mail.LocaleZhCN: {"", "每天", "每周", "每两周", "每月", "工作日（周一至周五）", "工作日（俄罗斯生产日历）"},
 }
 
-func repeatText(locale string, r v1.EventRepeat) string {
+func repeatText(locale string, r Rule) string {
 	t, ok := repeatTexts[mail.Locale(locale)]
-	if !ok || int(r) < 0 || int(r) >= len(t) {
+	i := int(r.Repeat)
+	if r.Repeat == v1.EventRepeat_EVENT_REPEAT_WORKDAYS && r.Holidays == HolidaysRU {
+		i++
+	}
+	if !ok || i < 0 || i >= len(t) {
 		return ""
 	}
-	return t[r]
+	return t[i]
 }

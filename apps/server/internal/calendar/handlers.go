@@ -72,7 +72,11 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	sortRows(rows)
-	out := &v1.ListCalendarEventsResponse{Events: make([]*v1.CalendarEvent, 0, len(rows))}
+	hol, err := s.holidayCalendar(ctx, wsID)
+	if err != nil {
+		return err
+	}
+	out := &v1.ListCalendarEventsResponse{Events: make([]*v1.CalendarEvent, 0, len(rows)), HolidayCalendar: hol}
 	for _, row := range rows {
 		out.Events = append(out.Events, row.b.proto(&row.occ, v))
 	}
@@ -181,6 +185,11 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 	}
 	if f.tz == "" {
 		f.tz = s.userZone(ctx, me)
+	}
+	if f.rule.Repeat == v1.EventRepeat_EVENT_REPEAT_WORKDAYS {
+		if f.rule.Holidays, err = s.holidayCalendar(ctx, wsID); err != nil {
+			return err
+		}
 	}
 	if err := f.normalize(); err != nil {
 		return err
@@ -348,8 +357,15 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	if req.Record != nil {
 		f.record = req.GetRecord()
 	}
-	if req.Repeat != nil {
-		f.rule.Repeat = req.GetRepeat()
+	if req.Repeat != nil && req.GetRepeat() != f.rule.Repeat {
+		// A new repeat: a working-days series takes the workspace's calendar of now; an
+		// unchanged one keeps the calendar it was created with (ADR-0136).
+		f.rule.Repeat, f.rule.Holidays = req.GetRepeat(), ""
+		if f.rule.Repeat == v1.EventRepeat_EVENT_REPEAT_WORKDAYS {
+			if f.rule.Holidays, err = s.holidayCalendar(ctx, before.ev.WorkspaceID); err != nil {
+				return err
+			}
+		}
 	}
 	if req.GetRepeatUntil() != nil {
 		t := tsTime(req.GetRepeatUntil())

@@ -324,6 +324,11 @@ message DispatchEvent {
     CanvasCommentDelete canvas_comment_delete = 111;
     // An @mention in a canvas comment: the mentioned member's user channel only.
     CanvasCommentMention canvas_comment_mention = 112;
+    // The call journal (ADR-0137 §1): workspace channel, to VIEW_JOURNALS members who can view
+    // the call's room and to the call's parties (never guests or bots).
+    SipJournalChange sip_journal_entry = 113;
+    // The member's missed calls badge changed: their user channel only.
+    SipMissedChanged sip_missed_changed = 114;
   }
 }
 
@@ -366,6 +371,10 @@ message VoiceState {
   // mic is silent between presses. Others show a pale crossed mic until the user speaks. Set
   // through PATCH /api/voice/self on a mode change only, never per key press.
   bool ptt = 12;
+  // On a phone call (ADR-0133): every device of the user in this room is parked there while the
+  // user talks on an inbound phone call - connected, nothing published or received. Others show
+  // the row dimmed with a phone icon. Set through PATCH /api/voice/self.
+  bool on_phone = 13;
 }
 
 message Presence {
@@ -451,6 +460,9 @@ message WorkspaceSnapshot {
   // already filtered by VIEW_ROOM, which is the right to read their history. Clients keep it
   // up to date with MESSAGE_CREATE / UPDATE / DELETE.
   map<string, DmLastMessage> room_last_messages = 21;
+  // The recipient's missed phone calls since they last looked at «Recent» (ADR-0137 §1; ≤ 999;
+  // 0 for guests, bots and workspaces without telephony). Changes come as SIP_MISSED_CHANGED.
+  uint32 sip_missed = 22;
 }
 
 message Ready {
@@ -497,6 +509,15 @@ message Ready {
   // BILLING_SELF_SERVE): the client asks GET /api/workspaces/{id}/billing for a workspace
   // without Workspace.billing only when set, so a server with billing off sees no extra request.
   bool billing_self_serve = 17;
+  // ADR-0140: the uuidv7 lower bound of the start of read receipts — own messages with a smaller
+  // id have no ticks (no retroactive «read»); empty — a server before ADR-0140.
+  string read_receipts_from = 18;
+  // ADR-0151: the bots the recipient owns (bots.owner_user_id). A task created by one of them
+  // counts as the recipient's own for author rights (isTaskAuthor in packages/protocol: edit and
+  // archive with CREATE_TASKS, create-only visibility). A bot the recipient creates later comes
+  // as BOT_CREATE with owner_user_id = the recipient; a deleted one may stay until the next READY
+  // (the server decides anyway).
+  repeated string my_bot_ids = 19;
 }
 
 // A guest knocks on a room (ADR-0040); to the room's deciders.

@@ -25,6 +25,24 @@
  * `--boards`: the kanban (ADR-0042) open during the call; Борис renames CAL-2 every 3 s (TASK_UPDATE to
  * the board): one TaskCard per event should render.
  *
+ * `--no-call`: the scene without joining voice. `--island-hover` (ADR-0146): every 3 s the pointer goes
+ * onto the folded island's avatar (it opens) or away (it closes) — only the island may render.
+ *
+ * `--disk`: the Disk (ADR-0094, a list) open during the call; every 3 s someone opens or closes the budget
+ * sheet in the office editor («Редактирует Имя», a DISK_ITEM_UPSERT): one Row per event should render.
+ * `--office`: the office editor on in the mock (ADR-0143; GET /api/office/capabilities at READY) — with
+ * the same scene the numbers must equal the run without it. `--office-closed` (with `--disk`): before
+ * the window the budget sheet is opened in the editor (the stub) and its tab closed — nothing of the
+ * editor may stay running.
+ *
+ * `--telephony`: «Телефония → Недавние» (ADR-0137) open, without a voice call; every 3 s a journal event
+ * (SIP_JOURNAL_ENTRY): a new call rings me, it is answered, it ends — in turn. One RecentsRow per
+ * event should render (a new row: the list too); without live calls the section runs no timer.
+ * `--tel-page contacts|dial` (with `--telephony`): that page open instead of «Недавние» (T4; with
+ * `--no-emulate` — an idle section: no commits). `--telephony-call`: «Набор» → a personal call
+ * answered, the island's tone keypad open; the journal events go on and a key is pressed every 2 s
+ * (one DtmfPad per press, nothing else of the call band).
+ *
  * `--dm-call`: a one-to-one call instead (ADR-0034): Борис calls, I accept in his DM (open, with the
  * «Звонок · 00:42» header timer and the island); the same live events, typing and the voice state
  * in that DM.
@@ -114,6 +132,20 @@ const FINDTIME = argv.includes('--findtime');
 const CALENDAR = argv.includes('--calendar') || FINDTIME;
 /** `--boards`: the kanban (ADR-0042) open during the call; another user renames a task every 3 s (TASK_UPDATE). */
 const BOARDS = argv.includes('--boards');
+/** `--disk`: the Disk open during the call; the budget's «Редактирует» flips every 3 s (DISK_ITEM_UPSERT). */
+const DISK = argv.includes('--disk');
+/** `--no-call`: the same scene without joining voice (the section's idle cost). */
+const NO_CALL = argv.includes('--no-call');
+/** `--island-hover` (ADR-0146): the pointer goes onto the folded island's avatar and away, in turn every 3 s. */
+const ISLAND_HOVER = argv.includes('--island-hover');
+/** `--office`: the office editor on (ADR-0143); `--office-closed`: an editor opened and closed before the window. */
+const OFFICE_CLOSED = argv.includes('--office-closed');
+const OFFICE = argv.includes('--office') || OFFICE_CLOSED;
+/** `--telephony`: «Недавние» open during the call; a journal event every 3 s (SIP_JOURNAL_ENTRY). */
+const TELEPHONY_CALL = argv.includes('--telephony-call');
+const TELEPHONY = argv.includes('--telephony') || TELEPHONY_CALL;
+/** `--tel-page contacts|dial` (T4, ADR-0137 §6): the section's page open during the scene. */
+const TEL_PAGE = opt('tel-page', TELEPHONY_CALL ? 'dial' : 'recents');
 /** `--viewer` (K): a second participant watches my camera at full size, so the encoder runs (dynacast). */
 const VIEWER = argv.includes('--viewer') || BENCH === 'F';
 /** F: what the stream shows — a still code page or one scrolling 30×/s. */
@@ -442,6 +474,7 @@ const round = (x: number, d = 1): number => Math.round(x * 10 ** d) / 10 ** d;
 
 async function main(): Promise<void> {
   const mock = await startMockServer({ port: PORT, scenario: 'data', quiet: true } as never);
+  if (OFFICE) mock.setOffice(true);
   const userData = mkdtempSync(join(tmpdir(), 'calaba-perfcall-'));
   const wav = join(userData, 'silence.wav');
   silentWav(wav);
@@ -503,8 +536,12 @@ async function main(): Promise<void> {
       await page.getByTestId('call-accept').click();
       await page.getByTestId('dm-call-active').waitFor({ timeout: 15_000 });
       await page.getByText('Голос подключён').first().waitFor({ timeout: 30_000 });
-    } else {
+    } else if (!TELEPHONY && !NO_CALL) {
       await aside.getByRole('button', { name: /Созвон/ }).first().click();
+      // A voice room opens its chat first; «Войти в голос» joins (harness.ts joinVoice).
+      const join = page.getByRole('region', { name: 'Созвон' }).getByRole('button', { name: 'Войти в голос', exact: true });
+      await join.or(page.getByText('Голос подключён').first()).first().waitFor({ timeout: 15_000 });
+      if (await join.isVisible()) await join.click();
       await page.getByText('Голос подключён').first().waitFor({ timeout: 30_000 });
       await aside.getByRole('button', { name: /общий/ }).first().click();
       await page.getByRole('heading', { name: 'общий' }).first().waitFor();
@@ -533,12 +570,52 @@ async function main(): Promise<void> {
         await page.getByTestId('busy-column').nth(2).waitFor({ timeout: 15_000 });
       }
     }
+    if (DISK) {
+      await page.getByTestId('section-disk').click();
+      await page.getByTestId('disk-tile').or(page.getByTestId('disk-row')).first().waitFor({ timeout: 15_000 });
+      if (OFFICE_CLOSED) {
+        // The budget sheet in the editor (the mock's stub Document Server), then its tab closed.
+        await page.getByTestId('disk-tile').or(page.getByTestId('disk-row')).filter({ hasText: 'Бюджет 2026.xlsx' }).first().dblclick();
+        await page.locator('[data-testid="office-view"][data-state="saved"]').waitFor({ timeout: 30_000 });
+        await page.getByTestId('file-tab-close').click();
+        await page.getByTestId('office-view').waitFor({ state: 'detached', timeout: 30_000 });
+        await page.getByTestId('section-disk').click();
+        await page.getByTestId('disk-tile').or(page.getByTestId('disk-row')).first().waitFor({ timeout: 15_000 });
+        const frames = await page.evaluate(() => document.querySelectorAll('iframe').length);
+        process.stdout.write(`office closed: iframes left ${frames}, page frames ${page.frames().length}\n`);
+      }
+    }
     if (BOARDS) {
-      await page.getByTestId('boards-button').click();
+      await page.getByTestId('section-boards').click(); // the rail's «Доски» (was the column's boards-button)
       await page.getByTestId('kanban').waitFor({ timeout: 15_000 });
       await page.getByTestId('task-card').first().waitFor({ timeout: 15_000 });
     }
-    await page.getByRole('button', { name: /^Качество связи/ }).first().waitFor({ timeout: 15_000 });
+    if (TELEPHONY) {
+      mock.seedSipExchange();
+      mock.seedSipJournal({ base: Date.now() });
+      // The fixture's ringing call ends first: the section then has no live call (no timer).
+      mock.advanceSipJournal();
+      mock.seedSipContacts();
+      await page.getByTestId('section-telephony').click();
+      await page.getByTestId('tel-row').first().waitFor({ timeout: 15_000 });
+      if (TEL_PAGE !== 'recents') {
+        await page.getByTestId(`tel-nav-${TEL_PAGE}`).click();
+        await page.getByTestId(TEL_PAGE === 'contacts' ? 'telc-row' : 'tel-keypad').first().waitFor({ timeout: 15_000 });
+      }
+      if (TELEPHONY_CALL) {
+        // A personal call (ADR-0137 §3) from the dial pad, answered; the island's tone keypad open.
+        await page.keyboard.type('89161234567');
+        await page.keyboard.press('Enter');
+        await page.getByTestId('voice-phase').waitFor({ timeout: 15_000 });
+        mock.advanceSipPersonal();
+        await page.getByTestId('voice-phase').filter({ hasText: 'Голос подключён' }).waitFor({ timeout: 30_000 });
+        await page.getByTestId('dtmf-open').click();
+        await page.getByTestId('dtmf-pad').waitFor({ timeout: 15_000 });
+      }
+    }
+    // «--telephony» measures the section alone (no voice call: ADR-0137 §8 «открытый раздел без звонков»).
+    // Attached, not visible: outside «Команда» the island is folded into the avatar (ADR-0146).
+    if (!TELEPHONY && !NO_CALL) await page.locator('button[aria-label^="Качество связи"]').first().waitFor({ state: 'attached', timeout: 15_000 });
     // Musician mode is per call (not persisted, ADR-0052): turned on from the voice panel's «…».
     if (MUSICIAN) {
       await page.getByRole('button', { name: 'Ещё', exact: true }).last().click();
@@ -636,6 +713,37 @@ async function main(): Promise<void> {
         const cal2 = mock.boards.taskByKey('CAL-2')?.task.id ?? '';
         let n = 0;
         timers.push(setInterval(() => mock.updateTaskAs(IDS.users.boris, cal2, { title: `Тёмная тема ${++n}` }), 3000));
+      }
+      if (DISK) {
+        const budget = [...mock.disk.items.values()].find((i) => i.name === 'Бюджет 2026.xlsx')?.id ?? '';
+        let n = 0;
+        timers.push(setInterval(() => mock.disk.setEditors(budget, n++ % 2 ? [] : [IDS.users.vera]), 3000));
+      }
+      if (TELEPHONY) {
+        let step = 0;
+        let call = '';
+        timers.push(
+          setInterval(() => {
+            const k = step++ % 3;
+            if (k === 0) call = mock.ringSipJournal('+79160000000', [IDS.users.anna]);
+            else if (k === 1) mock.advanceSipJournal(call, IDS.users.anna);
+            else mock.advanceSipJournal(call);
+          }, 3000),
+        );
+      }
+      if (ISLAND_HOVER) {
+        let h = 0;
+        timers.push(
+          setInterval(() => {
+            const over = h++ % 2 === 0;
+            const target = over ? page.getByTestId('island-avatar').hover() : page.mouse.move(600, 300);
+            void target.catch(() => undefined);
+          }, 3000),
+        );
+      }
+      if (TELEPHONY_CALL) {
+        let d = 0;
+        timers.push(setInterval(() => void page.getByTestId('dtmf-pad').locator(`[data-key="${'1234567890*#'[d++ % 12]}"]`).click().catch(() => undefined), 2000));
       }
     }
     // A real remote speaker: Chromium's fake microphone beeps once a second, so LiveKit's active

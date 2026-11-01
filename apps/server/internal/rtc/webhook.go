@@ -84,6 +84,13 @@ func (s *Service) HandleEvent(ctx context.Context, ev *WebhookEvent) error {
 		}
 		return s.SIP.Inbound(ctx, ev.Event, ev.Room.Name, ev.Participant)
 	}
+	// A personal phone call's own room (ADR-0137 §3): never voice state either.
+	if IsOutboundRoom(ev.Room.Name) {
+		if s.SIP == nil {
+			return nil
+		}
+		return s.SIP.Outbound(ctx, ev.Event, ev.Room.Name, ev.Participant)
+	}
 	wid, rid, ok := voice.ParseRoomName(ev.Room.Name)
 	if !ok {
 		return nil // not a Calaba room
@@ -177,6 +184,14 @@ func (s *Service) HandleEvent(ctx context.Context, ev *WebhookEvent) error {
 	case EventTrackUnpublished:
 		switch t.Source {
 		case SourceMicrophone:
+			// A full reconnect (flaky network) may deliver the old connection's unpublish after
+			// the new one published its mic (ADR-0134): that track is gone, the device's live mic
+			// is not — keep the newer connection's state. Unknown (LiveKit error): mute, as before.
+			if _, superseded, err := s.newerConnection(ctx, ev.Room.Name, p); err != nil {
+				slog.WarnContext(ctx, "mic track_unpublished: look up the identity's current connection", "identity", identity, "err", err)
+			} else if superseded {
+				return nil
+			}
 			return s.setFlag(ctx, wid, rid, uid, sid, func(n *voice.SessionState) { n.Muted = true })
 		case SourceScreenShare:
 			removed, err := s.voice.RemoveStream(ctx, rid, t.Sid)

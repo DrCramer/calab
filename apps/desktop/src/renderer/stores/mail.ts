@@ -889,6 +889,43 @@ export async function emptyFolder(folderId: string): Promise<boolean> {
   }
 }
 
+/**
+ * «Прочитать все» (#231): the real folders with unread mail a box stands for — its own folder, or
+ * for «Все входящие» the inbox of every account. Smart folders and search: none.
+ */
+export function markAllReadTargets(s: Pick<MailState, 'folders' | 'folderById' | 'query' | 'settings'>, box: MailBox): MailFolder[] {
+  if (s.query) return [];
+  const out: MailFolder[] = [];
+  if (box.scope === 'all' && typeof box.folder === 'string') {
+    if (box.folder !== 'inbox') return [];
+    for (const id in s.folders) for (const f of s.folders[id] ?? []) if (f.role === 'inbox' && f.unread > 0 && f.path) out.push(f);
+    return out;
+  }
+  const f = boxFolder(s, box);
+  return f && f.unread > 0 && f.path ? [f] : out;
+}
+
+/** Unread count behind `markAllReadTargets` (a primitive for selectors). */
+export function markAllReadCount(s: Pick<MailState, 'folders' | 'folderById' | 'query' | 'settings'>, box: MailBox): number {
+  let n = 0;
+  for (const f of markAllReadTargets(s, box)) n += f.unread;
+  return n;
+}
+
+/**
+ * Marks the folders read: the engine flips its rows at once (events follow), sends one
+ * `UID STORE 1:* +FLAGS (\Seen)` per folder (queued offline) and rolls back if the server refuses.
+ * Resolves whether every call was accepted; errors are reported once.
+ */
+export async function markFoldersRead(folderIds: string[]): Promise<boolean> {
+  const a = api;
+  if (!a || !folderIds.length) return false;
+  const results = await Promise.allSettled(folderIds.map((id) => a.folders.markAllRead(id)));
+  const bad = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+  if (bad) reportError(errCode(bad.reason), 'flags');
+  return !bad;
+}
+
 /** The folder shown when it is one account's trash (not search, not «Все …»): its id and size. */
 export function trashBox(s: MailState): { id: string; total: number } | null {
   if (s.query || s.box.scope === 'all') return null;

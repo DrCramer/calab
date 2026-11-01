@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -47,6 +48,7 @@ const (
 // repoHooks holds the sealed-secret box, the per-board rate limit and the delivery dedup store.
 type repoHooks struct {
 	box   *sealbox.Box
+	token *sealbox.Box // GitLab API tokens of the backlink (board task #101)
 	redis rueidis.Client
 	limit Limiter
 }
@@ -55,7 +57,7 @@ type repoHooks struct {
 // the board webhook); r (may be nil in tests) dedups deliveries and rate-limits 60 per minute
 // per board.
 func (s *Service) EnableGit(r rueidis.Client, secret []byte) {
-	h := &repoHooks{box: sealbox.New("calaba/board-git/v1", secret), redis: r}
+	h := &repoHooks{box: sealbox.New("calaba/board-git/v1", secret), token: sealbox.New("calaba/board-git-token/v1", secret), redis: r}
 	if r != nil {
 		h.limit = redisx.NewRateLimiter(r, "rl:board-git:", 60, 60)
 	}
@@ -69,6 +71,7 @@ func (s *Service) repoRoutes(mux httpx.Router, wrap func(http.Handler) http.Hand
 	h("GET /api/boards/{id}/git", s.getRepoHook)
 	h("PUT /api/boards/{id}/git", s.setRepoHook)
 	h("DELETE /api/boards/{id}/git", s.deleteRepoHook)
+	h("PATCH /api/boards/{id}/git", s.patchRepoHook)
 	// Public: the hosting authenticates with the signature (like POST /api/rtc/webhook).
 	mux.Handle("POST /api/git/boards/{id}/{provider}", httpx.HandlerFunc(s.repoInbound))
 }
@@ -115,7 +118,8 @@ func (s *Service) repoPB(g sqlc.BoardGit) *v1.BoardGit {
 	return &v1.BoardGit{BoardId: g.BoardID.String(), Provider: providerProto(g.Provider), HasSecret: len(g.SecretEnc) > 0,
 		Url:         strings.TrimRight(s.PublicURL, "/") + "/api/git/boards/" + g.BoardID.String() + "/" + g.Provider,
 		LastEventAt: tsp(g.LastEventAt), EventsCount: uint32(max(g.EventsCount, 0)), LastError: g.LastError, //nolint:gosec // a count
-		CreatedBy: idp(g.CreatedBy), CreatedAt: timestamppb.New(g.CreatedAt)}
+		CreatedBy: idp(g.CreatedBy), CreatedAt: timestamppb.New(g.CreatedAt),
+		Backlink: g.Backlink, HasApiToken: len(g.ApiTokenEnc) > 0, GitlabUrl: g.GitlabUrl, BacklinkError: backlinkStatus(g)}
 }
 
 // getRepoHook: GET /api/boards/{id}/git (never the secret).
@@ -281,7 +285,7 @@ func (s *Service) repoInbound(w http.ResponseWriter, r *http.Request) error {
 		httpx.NoContent(w)
 		return nil
 	}
-	if err := s.applyRepoEvent(context.WithoutCancel(ctx), b, ev); err != nil {
+	if err := s.applyRepoEvent(context.WithoutCancel(ctx), b, g, ev); err != nil {
 		s.releaseDelivery(ctx, key)
 		return err
 	}
@@ -326,7 +330,9 @@ func (s *Service) repoStatus(ctx context.Context, board uuid.UUID, lastErr strin
 
 // applyRepoEvent writes the links of a Git event to the board's tasks in one transaction (with
 // their journal entries, the board webhook and the rules) and publishes them.
-func (s *Service) applyRepoEvent(ctx context.Context, b sqlc.Board, ev *vcs.Event) error {
+func (s *Service) applyRepoEvent(ctx context.Context, b sqlc.Board, g sqlc.BoardGit, ev *vcs.Event) error {
+	mode := s.backlinkMode(g)
+	var notes []backlinkNote
 	links := vcs.Links(ev, b.Key)
 	var order []int32
 	by := map[int32][]vcs.Link{}
@@ -339,7 +345,7 @@ func (s *Service) applyRepoEvent(ctx context.Context, b sqlc.Board, ev *vcs.Even
 	var c change
 	var touched []taskRow
 	err := s.taskTx(ctx, &c, func(q *sqlc.Queries, tx pgx.Tx) error {
-		touched = touched[:0]
+		touched, notes = touched[:0], notes[:0]
 		for _, n := range order {
 			row, err := q.GetTaskByNumber(ctx, sqlc.GetTaskByNumberParams{WorkspaceID: b.WorkspaceID, Key: b.Key, Number: n})
 			if db.IsNotFound(err) {
@@ -355,7 +361,7 @@ func (s *Service) applyRepoEvent(ctx context.Context, b sqlc.Board, ev *vcs.Even
 			if !ok || t.BoardID != b.ID || t.ArchivedAt != nil {
 				continue
 			}
-			changed, err := s.linkTask(ctx, q, t, ev, by[n], &c)
+			changed, err := s.linkTask(ctx, q, t, ev, by[n], &c, mode, &notes)
 			if err != nil {
 				return err
 			}
@@ -383,13 +389,17 @@ func (s *Service) applyRepoEvent(ctx context.Context, b sqlc.Board, ev *vcs.Even
 			s.publish(ctx, t.ID, &c, false)
 		}
 	}
+	s.postBacklinks(ctx, g, mode, notes)
 	return nil
 }
 
 // linkTask upserts the links of one task and journals what changed: one "git" entry per new
 // branch / changed pull request, one per push for the new commits. Reports whether anything
 // changed.
-func (s *Service) linkTask(ctx context.Context, q *sqlc.Queries, t taskRow, ev *vcs.Event, ls []vcs.Link, c *change) (bool, error) {
+// mode and notes: the backlink (backlink.go) — a merge request newly linked by a driving key
+// (never a bare mention) gets a note; when one is due, the link remembers it (vcs.NoteKey).
+func (s *Service) linkTask(ctx context.Context, q *sqlc.Queries, t taskRow, ev *vcs.Event, ls []vcs.Link, c *change, mode backlinkMode,
+	notes *[]backlinkNote) (bool, error) {
 	changed := false
 	var commits []any
 	for _, l := range ls {
@@ -398,13 +408,24 @@ func (s *Service) linkTask(ctx context.Context, q *sqlc.Queries, t taskRow, ev *
 		if err != nil && !db.IsNotFound(err) {
 			return false, err
 		}
-		if existed && prev.State == l.State && prev.Title == l.Title && prev.Url == l.URL {
+		event, seen, differs := vcs.Apply(vcs.Prior{Found: existed, State: prev.State, Title: prev.Title, URL: prev.Url, Draft: prev.Draft,
+			Seen: prev.Seen, SHAs: prev.MergeShas}, l)
+		if !differs {
 			continue // a repeat (or a commit seen on another branch)
 		}
+		if mode != backlinkOff && l.Kind == vcs.KindPR && !existed && !l.Mention && !slices.Contains(seen, vcs.NoteKey) {
+			if mode == backlinkReady {
+				seen = append(seen, vcs.NoteKey) // one note per merge request and task, whatever the redeliveries
+			}
+			*notes = append(*notes, backlinkNote{key: TaskKey(t.BoardKey, t.Number), title: t.Title, iid: l.Ref, mr: l.URL, repo: ev.Repo})
+		}
 		link, err := q.UpsertTaskGitLink(ctx, sqlc.UpsertTaskGitLinkParams{TaskID: t.ID, Kind: l.Kind, Provider: ev.Provider, Repo: ev.Repo,
-			Ref: l.Ref, Title: l.Title, Url: l.URL, State: l.State, Author: l.Author})
+			Ref: l.Ref, Title: l.Title, Url: l.URL, State: l.State, Author: l.Author, Draft: l.Draft, Seen: seen, MergeShas: l.SHAs})
 		if err != nil {
 			return false, err
+		}
+		if existed && event == "" && prev.State == l.State && prev.Title == l.Title && prev.Url == l.URL && prev.Draft == l.Draft {
+			continue // only the one-shot keys changed (an approval withdrawn, a reviewer removed): nothing to show
 		}
 		changed = true
 		if l.Kind == vcs.KindCommit {
@@ -413,22 +434,28 @@ func (s *Service) linkTask(ctx context.Context, q *sqlc.Queries, t taskRow, ev *
 			}
 			continue
 		}
-		event := l.Event
-		if existed && event == vcs.EventBranchCreated {
-			event = ""
-		}
 		var before map[string]any
 		if existed {
 			before = map[string]any{"state": prev.State, "title": prev.Title}
+			if l.Kind == vcs.KindPR {
+				before["draft"] = prev.Draft
+			}
 		}
-		if err := c.recordAs(ctx, q, t, nil, "git", before, map[string]any{"event": event, "kind": link.Kind, "provider": link.Provider,
-			"repo": link.Repo, "ref": link.Ref, "title": link.Title, "url": link.Url, "state": link.State}); err != nil {
+		after := map[string]any{"event": event, "kind": link.Kind, "provider": link.Provider, "repo": link.Repo, "ref": link.Ref,
+			"title": link.Title, "url": link.Url, "state": link.State, "branch": l.Branch, "author": l.Actor}
+		if l.Kind == vcs.KindPR {
+			after["target_branch"], after["draft"] = l.Target, l.Draft
+			if len(l.Users) > 0 && event != "" {
+				after["users"] = l.Users
+			}
+		}
+		if err := c.recordAs(ctx, q, t, nil, "git", before, after); err != nil {
 			return false, err
 		}
 	}
 	if len(commits) > 0 {
 		if err := c.recordAs(ctx, q, t, nil, "git", nil, map[string]any{"event": vcs.EventCommitPushed, "kind": vcs.KindCommit,
-			"provider": ev.Provider, "repo": ev.Repo, "ref": ev.Branch, "commits": commits}); err != nil {
+			"provider": ev.Provider, "repo": ev.Repo, "ref": ev.Branch, "commits": commits, "branch": ev.Branch, "author": ev.Author}); err != nil {
 			return false, err
 		}
 	}

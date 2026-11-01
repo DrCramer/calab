@@ -620,6 +620,9 @@ func (s *Service) voiceSelf(w http.ResponseWriter, r *http.Request) error {
 		if req.Ptt != nil {
 			n.Ptt = req.GetPtt()
 		}
+		if req.OnPhone != nil {
+			n.OnPhone = req.GetOnPhone()
+		}
 		return &n
 	})
 	if err != nil {

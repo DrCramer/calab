@@ -1,5 +1,5 @@
 import type { DiskItem, FileMeta } from '@calaba/protocol';
-import { Folder, Link2, Lock, Users } from 'lucide-react';
+import { Folder, Link2, Lock, PencilLine, Users } from 'lucide-react';
 import { memo, type ReactNode } from 'react';
 import { MediaImg } from '../../components/MediaImg';
 import { cx } from '../../components/ui';
@@ -7,6 +7,7 @@ import { t } from '../../i18n';
 import { thumbnailPath } from '../../lib/api/endpoints';
 import { isFolder } from '../../lib/disk';
 import { fileType, type FileFamily } from '../../lib/fileType';
+import { useMemberName } from '../../stores/workspaces';
 
 /**
  * The type tint per family (CBF-22), from the theme's tokens so it reads in light and dark:
@@ -99,6 +100,24 @@ export const ItemPicture = memo(function ItemPicture({ item }: { item: DiskItem 
 });
 
 /** Badges of an item: restricted («Только выбранные»), shared (own overrides), a public link. */
+/**
+ * «Редактирует Анна» (ADR-0143): who has the file open in the office editor now (DiskItem.editor_ids,
+ * kept live by DISK_ITEM_UPSERT). Render it only when the list is not empty: the member-name
+ * subscription then exists only on the rows being edited.
+ */
+export const EditingLabel = memo(function EditingLabel({ item, className }: { item: DiskItem; className?: string }): ReactNode {
+  const first = item.editorIds[0] ?? '';
+  const name = useMemberName(item.workspaceId, first);
+  const more = item.editorIds.length - 1;
+  const text = more > 0 ? t('office.editingMore', { name, n: more }) : t('office.editing', { name });
+  return (
+    <span className={cx('inline-flex min-w-0 items-center gap-1 text-caption text-[var(--color-accent)]', className)} title={text} data-testid="disk-editing">
+      <PencilLine className="size-3.5 shrink-0" aria-hidden />
+      <span className="truncate">{text}</span>
+    </span>
+  );
+});
+
 export function ItemBadges({ item, className }: { item: DiskItem; className?: string }): ReactNode {
   if (!item.restricted && !item.shared && !item.link) return null;
   return (

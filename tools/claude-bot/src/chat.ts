@@ -26,7 +26,7 @@ function hhmm(d: Date | undefined, timeZone: string | undefined): string {
  * The prompt on stdin: the chat (oldest first), each line tagged with its author, and which message to
  * answer. The chat text cannot close the <chat> block: tag-like sequences are defused.
  */
-export function buildChatPrompt(lines: ChatLine[], opts: { botId: string; names: ReadonlyMap<string, string>; askerName: string; kind: 'dm' | 'task'; timeZone?: string | undefined }): string {
+export function buildChatPrompt(lines: ChatLine[], opts: { botId: string; names: ReadonlyMap<string, string>; askerName: string; kind: 'dm' | 'task'; timeZone?: string | undefined; footer?: string }): string {
   const body = lines
     .slice(-CONTEXT_MESSAGES)
     .filter((l) => l.content.trim() !== '')
@@ -43,6 +43,6 @@ export function buildChatPrompt(lines: ChatLine[], opts: { botId: string; names:
     '<chat>',
     body,
     '</chat>',
-    `Ответь на последнее сообщение от «${opts.askerName}». Только текст ответа, без вступлений.`,
+    opts.footer ?? `Ответь на последнее сообщение от «${opts.askerName}». Только текст ответа, без вступлений.`,
   ].join('\n');
 }

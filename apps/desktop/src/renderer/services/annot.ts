@@ -7,7 +7,7 @@ import { grantAllowsAnnot } from '../lib/annot/permission';
 import { AnnotScene, type SceneEvent } from '../lib/annot/scene';
 import { AnnotSender, type OutMessage } from '../lib/annot/sender';
 import { log } from '../lib/log';
-import { platform } from '../platform';
+import { isWeb, platform } from '../platform';
 import { setAnnot, useAnnot } from '../stores/annot';
 import { useVoice, type RemoteStream } from '../stores/voice';
 import { memberName } from '../stores/workspaces';
@@ -27,6 +27,17 @@ type Listener = () => void;
 
 type OverlayState = 'closed' | 'opening' | 'open' | 'unavailable';
 
+/** The presenter's «X рисует» indicator goes after this long without annotations. */
+export const ACTIVITY_MS = 4000;
+
+/**
+ * Where the presenter sees annotations of a stream of this source: the overlay covers whole
+ * screens in the desktop app (main decides about the OS); otherwise only the stream's preview.
+ */
+export function viewFor(target: AnnotOverlayTarget | null | undefined, web: boolean): 'screen' | 'preview' {
+  return !web && target ? 'screen' : 'preview';
+}
+
 class AnnotService {
   private room: Room | null = null;
   private readonly scenes = new Map<string, AnnotScene>();
@@ -39,6 +50,11 @@ class AnnotService {
   private mine: { sid: string; target: AnnotOverlayTarget | null } | null = null;
   private overlay: OverlayState = 'closed';
   private overlayQueue: SceneEvent[] = [];
+  /** Last annotation of my stream by someone else (performance.now), and the indicator's timer. */
+  private activityAt = 0;
+  private activityTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The first annotation of my stream is logged with the overlay state (issue #102). */
+  private loggedFirst = false;
 
   // ---------------------------------------------------------------- lifecycle (services/voice.ts)
 
@@ -84,7 +100,12 @@ class AnnotService {
    */
   presenting(sid: string | null, target?: AnnotOverlayTarget | null): void {
     if (this.mine && this.mine.sid !== sid) this.closeOverlay();
+    if (this.mine?.sid !== sid) {
+      this.endActivity();
+      this.loggedFirst = false;
+    }
     this.mine = sid ? { sid, target: target ?? null } : null;
+    if (sid) setAnnot({ mineView: viewFor(target, isWeb) });
     // Late viewers get the policy when they announce watching; tell the room about a «no» now.
     if (sid && !useAnnot.getState().allowMine) this.sendPolicy(sid, false);
   }
@@ -144,7 +165,39 @@ class AnnotService {
   private apply(sid: string, ev: SceneEvent): void {
     this.scene(sid).apply(ev, performance.now());
     this.notify(sid);
-    if (this.mine?.sid === sid) this.toOverlay(ev);
+    if (this.mine?.sid === sid) {
+      this.toOverlay(ev);
+      if (ev.from !== this.room?.localParticipant.identity) this.noteActivity(ev);
+    }
+  }
+
+  /** Someone annotates my stream: the panel says who, whether or not the overlay shows it. */
+  private noteActivity(ev: SceneEvent): void {
+    if (ev.kind === 'clear') return;
+    if (!this.loggedFirst) {
+      this.loggedFirst = true;
+      log.info('annot: first annotation of my stream', { kind: ev.kind, from: ev.from, overlay: this.overlay, target: this.mine?.target ?? null, web: isWeb });
+    }
+    this.activityAt = performance.now();
+    const cur = useAnnot.getState().mineActivity;
+    if (cur?.name !== ev.name || cur.kind !== ev.kind) setAnnot({ mineActivity: { name: ev.name, kind: ev.kind } });
+    if (this.activityTimer === null) this.scheduleActivityEnd(ACTIVITY_MS);
+  }
+
+  /** One timer while someone annotates (none when quiet): re-armed for what is left. */
+  private scheduleActivityEnd(ms: number): void {
+    this.activityTimer = setTimeout(() => {
+      this.activityTimer = null;
+      const left = this.activityAt + ACTIVITY_MS - performance.now();
+      if (left > 50) this.scheduleActivityEnd(left);
+      else setAnnot({ mineActivity: null });
+    }, ms);
+  }
+
+  private endActivity(): void {
+    if (this.activityTimer !== null) clearTimeout(this.activityTimer);
+    this.activityTimer = null;
+    if (useAnnot.getState().mineActivity) setAnnot({ mineActivity: null });
   }
 
   // ---------------------------------------------------------------- send (the stream's tools)
@@ -202,6 +255,7 @@ class AnnotService {
       this.scenes.get(sid)?.clear();
       this.notify(sid);
       this.closeOverlay();
+      this.endActivity();
     }
   }
 
@@ -243,6 +297,12 @@ class AnnotService {
       .then((ok) => {
         if (this.mine?.sid !== sid || this.overlay !== 'opening') return;
         this.overlay = ok ? 'open' : 'unavailable';
+        if (!ok) {
+          // Issue #102: no window over the screen (Linux, no display for the source): the panel
+          // points to the preview instead of promising the overlay.
+          log.info('annot: overlay unavailable, preview only', { target });
+          setAnnot({ mineView: 'preview' });
+        }
         const queued = this.overlayQueue;
         this.overlayQueue = [];
         if (ok) for (const e of queued) platform.annotOverlay.send(e);

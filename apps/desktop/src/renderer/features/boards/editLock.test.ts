@@ -1,6 +1,8 @@
 import { taskPermissions } from '@calaba/protocol';
-import { describe, expect, it } from 'vitest';
-import { CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD, VIEW_BOARD, accessRowNote, editLockKey, lacksView, mayEditTask } from './model';
+import { afterEach, describe, expect, it } from 'vitest';
+import { useBots } from '../../stores/bots';
+import { taskBits } from '../../lib/boards/access';
+import { CREATE_TASKS, EDIT_TASKS, MANAGE_BOARD, VIEW_BOARD, accessRowNote, editLockKey, lacksView, mayArchiveTask, mayEditTask, mayRestoreTask } from './model';
 
 describe('editLockKey / mayEditTask (CBF-51)', () => {
   const task = { createdBy: 'a', assignees: [], archivedAt: undefined };
@@ -23,6 +25,21 @@ describe('editLockKey / mayEditTask (CBF-51)', () => {
     expect(mayEditTask(card, watching, 'a')).toBe(false);
     const createOnly = taskPermissions({ permissions: CREATE_TASKS, taskScoped: true }, card, 'a');
     expect(mayEditTask(card, createOnly, 'a')).toBe(true);
+  });
+});
+
+describe('a task of my bot is mine (ADR-0151)', () => {
+  const byBot = { createdBy: 'bot1', assignees: [], approvers: [], watcherIds: [], archivedAt: undefined };
+  afterEach(() => useBots.getState().reset());
+  it('edit, archive and create-only visibility follow READY.my_bot_ids', () => {
+    expect(mayEditTask(byBot, CREATE_TASKS, 'a')).toBe(false);
+    expect(taskBits({ permissions: CREATE_TASKS, taskScoped: true }, byBot, 'a')).toBe(0n);
+    useBots.getState().setMine(['bot1']);
+    expect(mayEditTask(byBot, CREATE_TASKS, 'a')).toBe(true);
+    expect(mayArchiveTask(byBot, CREATE_TASKS, 'a')).toBe(true);
+    expect(mayRestoreTask(byBot, VIEW_BOARD, 'a')).toBe(false); // still needs CREATE_TASKS
+    expect(taskBits({ permissions: CREATE_TASKS, taskScoped: true }, byBot, 'a')).toBe(VIEW_BOARD | CREATE_TASKS);
+    expect(mayEditTask({ ...byBot, createdBy: 'bot2' }, CREATE_TASKS, 'a')).toBe(false);
   });
 });
 

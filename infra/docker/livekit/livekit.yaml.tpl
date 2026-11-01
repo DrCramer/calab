@@ -1,35 +1,38 @@
 # LiveKit self-hosted config TEMPLATE. See docs/03-network.md.
 # Rendered by infra/docker/deploy.sh via envsubst into livekit.gen.yaml (gitignored).
-# Only the DOMAIN and LIVEKIT_API_KEY variables are substituted; do not add other variables.
+# Only the documented variables in deploy.sh are substituted; do not add other variables.
 # API keys/secrets come from env LIVEKIT_KEYS (compose.yml), never from this file.
-port: 7880
+port: 17880
 bind_addresses:
-  - "127.0.0.1"          # affects only the signal HTTP listener (behind Caddy); media ports below are public
+  - "${NPM_HOST_IP}"     # signal HTTP listener reachable from NPM's Docker bridge; media ports stay public
+  - "127.0.0.1"          # egress, SIP and IVR connect locally
 
 rtc:
   tcp_port: 7881
   udp_port: 7882          # UDP mux: all media on a single port
   use_external_ip: true
+  # Some home routers reject a server's self-ping through its public address.
+  skip_external_ip_validation: true
   allow_tcp_fallback: true
-  # Don't advertise docker bridge addresses (docker0 / compose networks, 172.16.0.0/12)
-  # as ICE candidates: host network makes LiveKit see them, but clients can't reach them.
-  ips:
-    excludes:
-      - 172.16.0.0/12
+  # Use the physical NIC for ICE candidates; do not advertise Docker bridge addresses.
+  interfaces:
+    includes:
+      - ${RTC_INTERFACE}
   # on bad UDP the SDK falls back to TCP / TURN by itself
 
 # Redis (Valkey): the egress service (meeting recording, ADR-0025) is reached only through it;
 # also what a 2nd node would need. DB 1 (DB 0 belongs to the API). The password comes from env
 # REDIS_PASSWORD (compose.yml), not from this file.
 redis:
-  address: 127.0.0.1:6379
+  address: 127.0.0.1:16379
   db: 1
 
 turn:
   enabled: true
   domain: turn.${DOMAIN}
-  tls_port: 5349          # plain TURN behind Caddy layer4 (Caddy terminates TLS on :443, SNI turn.*)
-  external_tls: true      # TLS for TURN is terminated by Caddy; no cert files here
+  tls_port: 5349          # direct TURN/TLS; TCP 443 remains owned by NPM
+  cert_file: ${TURN_CERT_DIR}/fullchain.pem
+  key_file: ${TURN_CERT_DIR}/privkey.pem
   udp_port: 443           # TURN/UDP on 443 — passes where UDP is allowed only on 443
   # Relay sockets live BELOW the kernel ephemeral range (32768–60999), so the host firewall can
   # filter relayed traffic by source port without touching other processes' UDP (see docs/03,
@@ -63,10 +66,10 @@ audio:
 webhook:
   api_key: ${LIVEKIT_API_KEY}
   urls:
-    - http://127.0.0.1:3000/api/rtc/webhook
+    - http://${NPM_HOST_IP}:13000/api/rtc/webhook
 
 prometheus:
-  port: 6789              # 127.0.0.1 only (bind_addresses); scrape: see docs/06-deployment.md
+  port: 6789              # loopback and NPM bridge only (bind_addresses); do not expose publicly
 
 logging:
   level: info

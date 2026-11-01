@@ -9,7 +9,8 @@
     "state": "closed",
     "merged": true,
     "user": {"login": "octocat"},
-    "head": {"ref": "feature/FNG-12-login"}
+    "head": {"ref": "feature/FNG-12-login", "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+    "merge_commit_sha": "cccccccccccccccccccccccccccccccccccccccc"
   },
   "repository": {"full_name": "acme/app", "html_url": "https://github.com/acme/app"}
 }

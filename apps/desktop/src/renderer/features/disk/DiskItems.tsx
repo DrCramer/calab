@@ -16,7 +16,7 @@ import { usePrefs } from '../../stores/prefs';
 import { useMemberName } from '../../stores/workspaces';
 import { ItemContextMenu, ItemMenuButton } from './ItemMenu';
 import { useQuickLook } from './useQuickLook';
-import { ItemBadges, ItemGlyph, ItemPicture } from './visuals';
+import { EditingLabel, ItemBadges, ItemGlyph, ItemPicture } from './visuals';
 
 /**
  * The listing of the open folder or of the trash (ADR-0094 §8, docs/08 «Диск»): tiles 160 px or a
@@ -278,7 +278,7 @@ const Tile = memo(function Tile({ id }: { id: string }): ReactNode {
             {item.name}
           </span>
         )}
-        <span className="truncate text-center text-caption text-muted">{itemMeta(item)}</span>
+        {item.editorIds.length ? <EditingLabel item={item} className="justify-center" /> : <span className="truncate text-center text-caption text-muted">{itemMeta(item)}</span>}
         <ItemMenuButton
           id={id}
           name={item.name}
@@ -349,6 +349,7 @@ const Row = memo(function Row({ id }: { id: string }): ReactNode {
             </span>
           )}
           <ItemBadges item={item} />
+          {item.editorIds.length ? <EditingLabel item={item} className="max-w-[50%] shrink-0" /> : null}
         </span>
         <span role="cell" className="truncate text-muted">
           {item.ownerId ? owner : '—'}

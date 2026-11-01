@@ -721,3 +721,82 @@ func TestEventDeepLinks(t *testing.T) {
 	gg.wait("ROOM_EVENT_ENDED for a guest", func(e *v1.DispatchEvent) bool { return e.GetRoomEventEnded().GetEventId() == ev.GetId() })
 	guest.must(404, "GET", "/api/events/"+ev.GetId(), nil, nil)
 }
+
+// «В рабочие дни» (ADR-0136): the holiday calendar is fixed when the repeat is chosen, from the
+// workspace's billing market or else its owner's language; a Saturday start moves to the first
+// working day; holidays are no occurrences.
+func TestEventWorkdays(t *testing.T) {
+	c := calSetup(t)
+	wsID := c.ws.GetId()
+	msk, _ := time.LoadLocation("Europe/Moscow")
+	sat := time.Date(2026, 5, 9, 10, 0, 0, 0, msk) // Saturday; Monday May 11 is a holiday in Russia
+	from, to := sat.Add(-time.Hour), time.Date(2026, 5, 16, 0, 0, 0, 0, msk)
+	listed := func() (string, map[string]string) {
+		t.Helper()
+		var resp v1.ListCalendarEventsResponse
+		c.o.must(200, "GET", "/api/workspaces/"+wsID+"/events?from="+url.QueryEscape(from.Format(time.RFC3339))+"&to="+url.QueryEscape(to.Format(time.RFC3339)), nil, &resp)
+		days := map[string]string{}
+		for _, e := range resp.GetEvents() {
+			days[e.GetId()] += e.GetOccurrenceAt().AsTime().In(msk).Format("02 ")
+		}
+		return resp.GetHolidayCalendar(), days
+	}
+	mk := func(title string) *v1.CalendarEvent {
+		t.Helper()
+		return createEvent(t, c.o, wsID, &v1.CreateCalendarEventRequest{Title: title, StartsAt: ts(sat), EndsAt: ts(sat.Add(30 * time.Minute)),
+			Tz: "Europe/Moscow", Repeat: v1.EventRepeat_EVENT_REPEAT_WORKDAYS})
+	}
+
+	// No billing account, owner's language unset: Mon–Fri.
+	if hol, _ := listed(); hol != "" {
+		t.Fatalf("workspace calendar %q", hol)
+	}
+	plain := mk("Plain")
+	if plain.GetRepeat() != v1.EventRepeat_EVENT_REPEAT_WORKDAYS || plain.GetHolidayCalendar() != "" ||
+		plain.GetStartsAt().AsTime().In(msk).Format("01-02 15:04") != "05-11 10:00" {
+		t.Fatalf("plain series %v", plain)
+	}
+
+	// The owner's language is Russian: new series follow the Russian calendar, the old one stays.
+	ru := "ru"
+	c.o.must(200, "PATCH", "/api/me", &v1.UpdateMeRequest{Locale: &ru}, nil)
+	ev := mk("Russian")
+	if ev.GetHolidayCalendar() != "ru" || ev.GetStartsAt().AsTime().In(msk).Format("01-02") != "05-12" {
+		t.Fatalf("ru series %v", ev)
+	}
+	hol, days := listed()
+	if hol != "ru" || days[plain.GetId()] != "11 12 13 14 15 " || days[ev.GetId()] != "12 13 14 15 " {
+		t.Fatalf("list %q %v", hol, days)
+	}
+	// An edit that keeps the repeat keeps the calendar; choosing it again takes today's.
+	title := "Plain 2"
+	var resp v1.CalendarEventResponse
+	c.o.must(200, "PATCH", "/api/events/"+plain.GetId(), &v1.UpdateCalendarEventRequest{Title: &title}, &resp)
+	if resp.GetEvent().GetHolidayCalendar() != "" {
+		t.Fatalf("title edit changed the calendar: %v", resp.GetEvent())
+	}
+	weekly, workdays := v1.EventRepeat_EVENT_REPEAT_WEEKLY, v1.EventRepeat_EVENT_REPEAT_WORKDAYS
+	c.o.must(200, "PATCH", "/api/events/"+plain.GetId(), &v1.UpdateCalendarEventRequest{Repeat: &weekly}, &resp)
+	c.o.must(200, "PATCH", "/api/events/"+plain.GetId(), &v1.UpdateCalendarEventRequest{Repeat: &workdays}, &resp)
+	if resp.GetEvent().GetHolidayCalendar() != "ru" {
+		t.Fatalf("repeat chosen again: %v", resp.GetEvent())
+	}
+	// A holiday is not an occurrence: no exception there.
+	occ := func(d int) string {
+		return url.QueryEscape(time.Date(2026, 5, d, 10, 0, 0, 0, msk).UTC().Format(time.RFC3339))
+	}
+	c.o.must(422, "DELETE", "/api/events/"+ev.GetId()+"?occurrence="+occ(11), nil, nil)
+	c.o.must(204, "DELETE", "/api/events/"+ev.GetId()+"?occurrence="+occ(13), nil, nil)
+	if _, days = listed(); days[ev.GetId()] != "12 14 15 " {
+		t.Fatalf("after the exception %v", days)
+	}
+
+	// A billing account decides over the language: the Global market is Mon–Fri.
+	billingAccount(t, wsID, "inactive", false)
+	if hol, _ = listed(); hol != "" {
+		t.Fatalf("global market: %q", hol)
+	}
+	if mk("Global").GetHolidayCalendar() != "" {
+		t.Fatal("global market series follows the Russian calendar")
+	}
+}

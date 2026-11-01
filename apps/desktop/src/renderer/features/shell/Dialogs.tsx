@@ -10,6 +10,7 @@ import { StreamPicker } from '../voice/StreamPicker';
 import { QuickSwitcher } from './QuickSwitcher';
 import { NewDmDialog } from '../dm/NewDmDialog';
 import { ForwardDialog } from '../chat/ForwardDialog';
+import { sendCanvasToChats } from '../../services/canvasLink';
 import { sendPageToChats } from '../../services/wiki';
 import { isFolder } from '../../lib/disk';
 import { sendDiskItemToChats } from '../../services/diskLink';
@@ -27,12 +28,15 @@ import { TempExtendDialog, TempRoomDialog } from '../workspace/TempRoomDialog';
 import { CreateWorkspaceDialog, JoinWorkspaceDialog } from '../workspace/WorkspaceDialogs';
 import { AdminWindowLazy, AppSettingsWindow, WorkspaceSettingsWindow } from './lazyWindows';
 import { useSession } from '../../stores/session';
+import { useTaskTabs } from '../../stores/taskTabs';
 import { EventDialog } from '../calendar/EventDialog';
+import { JoinConfirmHost } from '../calendar/JoinConfirm';
 import { SETTINGS_DIALOG_KINDS } from './SettingsScreen';
 import { AppDialog } from '../webapps/AppDialog';
 import { PlansDialog } from '../workspace/billing/PlansDialog';
 
 const RecordingResult = lazy(() => import('../chat/RecordingResult'));
+const UnsavedDialog = lazy(() => import('../disk/office/UnsavedDialog').then((m) => ({ default: m.UnsavedDialog })));
 
 /** The send-to-chat dialog words itself by what is sent: a folder or a file. */
 const isFolderItem = (id: string): boolean => {
@@ -107,6 +111,19 @@ export function Dialogs(): ReactNode {
           />
         );
         break;
+      case 'canvas-send':
+        node = (
+          <ForwardDialog
+            roomId=""
+            messageId=""
+            onClose={close}
+            title={t('canvas.send.title')}
+            description={t('canvas.send.hint')}
+            comment
+            onSend={(targets, comment) => sendCanvasToChats(d.itemId, targets, comment)}
+          />
+        );
+        break;
       case 'room-invite':
         node = <InviteToRoomDialog roomId={d.roomId} onClose={close} />;
         break;
@@ -132,7 +149,7 @@ export function Dialogs(): ReactNode {
         node = <AppDialog key={d.appId ?? 'new'} workspaceId={d.workspaceId} appId={d.appId} onClose={close} />;
         break;
       case 'billing-plans':
-        node = <PlansDialog key={d.workspaceId} workspaceId={d.workspaceId} welcome={d.welcome ?? false} onClose={close} />;
+        node = <PlansDialog key={d.workspaceId} workspaceId={d.workspaceId} welcome={d.welcome ?? false} {...(d.plan ? { preselect: d.plan } : {})} onClose={close} />;
         break;
       case 'image': {
         const inChat = d.inChat;
@@ -160,6 +177,13 @@ export function Dialogs(): ReactNode {
         node = <PdfViewer key={d.file.id} file={d.file} onClose={close} {...(diskId ? { onSendToChat: () => openSendToChat(diskId) } : {})} />;
         break;
       }
+      case 'office-unsaved':
+        node = (
+          <Suspense fallback={null}>
+            <UnsavedDialog tabId={d.tabId} name={useTaskTabs.getState().tabs.find((x) => x.id === d.tabId)?.title ?? ''} onClose={close} />
+          </Suspense>
+        );
+        break;
       case 'disk-file':
         node = <DiskFileDialog itemId={d.itemId} onClose={close} />;
         break;
@@ -201,6 +225,7 @@ export function Dialogs(): ReactNode {
       {node}
       <AchievementLayers />
       <ConfirmHost />
+      <JoinConfirmHost />
     </>
   );
 }

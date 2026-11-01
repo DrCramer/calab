@@ -22,6 +22,7 @@ import { HOME } from '../stores/dms';
 import { useFreeBusy } from '../stores/freebusy';
 import { useSearchPanel } from '../stores/searchPanel';
 import { useUi } from '../stores/ui';
+import { useTelContacts } from '../stores/telContacts';
 import { useWorkspaces } from '../stores/workspaces';
 
 /**
@@ -152,6 +153,14 @@ function closeFlag(s: PhoneScreen, next: PhoneScreen | undefined): void {
     case 'disk':
     case 'wiki':
     case 'canvas':
+    case 'telCall':
+    case 'telSettings':
+    case 'telContact':
+    case 'telDial':
+      break;
+    case 'telContactEdit':
+      // The form's prefill goes with its screen.
+      if (useTelContacts.getState().form) useTelContacts.getState().openForm(null);
       break;
   }
   // Back to a chat below: it is the open room again (the list's highlight, read state, links).

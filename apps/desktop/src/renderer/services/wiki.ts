@@ -24,7 +24,7 @@ import {
   type WikiVersionsResponse,
 } from '@calaba/protocol';
 import { confirmAction } from '../components/Confirm';
-import { plural, t } from '../i18n';
+import { t } from '../i18n';
 import { ApiError, body, call, callBytes, callEmpty, qs } from '../lib/api/client';
 import { api, uploadInto } from '../lib/api/endpoints';
 import { docHandle } from '../lib/wiki/docHandle';
@@ -37,16 +37,13 @@ import { useUi } from '../stores/ui';
 import { pushOnTab } from '../lib/phoneNav';
 import { showMode } from '../features/shell/sectionNav';
 import type { ForwardItem } from '../features/chat/forwardModel';
-import { log } from '../lib/log';
 import { contextWorkspaceNow } from '../stores/sections';
 import { useSession } from '../stores/session';
 import { useWikiRefs } from '../stores/wikiRefs';
 import { HOME } from '../stores/dms';
-import { useRooms } from '../stores/rooms';
 import { wikiPageUrl } from './links';
+import { sendLinkToChats } from './sendLink';
 import { reportPlanError } from './plan';
-import { MAX_CONTENT, sendMessage } from './chat';
-import { ensureDm } from './dms';
 
 /**
  * Wiki REST (ADR-0096 §8, proto/calaba/v1/wiki.proto) and the section's actions: the one module
@@ -597,30 +594,6 @@ export function copyPageLink(id: string): void {
  * «Отправить в чат…»: one message per picked chat — the optional comment, then the page's address
  * (the feed draws its card). Through the chat's own send path; the server checks the rights.
  */
-export async function sendPageToChats(pageId: string, targets: readonly ForwardItem[], comment: string): Promise<void> {
-  const url = wikiPageUrl(pageId);
-  if (!url || !targets.length) return;
-  const note = comment.trim();
-  const content = (note ? `${note}\n${url}` : url).slice(0, MAX_CONTENT);
-  let last: { ws: string; room: string; name: string } | null = null;
-  let sent = 0;
-  let failed = 0;
-  for (const target of targets) {
-    try {
-      const roomId = target.kind === 'room' ? target.roomId : await ensureDm(target.userId);
-      const ws = useRooms.getState().byId[roomId]?.workspaceId ?? '';
-      await sendMessage(ws, roomId, content, [], undefined);
-      last = { ws, room: roomId, name: target.name };
-      sent++;
-    } catch (e) {
-      log.warn('wiki to chat: send', e);
-      failed++;
-    }
-  }
-  if (last) {
-    const to = last;
-    const label = sent > 1 ? plural('wiki.send.sentMany', sent) : t('wiki.send.sent', { name: to.name });
-    useToasts.getState().push('success', label, { label: t('wiki.send.open'), run: () => useUi.getState().openRoom(to.ws || HOME, to.room) });
-  }
-  if (failed) toast.error(t('wiki.send.failed'));
+export function sendPageToChats(pageId: string, targets: readonly ForwardItem[], comment: string): Promise<void> {
+  return sendLinkToChats(wikiPageUrl(pageId), targets, comment);
 }

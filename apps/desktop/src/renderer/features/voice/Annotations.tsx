@@ -7,6 +7,7 @@ import type { MessageKey } from '../../i18n/types';
 import { PaintLoop } from '../../lib/annot/loop';
 import { ANNOT_COLORS, contentRect, css, toFrame, toFrameClamped, type Rect } from '../../lib/annot/paint';
 import { annot } from '../../services/annot';
+import { voice } from '../../services/voice';
 import { setAnnot, useAnnot, type AnnotTool } from '../../stores/annot';
 import { useVoice, type RemoteStream } from '../../stores/voice';
 import { menuBox } from '../shell/menu';
@@ -222,16 +223,54 @@ export function AnnotTools({
 export function MyStreamAnnot(): ReactNode {
   const allow = useAnnot((s) => s.allowMine);
   return (
-    <span className="mt-1 flex items-center gap-2" data-testid="my-stream-annot">
-      <Toggle checked={allow} onChange={(v) => annot.setAllowMine(v)} label={t('annot.allowViewers')} />
-      <span className="min-w-0 flex-1 truncate text-muted" aria-hidden>
-        {t('annot.allowViewers')}
+    <>
+      <span className="mt-1 flex items-center gap-2" data-testid="my-stream-annot">
+        <Toggle checked={allow} onChange={(v) => annot.setAllowMine(v)} label={t('annot.allowViewers')} />
+        <span className="min-w-0 flex-1 truncate text-muted" aria-hidden>
+          {t('annot.allowViewers')}
+        </span>
+        {allow ? (
+          <IconButton size="sm" label={t('annot.clearAll')} onClick={() => annot.clearMine()}>
+            <Eraser className="size-4" aria-hidden />
+          </IconButton>
+        ) : null}
       </span>
-      {allow ? (
-        <IconButton size="sm" label={t('annot.clearAll')} onClick={() => annot.clearMine()}>
-          <Eraser className="size-4" aria-hidden />
-        </IconButton>
-      ) : null}
+      {allow ? <MyStreamAnnotStatus /> : null}
+    </>
+  );
+}
+
+/**
+ * Under the switch (issue #102): where I will see the drawings (over my screen / in my stream's
+ * preview) and, while a viewer annotates, who — so annotations never go unnoticed, even when the
+ * overlay cannot be shown. «Показать» opens my stream's preview in its own window.
+ */
+function MyStreamAnnotStatus(): ReactNode {
+  const view = useAnnot((s) => s.mineView);
+  const name = useAnnot((s) => s.mineActivity?.name);
+  const kind = useAnnot((s) => s.mineActivity?.kind);
+  const mySid = useVoice((s) => s.streams.find((o) => o.local)?.trackSid);
+  const poppedOut = useVoice((s) => s.stage === 'popout' && !!mySid && s.watching === mySid);
+  const showPreview = (): void => {
+    if (!mySid) return;
+    voice.watch(mySid);
+    voice.setStage('popout');
+  };
+  return (
+    <span className="mt-0.5 flex min-h-5 items-center gap-1.5 text-[11px]" data-testid="my-stream-annot-status" role="status">
+      {name && kind ? (
+        <>
+          <MousePointer2 className="size-3 shrink-0 text-accent-text" aria-hidden />
+          <span className="min-w-0 flex-1 truncate text-fg">{t(kind === 'pointer' ? 'annot.activity.pointer' : 'annot.activity.stroke', { name })}</span>
+          {view === 'preview' && !poppedOut ? (
+            <button type="button" className="shrink-0 rounded-[var(--radius-control)] font-medium text-accent-text hover:underline" onClick={showPreview}>
+              {t('annot.showPreview')}
+            </button>
+          ) : null}
+        </>
+      ) : (
+        <span className="min-w-0 flex-1 truncate text-muted">{t(view === 'screen' ? 'annot.hint.screen' : 'annot.hint.preview')}</span>
+      )}
     </span>
   );
 }

@@ -6,7 +6,7 @@ import type { MailAddress, MailFolder, MailHeader, MailMessage } from '../../../
 import { Button, IconButton, Spinner, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { isSafeHref } from '../../lib/markdown/parse';
-import { platform } from '../../platform';
+import { openContentLink } from '../../services/contentLink';
 import { allowRemote, expandMessage, loadBody, setMessageFlags, updateSettings, useMail } from '../../stores/mail';
 import { useMailUi } from '../../stores/mailUi';
 import { menuBox, menuItem, menuLabel } from '../shell/menu';
@@ -288,7 +288,8 @@ function openLink(href: string): void {
     useMailUi.getState().openCompose({ kind: 'new', to: mailto.to, cc: mailto.cc, subject: mailto.subject, text: mailto.body });
     return;
   }
-  if (isSafeHref(href)) void platform.app.openExternal(href);
+  // Our own in-app links (a task or invite in a letter) open in the app, the rest in the browser.
+  if (isSafeHref(href)) openContentLink(href);
 }
 
 /** A plain-text message: wrapped, links clickable (http(s) in the browser, mailto in the composer). */

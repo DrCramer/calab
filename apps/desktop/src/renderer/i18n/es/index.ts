@@ -48,8 +48,12 @@ import { esTemp } from './temp';
 import { esContacts } from './contacts';
 import { esSip } from './sip';
 import { esPbx } from './pbx';
+import { esTelephony } from './telephony';
+import { esTelephonySettings } from './telephonySettings';
+import { esTelephonyContacts } from './telephonyContacts';
 import { esAi } from './ai';
 import { esSmartTask } from './smartTask';
+import { esTaskSearch } from './taskSearch';
 import { esWebApps } from './webapps';
 
 /** Spanish UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
@@ -69,8 +73,12 @@ export const es: Dict = {
   ...esContacts,
   ...esSip,
   ...esPbx,
+  ...esTelephony,
+  ...esTelephonySettings,
+  ...esTelephonyContacts,
   ...esAi,
   ...esSmartTask,
+  ...esTaskSearch,
   ...esWebApps,
   ...esDm,
   ...esNotes,
@@ -394,6 +402,10 @@ export const es: Dict = {
   // voice
   'voice.connecting': 'Conectando…',
   'voice.reconnecting': 'Reconectando…',
+  'voice.audioBlocked': 'No oyes a los demás',
+  'voice.audioBlockedAction': 'Activar sonido',
+  'voice.micRecovering': 'Esperando micro',
+  'voice.micUnheard': 'No se te oye',
   'voice.connected': 'Voz conectada',
   'voice.blocked': 'Voz no disponible',
   'voice.quality': 'Calidad de conexión · latencia {rtt} ms · pérdida {loss}%',
@@ -464,6 +476,7 @@ export const es: Dict = {
   'voice.pttMac': 'macOS: requiere los permisos «Accesibilidad» y «Monitoreo de entrada».',
   'voice.rnnoise': 'Supresión de ruido',
   'voice.rnnoiseHint': 'Elimina el ruido del teclado y el ruido de fondo. Consume más CPU: desactivado por defecto',
+  'voice.rnnoisePlatform': 'En este dispositivo el sistema elimina el ruido por sí mismo; un segundo supresor encima distorsionaría tu voz',
   'voice.red': 'Resiliencia a redes deficientes',
   'voice.redHint': 'Menos cortes de voz en Wi-Fi débil o VPN, al doble de tráfico',
   'voice.myBitrate': 'Calidad de mi voz',
@@ -712,6 +725,7 @@ export const es: Dict = {
   'unit.mb': '{n} MB',
   'unit.gb': '{n} GB',
   'date.todayAt': 'hoy a las {time}',
+  'date.yesterdayAt': 'ayer a las {time}',
   'date.yesterday': 'ayer',
   'perm.granted': 'Permitido',
   'perm.denied': 'Denegado',

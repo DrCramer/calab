@@ -37,7 +37,7 @@ export function CardStickers({ active }: { active: boolean }) {
     ]);
   }, [active]);
   return <span className="card-stickers" data-visible={active} aria-hidden="true">
-    {stickers.map((sticker, index) => <img key={index} src={`/editorial/sticker-${sticker.asset}.webp`} alt="" width={112} height={112} draggable={false}
+    {stickers.map((sticker, index) => <img key={index} src={`/editorial/sticker-${sticker.asset}.webp`} alt="" width={112} height={112} loading="lazy" draggable={false}
       style={{ left: `${sticker.left}%`, top: `${sticker.top}%`, '--peek-x': `${sticker.x}px`, '--peek-y': `${sticker.y}px`, '--peek-angle': `${sticker.angle}deg`, '--peek-scale': sticker.size, '--peek-delay': `${index * 65}ms` } as CSSProperties} />)}
   </span>;
 }

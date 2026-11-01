@@ -50,6 +50,10 @@ export const ruCall = {
   'call.sipTaken': 'Звонок уже принят или завершён',
   'call.sipNotify': 'Входящий звонок с {number}',
   'call.sipPanel': 'Звонок · {number}',
+  'call.sipParked': 'Комната: {room} — на паузе',
+  'call.sipParkedLeave': 'Выйти из комнаты',
+  'call.sipParkedAfter': 'Войдёте в комнату после звонка',
+  'call.onPhone': 'Разговаривает по телефону',
   // transfer of a phone call (ADR-0132)
   'call.sipTransfer': 'Перевести',
   'call.sipTransferPick': 'Кому перевести звонок',

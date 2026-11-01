@@ -1,6 +1,6 @@
-import { rectCenter, dist, rotatePoint, type Point, type Rect } from './geometry';
+import { polylineMidpoint, rectCenter, dist, rotatePoint, type Point, type Rect } from './geometry';
 import { anchorFraction } from './shapes';
-import type { BoxRec, Endpoint, RouteKind, ShapeKind, Side } from './types';
+import type { BoxRec, ConnectorRec, Endpoint, RouteKind, ShapeKind, Side } from './types';
 
 export type ConcreteSide = Exclude<Side, 'auto'>;
 export const SIDES: readonly ConcreteSide[] = ['top', 'right', 'bottom', 'left'];
@@ -89,6 +89,8 @@ export interface RoutedConnector {
   points: number[];
   from: ResolvedEnd;
   to: ResolvedEnd;
+  /** A `curve`: its control points [c1x, c1y, c2x, c2y]; `points` is the curve flattened. */
+  curve?: number[];
 }
 
 /** Bounded memo for elbow routes (keyed by the resolved end positions and directions). */
@@ -138,6 +140,16 @@ export function routeConnector(
   if (!a.target && 'id' in from && !last.from) a.p = { ...b.p };
   if (!b.target && 'id' in to && !last.to) b.p = { ...a.p };
   if (kind === 'straight') return { points: [a.p.x, a.p.y, b.p.x, b.p.y], from: a, to: b };
+  if (kind === 'curve') {
+    const [c1, c2] = curveControls(a, b);
+    const key = `c|${endKey(a)}|${endKey(b)}`;
+    let pts = cache?.get(key);
+    if (!pts) {
+      pts = flattenCubic(a.p, c1, c2, b.p);
+      cache?.set(key, pts);
+    }
+    return { points: pts, from: a, to: b, curve: [c1.x, c1.y, c2.x, c2.y] };
+  }
   const key = `${endKey(a)}|${endKey(b)}`;
   let pts = cache?.get(key);
   if (!pts) {
@@ -211,4 +223,74 @@ export function endDirection(pts: readonly number[], atEnd: boolean): Point {
     : [pts[2] ?? 0, pts[3] ?? 0, pts[0] ?? 0, pts[1] ?? 0];
   const len = Math.hypot(qx - px, qy - py);
   return len === 0 ? { x: 1, y: 0 } : { x: (qx - px) / len, y: (qy - py) / len };
+}
+
+// ── smooth connectors (2026-10-23) ─────────────────────────────────────────────
+
+/** Segments a curve is flattened into (even, so the middle sample is t = 0.5). */
+export const CURVE_STEPS = 32;
+/** Shortest reach of a control point: a short curve still leaves its side visibly along the normal. */
+export const CURVE_MIN_REACH = 40;
+/** A control point's reach as a share of the distance between the ends. */
+export const CURVE_REACH = 0.45;
+
+/**
+ * Control points of a smooth connector (a cubic Bézier, like FigJam's «curved»): a glued end leaves its side along
+ * the side's normal; a free end leaves along the dominant axis toward the other end, so two free ends make an S.
+ */
+export function curveControls(a: ResolvedEnd, b: ResolvedEnd): [Point, Point] {
+  const reach = Math.max(CURVE_MIN_REACH, dist(a.p, b.p) * CURVE_REACH);
+  const da = a.dir ?? axisDir(a.p, b.p);
+  const db = b.dir ?? axisDir(b.p, a.p);
+  return [
+    { x: a.p.x + da.x * reach, y: a.p.y + da.y * reach },
+    { x: b.p.x + db.x * reach, y: b.p.y + db.y * reach },
+  ];
+}
+
+/** The point at `t` of the cubic p0 → p3 with controls c1, c2. */
+export function cubicAt(p0: Point, c1: Point, c2: Point, p3: Point, t: number): Point {
+  const u = 1 - t;
+  const a = u * u * u;
+  const b = 3 * u * u * t;
+  const c = 3 * u * t * t;
+  const d = t * t * t;
+  return { x: a * p0.x + b * c1.x + c * c2.x + d * p3.x, y: a * p0.y + b * c1.y + c * c2.y + d * p3.y };
+}
+
+/** The cubic as a flat polyline of `CURVE_STEPS` segments (uniform in t; the ends are exact). */
+export function flattenCubic(p0: Point, c1: Point, c2: Point, p3: Point, steps = CURVE_STEPS): number[] {
+  const out: number[] = [p0.x, p0.y];
+  for (let i = 1; i < steps; i++) {
+    const q = cubicAt(p0, c1, c2, p3, i / steps);
+    out.push(q.x, q.y);
+  }
+  out.push(p3.x, p3.y);
+  return out;
+}
+
+const pt = (pts: readonly number[], i: number): Point => ({ x: pts[i] ?? 0, y: pts[i + 1] ?? 0 });
+
+/** Where a connector's label sits: a curve's point at t = 0.5, otherwise the middle of the path by length. */
+export function connectorMidpoint(o: Pick<ConnectorRec, 'points' | 'curve'>): Point {
+  const c = o.curve;
+  const n = o.points.length;
+  if (c && c.length === 4 && n >= 4) return cubicAt(pt(o.points, 0), pt(c, 0), pt(c, 2), pt(o.points, n - 2), 0.5);
+  return polylineMidpoint(o.points);
+}
+
+/**
+ * Unit direction an arrowhead points at an end: a curve's tangent there (from its control point), otherwise the last
+ * segment's. A control point on top of its end (no reach) falls back to the flattened path.
+ */
+export function connectorEndDirection(o: Pick<ConnectorRec, 'points' | 'curve'>, atEnd: boolean): Point {
+  const c = o.curve;
+  const n = o.points.length;
+  if (c && c.length === 4 && n >= 4) {
+    const tip = atEnd ? pt(o.points, n - 2) : pt(o.points, 0);
+    const ctl = atEnd ? pt(c, 2) : pt(c, 0);
+    const len = Math.hypot(tip.x - ctl.x, tip.y - ctl.y);
+    if (len > 1e-6) return { x: (tip.x - ctl.x) / len, y: (tip.y - ctl.y) / len };
+  }
+  return endDirection(o.points, atEnd);
 }

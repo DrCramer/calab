@@ -9,6 +9,7 @@ import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { canvasPublicSyncUrl, canvasSyncUrl, createCanvasSync, type CanvasSync } from '../../../lib/canvasSync';
 import type { SocketLike } from '../../../lib/gateway/client';
+import { builtinStickerSrc } from '../../../lib/builtinStickers';
 import { canvasDocUserKey } from '../../../lib/canvas/docUser';
 import { CanvasEngine, type CanvasPalette, type ClipboardPort, type RefusedWhy } from '../engine';
 import { bindCanvasSync, type CanvasUser, type SyncBinding, type SyncEnginePort } from '../syncBinding';
@@ -31,6 +32,12 @@ export interface CanvasViewDeps {
    * per open canvas, and only when a timer is first seen or started (ADR-0127). Absent: the local clock is used.
    */
   serverClockOffset?: () => Promise<number | null>;
+  /**
+   * An API media path → a URL an <img> can load with the person's access (platform.mediaUrl). Absent (the public link:
+   * no token, no public route for workspace files): pictures on the board stay plaques, except built-in stickers,
+   * which are bundled with the app.
+   */
+  mediaUrl?: (path: string) => Promise<string>;
 }
 
 export interface SessionOptions {
@@ -95,6 +102,7 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
     ...(o.editorLabel ? { editorLabel: o.editorLabel } : {}),
     ...(o.deps.clipboard ? { clipboard: o.deps.clipboard } : {}),
     ...(o.onRefused ? { onRefused: o.onRefused } : {}),
+    imageUrl: (src) => builtinStickerSrc(src) ?? o.deps.mediaUrl?.(src) ?? null,
   });
   const code = o.publicCode;
   const sync = createCanvasSync(ydoc, awareness, {

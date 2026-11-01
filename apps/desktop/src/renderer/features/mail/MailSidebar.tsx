@@ -1,4 +1,4 @@
-import { Archive, BrushCleaning, ChevronRight, FileText, Folder, FolderPlus, FolderSearch, Inbox, OctagonAlert, PanelLeft, Pencil, Plus, RotateCw, Send, SendHorizontal, Star, Trash2, TriangleAlert, type LucideIcon } from 'lucide-react';
+import { Archive, BrushCleaning, ChevronRight, FileText, Folder, FolderPlus, FolderSearch, Inbox, MailCheck, OctagonAlert, PanelLeft, Pencil, Plus, RotateCw, Send, SendHorizontal, Star, Trash2, TriangleAlert, type LucideIcon } from 'lucide-react';
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import type { MailFolderRef, MailFolderRole } from '../../../shared/mail';
@@ -9,7 +9,7 @@ import { boxUnread, refKey, selectBox, syncNow, useMail, type MailBox } from '..
 import { useMailUi } from '../../stores/mailUi';
 import { ColumnHeader, ColumnTitle, GROUP_LABEL, GroupChevron, ROW_HOVER, ROW_SELECTED } from '../shell/ColumnHeader';
 import { menuBox, menuItem, menuSeparator } from '../shell/menu';
-import { emptyTrash } from './actions';
+import { emptyTrash, markAllRead } from './actions';
 import { deleteFolder, deleteSmartFolder } from './folderActions';
 import { canHoldFolders, folderTree, isOwnFolder } from './folderTree';
 import { allLabel, folderLabel } from './format';
@@ -27,7 +27,7 @@ export function MailSidebar(): ReactNode {
   const accountIds = useMail((s) => s.accountIds);
   if (!shown) return null;
   return (
-    <nav className="mat-sidebar mat-sidebar-window relative flex w-[clamp(224px,19vw,260px)] shrink-0 flex-col border-r border-line" aria-label={t('mbox.sidebar')} data-testid="mail-sidebar">
+    <nav className="mat-sidebar mat-sidebar-window island-fade flex w-[clamp(224px,19vw,260px)] shrink-0 flex-col border-r border-line" aria-label={t('mbox.sidebar')} data-testid="mail-sidebar">
       <ColumnHeader title={<ColumnTitle>{t('mbox.sidebar')}</ColumnTitle>}>
         <IconButton label={t('mbox.sidebar.hide')} onClick={() => useMailUi.getState().toggleSidebar()} data-testid="mail-sidebar-hide">
           <PanelLeft className="size-4" strokeWidth={1.75} />
@@ -42,7 +42,7 @@ export function MailSidebar(): ReactNode {
           <SmartSection />
         </div>
       </SidebarMenu>
-      <div className="shrink-0 px-2 pb-3 pt-1">
+      <div className="shrink-0 px-2 pt-1" style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}>
         <Button size="sm" variant="ghost" className="w-full justify-start" onClick={() => useMailUi.getState().openAdd()} data-testid="mail-sidebar-add-account">
           <Plus className="size-3.5" aria-hidden />
           {t('mbox.addAccount')}
@@ -326,6 +326,12 @@ function MenuItems({ target }: { target: NonNullable<MenuTarget> }): ReactNode {
         <ContextMenu.Item className={menuItem} onSelect={() => ui.openFolderDialog({ kind: 'create', accountId: folder.accountId, parentId: folder.id, smart: false })} data-testid="mail-menu-new-subfolder">
           <FolderPlus className="size-4" aria-hidden />
           {t('mbox.folders.newSub')}
+        </ContextMenu.Item>
+      ) : null}
+      {folder.unread > 0 && folder.path ? (
+        <ContextMenu.Item className={menuItem} onSelect={() => void markAllRead({ scope: folder.accountId, folder: { id: folder.id } })} data-testid="mail-menu-mark-all-read">
+          <MailCheck className="size-4" aria-hidden />
+          {t('mbox.markAll')}
         </ContextMenu.Item>
       ) : null}
       {folder.role === 'trash' ? (

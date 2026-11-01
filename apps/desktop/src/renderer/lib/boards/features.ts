@@ -62,6 +62,7 @@ const FIELD_FEATURE: Partial<Record<TaskField, BoardFeature>> = {
   [TaskField.APPROVAL_STATE]: BoardFeature.APPROVALS,
   [TaskField.APPROVER_PENDING]: BoardFeature.APPROVALS,
   [TaskField.HAS_ATTACHMENTS]: BoardFeature.ATTACHMENTS,
+  [TaskField.RELEASE]: BoardFeature.GIT_LINKS, // releases come with the repository (board task #101)
 };
 
 /** A filter field of a disabled feature (the filter still counts it on the server: ADR §3). */
@@ -113,7 +114,7 @@ export const isSized = (n: number, scale: EstimateScale | undefined): boolean =>
 
 // ---------------------------------------------------------------- views
 
-const GROUP_FEATURE: Record<string, BoardFeature> = { priority: BoardFeature.PRIORITY, label: BoardFeature.LABELS, milestone: BoardFeature.MILESTONES };
+const GROUP_FEATURE: Record<string, BoardFeature> = { priority: BoardFeature.PRIORITY, label: BoardFeature.LABELS, milestone: BoardFeature.MILESTONES, release: BoardFeature.GIT_LINKS };
 const SORT_FEATURE: Record<string, BoardFeature> = { priority: BoardFeature.PRIORITY, due: BoardFeature.DUE_DATE };
 
 /** A list grouping / sort that needs no disabled feature (otherwise the list falls back). */

@@ -1,5 +1,6 @@
 import { BoardStatusType, Permission, type Board, type BoardStatus, type Task } from '@calaba/protocol';
 import { isDone, matchTask, type FilterState, type MatchCtx } from '../../lib/boards/filter';
+import { taskAuthor } from '../../lib/boards/access';
 import { byPosition } from '../../lib/boards/position';
 import type { BoardsData } from '../../lib/boards/reducers';
 import type { BoardPrefs } from '../../stores/boardsUi';
@@ -63,16 +64,19 @@ export function accessRowNote(bit: bigint, value: Tri, noView: boolean): 'boards
   return bit === EDIT_TASKS || bit === MANAGE_BOARD ? 'boards.perm.needsView' : null;
 }
 
-/** CREATE_TASKS edits tasks one created or is assigned to; EDIT_TASKS any (boards.proto). */
+/**
+ * CREATE_TASKS edits tasks one authored (taskAuthor: oneself or one's bot, ADR-0151) or is assigned
+ * to; EDIT_TASKS any (boards.proto).
+ */
 export function mayEditTask(t: Pick<Task, 'createdBy' | 'assignees' | 'archivedAt'>, perms: bigint | undefined, me: string): boolean {
   if (t.archivedAt) return false;
   if (hasBit(perms, EDIT_TASKS)) return true;
-  return hasBit(perms, CREATE_TASKS) && (t.createdBy === me || t.assignees.some((a) => a.userId === me));
+  return hasBit(perms, CREATE_TASKS) && (taskAuthor(t, me) || t.assignees.some((a) => a.userId === me));
 }
 
-/** EDIT_TASKS, or the author with CREATE_TASKS — the server's rule for both archive and restore. */
+/** EDIT_TASKS, or the author (taskAuthor) with CREATE_TASKS — the server's rule for both archive and restore. */
 export function mayRestoreTask(t: Pick<Task, 'createdBy'>, perms: bigint | undefined, me: string): boolean {
-  return hasBit(perms, EDIT_TASKS) || (hasBit(perms, CREATE_TASKS) && t.createdBy === me);
+  return hasBit(perms, EDIT_TASKS) || (hasBit(perms, CREATE_TASKS) && taskAuthor(t, me));
 }
 
 export function mayArchiveTask(t: Pick<Task, 'createdBy' | 'archivedAt'>, perms: bigint | undefined, me: string): boolean {

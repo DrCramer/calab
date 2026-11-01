@@ -1,5 +1,6 @@
 import { PresenceStatus } from '@calaba/protocol';
 import { holdNotification } from '../../lib/notifyHold';
+import { toSource } from '../../lib/notifyClick';
 import type { MailEvent } from '../../../shared/mail';
 import { t } from '../../i18n';
 import { lazyPreload } from '../../lib/lazyPreload';
@@ -62,10 +63,7 @@ function notifyNewMail(e: Extract<MailEvent, { type: 'new_mail' }>): void {
         tag: `mail:${e.messageId}`,
       }),
     );
-    n.onclick = () => {
-      window.focus();
-      openMailMessage(e.threadId, e.messageId);
-    };
+    n.onclick = toSource(() => openMailMessage(e.threadId, e.messageId));
   } catch {
     // notifications unavailable
   }

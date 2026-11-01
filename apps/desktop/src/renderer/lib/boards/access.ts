@@ -1,5 +1,6 @@
-import { computeMemberBoardPermissions, taskPermissions, Permission, WorkspaceRole, type Board, type Role, type Task, type WorkspaceMember } from '@calaba/protocol';
+import { computeMemberBoardPermissions, isTaskAuthor, taskPermissions, Permission, WorkspaceRole, type Board, type Role, type Task, type WorkspaceMember } from '@calaba/protocol';
 import { t } from '../../i18n';
+import { myBotIds } from '../../stores/bots';
 import { ownerSeesPrivate } from '../permissions';
 import { rolesOfMember } from '../roles';
 
@@ -19,8 +20,14 @@ export function boardVisible(b: Pick<Board, 'permissions' | 'taskScoped' | 'arch
  * assignee / approver / watcher bits of the card, taskPermissions in @calaba/protocol).
  */
 export function taskBits(board: Pick<Board, 'permissions' | 'taskScoped'> | undefined, task: Pick<Task, 'assignees' | 'approvers' | 'watcherIds' | 'archivedAt' | 'createdBy'>, me: string): bigint {
-  return board ? taskPermissions(board, task, me) : 0n;
+  return board ? taskPermissions(board, task, me, myBotIds()) : 0n;
 }
+
+/**
+ * The viewer counts as the task's author: they created it, or a bot they own did (isTaskAuthor,
+ * ADR-0151; the bots from READY.my_bot_ids). Every author rule of the client goes through it.
+ */
+export const taskAuthor = (task: Pick<Task, 'createdBy'>, me: string): boolean => isTaskAuthor(task, me, myBotIds());
 
 /** The viewer sees the board only through their cards: no creating, no board settings, no view editing, no bulk. */
 export const boardScoped = (b: Pick<Board, 'taskScoped'> | undefined): boolean => !!b?.taskScoped;

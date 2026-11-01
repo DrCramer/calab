@@ -35,7 +35,7 @@ const router = load(resolve(root, 'app/index.html/route.ts'));
 const html = await router.GET().text();
 const redirect = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const now = Date.now();
-const choice = (fields = {}) => ({ version: 1, savedAt: now - 1_000, expiresAt: now + 10_000, language: true, analytics: false, marketing: false, ...fields });
+const choice = (fields = {}) => ({ version: consent.PREFERENCES_VERSION, savedAt: now - 1_000, expiresAt: now + 10_000, language: true, analytics: false, marketing: false, ...fields });
 let checks = 0;
 function check(name, fn) { fn(); checks++; console.log(`✓ ${name}`); }
 function route(record, savedLanguage = 'ru', languages = ['es-ES']) {
@@ -58,8 +58,8 @@ const invalid = [
   ['rejected', choice({ language: false })], ['expired', choice({ expiresAt: now - 1 })],
   ['future choice', choice({ savedAt: now + 60_000 })], ['old version', choice({ version: 0 })],
   ['lifetime too long', choice({ expiresAt: now + consent.PREFERENCES_TTL + 1_000 })],
-  ['unknown purpose grant', choice({ analytics: true })], ['wrong flag type', choice({ language: 'yes' })],
-  ['missing purpose', { version: 1, savedAt: now - 1000, expiresAt: now + 10000, language: true }],
+  ['marketing grant (not connected)', choice({ marketing: true })], ['v1 choice (before analytics)', choice({ version: 1 })], ['wrong flag type', choice({ language: 'yes' })],
+  ['missing purpose', { version: consent.PREFERENCES_VERSION, savedAt: now - 1000, expiresAt: now + 10000, language: true }],
 ];
 for (const [name, record] of invalid) check(`${name}: root and helper both deny optional storage`, () => {
   assert.equal(route(record), '/es/?from=test#pricing');
@@ -82,10 +82,15 @@ check('allow, switch language, then withdraw deletes optional data', () => {
   consent.rememberLocale('es');
   assert.equal(values.has('calab.locale'), false);
 });
-check('unconnected analytics and marketing cannot be granted', () => {
+check('analytics is granted only by an explicit choice; marketing never', () => {
   consent.savePreferences(true, 'en');
   assert.equal(consent.hasSiteConsent('analytics'), false);
+  consent.savePreferences(false, 'en', true);
+  assert.equal(consent.hasSiteConsent('analytics'), true);
+  assert.equal(consent.hasSiteConsent('language'), false);
   assert.equal(consent.hasSiteConsent('marketing'), false);
+  consent.savePreferences(true, 'en', false);
+  assert.equal(consent.hasSiteConsent('analytics'), false);
 });
 check('blocked reads preserve navigation and cannot grant consent', () => {
   blocked = true;

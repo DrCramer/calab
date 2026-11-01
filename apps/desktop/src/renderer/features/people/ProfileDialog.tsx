@@ -178,7 +178,7 @@ export function ProfileDialog({
                   {t('call.onCall')}
                 </div>
               ) : null}
-              <LocalTime userId={userId} variant="line" />
+              <LocalTime userId={userId} workspaceId={workspaceId} variant="line" />
               {u.isBot ? null : <ClientVersion userId={userId} />}
               <BirthdayInfo userId={userId} variant="line" />
               <EditBirthday workspaceId={workspaceId} userId={userId} />
@@ -222,7 +222,7 @@ export function ProfileDialog({
               ) : null}
 
               {/* Email and phone (ADR-0077): colleagues only. */}
-              <ProfileContacts userId={userId} variant="section" extension={m.extension} />
+              <ProfileContacts userId={userId} variant="section" workspaceId={workspaceId} extension={m.extension} />
 
               {registered || joined ? (
                 <Section title={t('people.profile.memberSince')}>

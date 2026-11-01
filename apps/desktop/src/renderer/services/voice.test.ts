@@ -73,13 +73,34 @@ class FakeLocalAudioTrack {
   replaced: FakeTrack[] = [];
   /** Pending mute/unmute resolvers (tests settle them to simulate LiveKit's async lock). */
   static lockMs = 0;
-  constructor(public mediaStreamTrack: FakeTrack) {}
-  async mute(): Promise<void> {
+  /** The next N mute/unmute calls reject (a signalling failure during Reconnecting). */
+  static failOps = 0;
+  /** The next N mute/unmute calls never settle (a lock held across a dead link). */
+  static hangOps = 0;
+  static ops = 0;
+  constructor(public mediaStreamTrack: FakeTrack) {
+    // LiveKit's constructor syncs `enabled` with its (unmuted) state.
+    mediaStreamTrack.enabled = true;
+  }
+  private async op(): Promise<void> {
+    FakeLocalAudioTrack.ops++;
+    if (FakeLocalAudioTrack.hangOps > 0) {
+      FakeLocalAudioTrack.hangOps--;
+      await new Promise(() => undefined);
+    }
     await new Promise((r) => setTimeout(r, FakeLocalAudioTrack.lockMs));
+    if (FakeLocalAudioTrack.failOps > 0) {
+      FakeLocalAudioTrack.failOps--;
+      throw new Error('signal not connected');
+    }
+  }
+  async mute(): Promise<void> {
+    await this.op();
     this.isMuted = true;
+    this.mediaStreamTrack.enabled = false;
   }
   async unmute(): Promise<void> {
-    await new Promise((r) => setTimeout(r, FakeLocalAudioTrack.lockMs));
+    await this.op();
     this.isMuted = false;
     this.mediaStreamTrack.enabled = true;
   }
@@ -96,6 +117,9 @@ class FakeLocalAudioTrack {
     }
     this.replaced.push(t);
     this.mediaStreamTrack = t;
+    // As LiveKit's setMediaStreamTrack: the new track's `enabled` follows the LiveKit mute only,
+    // whatever the caller set before (the VAD / PTT gate is ours to re-apply).
+    t.enabled = !this.isMuted;
     return Promise.resolve();
   }
   getRTCStatsReport(): Promise<undefined> {
@@ -113,6 +137,12 @@ class FakeRoom {
   /** ConnectionState (names proxy: the enum key). */
   state = 'Connected';
   engine = {};
+  /** Autoplay allowed (Room.canPlaybackAudio); startAudio() is the tap's unlock. */
+  canPlaybackAudio = true;
+  startAudio = vi.fn(() => {
+    this.canPlaybackAudio = true;
+    return Promise.resolve();
+  });
   localParticipant = {
     identity: 'u1:mine',
     permissions: undefined as undefined | { canPublish: boolean; canPublishSources: number[] },
@@ -129,8 +159,27 @@ class FakeRoom {
     on: vi.fn(),
     off: vi.fn(),
   };
-  constructor() {
+  /** RoomOptions as given (audioOutput: what LiveKit applies to new remote tracks). */
+  options: { audioOutput?: { deviceId?: string } };
+  /** LiveKit's active devices (localParticipant.activeDeviceMap). */
+  active = new Map<string, string>([['audiooutput', 'default']]);
+  switches: [string, string][] = [];
+  getActiveDevice(kind: string): string | undefined {
+    return this.active.get(kind);
+  }
+  /** As livekit-client: options + active device, then ActiveDeviceChanged (its setSinkId is ours: same id). */
+  switchActiveDevice(kind: string, id: string): Promise<boolean> {
+    this.switches.push([kind, id]);
+    this.options.audioOutput = { deviceId: id };
+    this.active.set(kind, id);
+    this.emit('ActiveDeviceChanged', kind, id);
+    return Promise.resolve(true);
+  }
+  constructor(opts?: { audioOutput?: { deviceId?: string } }) {
+    this.options = { ...opts };
     FakeRoom.all.push(this);
+    // Local publications (a parked room unpublishes them, ADR-0133).
+    Object.defineProperty(this.localParticipant, 'trackPublications', { get: () => new Map(this.published.map((t, i) => [`L${i}`, { track: t }])) });
   }
   on(ev: string, fn: Handler): this {
     this.handlers.set(ev, [...(this.handlers.get(ev) ?? []), fn]);
@@ -147,7 +196,13 @@ class FakeRoom {
   static onConnect: ((token: string) => Promise<void>) | null = null;
   connect(url: string, token: string): Promise<void> {
     this.connectedWith = [url, token];
-    return FakeRoom.onConnect ? FakeRoom.onConnect(token) : Promise.resolve();
+    if (!FakeRoom.onConnect) return Promise.resolve();
+    // As livekit-client: a failed connect emits Disconnected (the state was Connecting) before it rejects.
+    return FakeRoom.onConnect(token).catch((e: unknown) => {
+      this.state = 'Disconnected';
+      this.emit('Disconnected', 'UNKNOWN_REASON');
+      throw e;
+    });
   }
   /** When set, disconnect() waits for it (a slow network disconnect). */
   static disconnectGate: Promise<void> | null = null;
@@ -203,6 +258,14 @@ interface FakePipeline {
   isDucked: boolean;
   setDuck: ReturnType<typeof vi.fn>;
   setDenoise: ReturnType<typeof vi.fn>;
+  /** Capture health: tests flip `ctx` / `muted` and fire onMute / onContextState. */
+  ctx: string;
+  muted: boolean;
+  reportAt: number | null;
+  health: () => { ctx: string; ended: boolean; muted: boolean; reportAgeMs: number | null };
+  resumeContext: ReturnType<typeof vi.fn>;
+  onMute?: (muted: boolean) => void;
+  onContextState?: (state: string) => void;
   onEnded?: () => void;
   /** The worklet's 20 ms level / VAD reports (tests feed speech and silence through it). */
   onReport?: (r: { rms: number; vad: number }) => void;
@@ -211,10 +274,18 @@ interface FakePipeline {
 const gone = new Set<string>();
 const pipelines: FakePipeline[] = [];
 let gate: Promise<void> | null = null; // when set, MicPipeline.start waits for it
+/** MicPipeline.start calls, and an error the next one throws (the system holds the device). */
+const micStarts = vi.hoisted(() => ({ n: 0, failNext: null as Error | null }));
 vi.mock('../lib/media/micPipeline', () => ({
   MicPipeline: {
-    start: vi.fn(async (opts: { deviceId: string | null; rnnoise: boolean; musician?: boolean; duckable?: boolean; onEnded?: () => void; onReport?: (r: { rms: number; vad: number }) => void }) => {
+    start: vi.fn(async (opts: { deviceId: string | null; rnnoise: boolean; musician?: boolean; duckable?: boolean; onEnded?: () => void; onReport?: (r: { rms: number; vad: number }) => void; onMute?: (muted: boolean) => void; onContextState?: (state: string) => void }) => {
+      micStarts.n++;
       if (gate) await gate;
+      if (micStarts.failNext) {
+        const e = micStarts.failNext;
+        micStarts.failNext = null;
+        throw e;
+      }
       if (opts.deviceId && gone.has(opts.deviceId)) throw Object.assign(new Error('gone'), { name: 'OverconstrainedError' });
       const track = new FakeTrack();
       const p: FakePipeline = {
@@ -228,7 +299,17 @@ vi.mock('../lib/media/micPipeline', () => ({
         isDucked: false,
         setDuck: vi.fn(),
         setDenoise: vi.fn(),
+        ctx: 'running',
+        muted: false,
+        reportAt: null,
+        health: () => ({ ctx: p.ctx, ended: track.readyState === 'ended', muted: p.muted, reportAgeMs: p.reportAt === null ? null : Date.now() - p.reportAt }),
+        resumeContext: vi.fn(() => {
+          if (p.ctx !== 'closed') p.ctx = 'running';
+          return Promise.resolve(p.ctx === 'running');
+        }),
         stop: vi.fn(() => track.stop()),
+        ...(opts.onMute ? { onMute: opts.onMute } : {}),
+        ...(opts.onContextState ? { onContextState: opts.onContextState } : {}),
         ...(opts.onEnded ? { onEnded: opts.onEnded } : {}),
         ...(opts.onReport ? { onReport: opts.onReport } : {}),
       };
@@ -258,8 +339,21 @@ const playSound = vi.fn((_name: string) => undefined);
 const phone = vi.hoisted(() => ({ on: false }));
 vi.mock('../lib/mobile', () => ({ isMobileNow: () => phone.on }));
 vi.mock('../lib/sounds', () => ({ playSound: (name: string) => playSound(name) }));
-const pushToast = vi.hoisted(() => vi.fn());
-vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn() }, useToasts: { getState: () => ({ push: pushToast }) } }));
+/** The toast store stand-in: what is on screen (ids), so «raised once while shown» can be told. */
+const shown = vi.hoisted(() => ({ ids: [] as number[], next: 1 }));
+const pushToast = vi.hoisted(() =>
+  vi.fn((..._a: unknown[]) => {
+    const id = shown.next++;
+    shown.ids.push(id);
+    return id;
+  }),
+);
+const dismissToast = vi.hoisted(() =>
+  vi.fn((id: number) => {
+    shown.ids = shown.ids.filter((x) => x !== id);
+  }),
+);
+vi.mock('../stores/toasts', () => ({ toast: { info: vi.fn(), error: vi.fn() }, useToasts: { getState: () => ({ items: shown.ids.map((id) => ({ id })), push: pushToast, dismiss: dismissToast }) } }));
 const announce = vi.fn();
 vi.mock('./deviceToast', () => ({ announceDeviceSwitch: (...a: unknown[]) => void announce(...a) }));
 const reportMediaError = vi.fn(() => ({ text: 'err', action: null }));
@@ -292,22 +386,31 @@ beforeEach(async () => {
   FakeRoom.all = [];
   FakeChannel.all = [];
   FakeLocalAudioTrack.lockMs = 0;
+  FakeLocalAudioTrack.failOps = 0;
+  FakeLocalAudioTrack.hangOps = 0;
+  FakeLocalAudioTrack.ops = 0;
   FakeLocalAudioTrack.failReplace = false;
   FakeRoom.disconnectGate = null;
   FakeRoom.onConnect = null;
   nativeHost.audio = undefined;
   pipelines.length = 0;
   gate = null;
+  micStarts.n = 0;
+  micStarts.failNext = null;
   gone.clear();
   joinVoice.mockClear();
   leaveVoice.mockReset();
   leaveVoice.mockImplementation(() => Promise.resolve());
-  updateSelf.mockClear();
+  updateSelf.mockReset();
+  updateSelf.mockImplementation(() => Promise.resolve());
   reportMediaError.mockClear();
   deviceChange.length = 0;
   deviceList = [];
   announce.mockClear();
   playSound.mockClear();
+  shown.ids = [];
+  pushToast.mockClear();
+  dismissToast.mockClear();
   docListeners.clear();
   ({ voice } = await import('./voice'));
   ({ useVoice } = await import('../stores/voice'));
@@ -791,6 +894,29 @@ describe('VoiceEngine', () => {
     expect(useVoice.getState().roomId).toBeNull();
   });
 
+  it('a rejoin whose room drops right as connect() resolves is not counted as back: the cycle goes on', async () => {
+    await voice.join('A', 'ws');
+    // The first rejoin attempt: LiveKit connects, then the room is gone before our connect() returns.
+    FakeRoom.onConnect = () => {
+      FakeRoom.onConnect = null;
+      const room = FakeRoom.all.at(-1);
+      return Promise.resolve().then(() => {
+        if (!room) return;
+        room.state = 'Disconnected';
+        room.emit('Disconnected', 'SIGNAL_CLOSE');
+      });
+    };
+    FakeRoom.all[0]?.emit('Disconnected', 'SIGNAL_CLOSE');
+    await vi.advanceTimersByTimeAsync(1_100);
+    expect(joinVoice).toHaveBeenCalledTimes(2);
+    expect(useVoice.getState().phase).toBe('reconnecting');
+    // Next attempt (2 s later) gets in for real.
+    await vi.advanceTimersByTimeAsync(2_100);
+    expect(joinVoice).toHaveBeenCalledTimes(3);
+    expect(FakeRoom.all.at(-1)?.state).toBe('Connected');
+    expect(useVoice.getState().phase).toBe('connected');
+  });
+
   it('a failing reconnect cycle keeps the seat: no unmount of the voice panel, one stable phase (0.2.1)', async () => {
     await voice.join('A', 'ws');
     const seen: { roomId: string | null; phase: string }[] = [];
@@ -812,6 +938,28 @@ describe('VoiceEngine', () => {
     await vi.advanceTimersByTimeAsync(8_000);
     expect(useVoice.getState().phase).toBe('connected');
     expect(useVoice.getState().link.attempts).toBe(0);
+  });
+
+  it('a connect that keeps failing backs off 1/2/4/8 s, then 15 s, for 90 s, ends with the «lost» toast and frees the seat (#255)', async () => {
+    await voice.join('A', 'ws');
+    const { toast } = await import('../stores/toasts');
+    vi.mocked(toast.error).mockClear();
+    FakeRoom.onConnect = () => Promise.reject(Object.assign(new Error('could not establish signal connection'), { name: 'ConnectionError' }));
+    FakeRoom.all[0]?.emit('Disconnected', 'SIGNAL_CLOSE');
+    await settle();
+    // Rejoin attempts so far (the first /join was the user's).
+    const attempts = (): number => joinVoice.mock.calls.length - 1;
+    // Attempts at 1, 3, 7, 15, 30, 45, 60, 75 and 90 s; then the cycle gives up (90 s, ADR-0148 hold).
+    const steps: [number, number][] = [[999, 0], [1, 1], [1_999, 1], [1, 2], [3_999, 2], [1, 3], [7_999, 3], [1, 4], [14_999, 4], [1, 5], [14_999, 5], [1, 6], [14_999, 6], [1, 7], [14_999, 7], [1, 8], [14_999, 8], [1, 9]];
+    for (const [ms, n] of steps) {
+      await vi.advanceTimersByTimeAsync(ms);
+      expect(attempts()).toBe(n);
+    }
+    expect(vi.mocked(toast.error).mock.calls.map((c) => c[0])).toEqual(['Не удалось вернуться в голосовую комнату']);
+    expect(useVoice.getState()).toMatchObject({ phase: 'idle', roomId: null });
+    expect(leaveVoice).toHaveBeenCalledWith('A');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(attempts()).toBe(9);
   });
 
   it('the CSP blocking the LiveKit host: phase «blocked», the cycle stops, «Повторить» joins again', async () => {
@@ -1194,6 +1342,16 @@ describe('per-user volume and local mute (docs/09 #20)', () => {
     muted = false;
     sinkId = '';
     resetOnSink = false;
+    /** The element's stream; `binds` counts re-assignments (RemoteAudioOut.rebind). */
+    private src: unknown = {};
+    binds = 0;
+    get srcObject(): unknown {
+      return this.src;
+    }
+    set srcObject(v: unknown) {
+      this.src = v;
+      if (v) this.binds++;
+    }
     setSinkId(id: string): Promise<void> {
       this.sinkId = id;
       if (this.resetOnSink) {
@@ -1213,6 +1371,115 @@ describe('per-user volume and local mute (docs/09 #20)', () => {
     room?.emit('TrackSubscribed', track, { source }, { identity });
     return el;
   };
+
+  describe('output device routing (CBF-108)', () => {
+    const out = (deviceId: string, label: string, groupId = deviceId) => ({ deviceId, groupId, kind: 'audiooutput', label });
+    const inp = (deviceId: string, label: string, groupId = deviceId) => ({ deviceId, groupId, kind: 'audioinput', label });
+    const fire = async (list: (typeof deviceList)[number][]): Promise<void> => {
+      deviceList = list;
+      for (const fn of deviceChange) fn();
+      await settle();
+    };
+    const spk = out('spk', 'MacBook Speakers', 'g-mbp');
+    const air = out('air', 'AirPods Pro', 'g-air');
+    const dflt = (label: string, groupId: string) => out('default', `Default - ${label}`, groupId);
+
+    it('LiveKit follows a mid-call switch: a late participant plays on the new choice, not the join-time one', async () => {
+      await fire([dflt('MacBook Speakers', 'g-mbp'), spk, air]);
+      usePrefs.getState().setPrefs({ outputDeviceId: 'spk' });
+      await settle();
+      await voice.join('A', 'ws');
+      const room = FakeRoom.all.at(-1);
+      expect(room?.options.audioOutput?.deviceId).toBe('spk');
+      const a = subscribe(room, 'u2:phone', 'TR_a');
+      await settle();
+      usePrefs.getState().setPrefs({ outputDeviceId: 'air' });
+      await settle();
+      // LiveKit re-applies its own id to every new remote track: it has ours now.
+      expect([a.sinkId, room?.options.audioOutput?.deviceId, room?.getActiveDevice('audiooutput')]).toEqual(['air', 'air', 'air']);
+      // Back to «system default»: the alias, for LiveKit too (no stale 'air' for the next track).
+      usePrefs.getState().setPrefs({ outputDeviceId: null });
+      await settle();
+      const late = subscribe(room, 'u3:desk', 'TR_late');
+      await settle();
+      expect([a.sinkId, late.sinkId, room?.options.audioOutput?.deviceId]).toEqual(['default', 'default', 'default']);
+      // In sync: ActiveDeviceChanged came back without another switch.
+      expect(room?.switches).toEqual([['audiooutput', 'air'], ['audiooutput', 'default']]);
+    });
+
+    it('the chosen AirPods go away → default; they come back → AirPods again', async () => {
+      await fire([dflt('AirPods Pro', 'g-air'), spk, air]);
+      usePrefs.getState().setPrefs({ outputDeviceId: 'air' });
+      await settle();
+      await voice.join('A', 'ws');
+      const room = FakeRoom.all.at(-1);
+      const a = subscribe(room, 'u2:phone', 'TR_a');
+      await settle();
+      expect(a.sinkId).toBe('air');
+      await fire([dflt('MacBook Speakers', 'g-mbp'), spk]);
+      expect([a.sinkId, room?.getActiveDevice('audiooutput')]).toEqual(['default', 'default']);
+      await fire([dflt('AirPods Pro', 'g-air'), spk, air]);
+      expect([a.sinkId, room?.getActiveDevice('audiooutput')]).toEqual(['air', 'air']);
+      // The choice itself was never touched.
+      expect(usePrefs.getState().outputDeviceId).toBe('air');
+    });
+
+    it('joining with a stale stored device plays on the default from the first track', async () => {
+      await fire([dflt('MacBook Speakers', 'g-mbp'), spk]);
+      usePrefs.getState().setPrefs({ outputDeviceId: 'air' });
+      await settle();
+      await voice.join('A', 'ws');
+      const room = FakeRoom.all.at(-1);
+      expect(room?.options.audioOutput?.deviceId).toBe('default');
+      const a = subscribe(room, 'u2:phone', 'TR_a');
+      await settle();
+      expect(a.sinkId).toBe('default');
+    });
+
+    it('the mic opening on the headset the voices play to re-binds them once the route settled', async () => {
+      await fire([dflt('AirPods Pro', 'g-air'), spk, air, inp('default', 'Default - AirPods Pro', 'g-air'), inp('mic-air', 'AirPods Pro', 'g-air')]);
+      usePrefs.getState().setPrefs({ outputDeviceId: null, micDeviceId: 'AirPods Pro' });
+      await settle();
+      await vi.advanceTimersByTimeAsync(500); // the devicechange re-bind (#255) is past
+      await voice.join('A', 'ws');
+      const room = FakeRoom.all.at(-1);
+      const a = subscribe(room, 'u2:phone', 'TR_a');
+      await settle();
+      const before = a.binds;
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(a.binds).toBe(before + 1);
+      usePrefs.getState().setPrefs({ micDeviceId: null });
+    });
+
+    it('devicechange re-binds only when the outputs changed, not on a mic / camera change', async () => {
+      const list = [dflt('MacBook Speakers', 'g-mbp'), spk, inp('mbp-mic', 'MacBook Mic', 'g-mbp')];
+      await fire(list);
+      await voice.join('A', 'ws');
+      const a = subscribe(FakeRoom.all.at(-1), 'u2:phone', 'TR_a');
+      await vi.advanceTimersByTimeAsync(2000);
+      const before = a.binds;
+      await fire([...list, inp('usb-mic', 'USB Mic', 'g-usb')]);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(a.binds).toBe(before);
+      await fire([dflt('AirPods Pro', 'g-air'), spk, air, inp('mbp-mic', 'MacBook Mic', 'g-mbp')]);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(a.binds).toBe(before + 1);
+    });
+
+    it('a mic on another device does not re-bind', async () => {
+      await fire([dflt('AirPods Pro', 'g-air'), spk, air, inp('mbp-mic', 'MacBook Mic', 'g-mbp')]);
+      usePrefs.getState().setPrefs({ outputDeviceId: null, micDeviceId: 'MacBook Mic' });
+      await settle();
+      await vi.advanceTimersByTimeAsync(500); // the devicechange re-bind (#255) is past
+      await voice.join('A', 'ws');
+      const a = subscribe(FakeRoom.all.at(-1), 'u2:phone', 'TR_a');
+      await settle();
+      const before = a.binds;
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(a.binds).toBe(before);
+      usePrefs.getState().setPrefs({ micDeviceId: null });
+    });
+  });
 
   describe('deafen holds on every path (docs/09 #70)', () => {
     it('deafen → output device switch (prefs, OS devicechange, LiveKit) → every element muted', async () => {
@@ -1787,7 +2054,7 @@ describe('musician mode (ADR-0052)', () => {
     const { useWorkspaces } = await import('../stores/workspaces');
     const { setMusicianMode } = await import('./musician');
     const plan = (free: boolean) => create(WorkspacePlanSchema, { plan: free ? Plan.FREE : Plan.TEAM, limits: create(PlanLimitsSchema, { musicianDisabled: free }) });
-    useWorkspaces.setState({ byId: { free: { ws: { plan: plan(true) } }, team: { ws: { plan: plan(false) } } } as never });
+    useWorkspaces.setState({ byId: { free: { ws: { plan: plan(true) }, voice: {} }, team: { ws: { plan: plan(false) }, voice: {} } } as never });
     const locked = 'Доступно на тарифе Team и выше';
     await voice.join('A', 'free');
     pushToast.mockClear();
@@ -1824,6 +2091,96 @@ describe('musician mode (ADR-0052)', () => {
     await vi.waitFor(() => expect(r2?.published.length).toBe(1));
     expect(pipelines.at(-1)?.musician).toBe(false);
     expect(r2?.localParticipant.publishTrack.mock.calls.at(-1)?.[1]).toMatchObject({ dtx: true, audioPreset: { maxBitrate: 32_000 } });
+    await voice.leave();
+  });
+});
+
+describe('a restarted capture never transmits past the gate or the mute (musician mode, device, RNNoise)', () => {
+  const ptt = { micMode: 'ptt' as const, pttReleaseMs: 0, pttBinding: { kind: 'key' as const, code: 66, label: 'F8', mode: 'hold' as const } };
+  const join = async (): Promise<FakeLocalAudioTrack | undefined> => {
+    await voice.join('A', 'ws');
+    const r = FakeRoom.all.at(-1);
+    await vi.waitFor(() => expect(r?.published.length).toBe(1));
+    await settle();
+    return r?.published[0];
+  };
+  const swapped = async (pub: FakeLocalAudioTrack | undefined, n: number): Promise<void> => {
+    await vi.waitFor(() => expect(pipelines.length).toBe(n));
+    await vi.waitFor(() => expect(pub?.mediaStreamTrack).toBe(pipelines.at(-1)?.track));
+    await settle();
+  };
+  afterEach(() => {
+    usePrefs.getState().setPrefs({ micMode: 'voice', musicianMode: false, micDeviceId: null });
+  });
+
+  it('PTT key not held: musician mode on / off keeps the mic silent', async () => {
+    usePrefs.getState().setPrefs(ptt);
+    const pub = await join();
+    expect(pub?.mediaStreamTrack.enabled).toBe(false);
+    usePrefs.getState().setPrefs({ musicianMode: true });
+    await swapped(pub, 2);
+    expect(pub?.mediaStreamTrack.enabled).toBe(false);
+    expect(useVoice.getState().transmitting).toBe(false);
+    usePrefs.getState().setPrefs({ musicianMode: false });
+    await swapped(pub, 3);
+    expect(pub?.mediaStreamTrack.enabled).toBe(false);
+    // The key still opens the new capture.
+    (voice as unknown as { onPtt(ev: { down: boolean }): void }).onPtt({ down: true });
+    expect(pub?.mediaStreamTrack.enabled).toBe(true);
+    (voice as unknown as { onPtt(ev: { down: boolean }): void }).onPtt({ down: false });
+    await settle();
+    expect(pub?.mediaStreamTrack.enabled).toBe(false);
+    await voice.leave();
+  });
+
+  it('PTT key not held: a device switch and an RNNoise flip keep the mic silent', async () => {
+    usePrefs.getState().setPrefs(ptt);
+    const pub = await join();
+    usePrefs.getState().setPrefs({ micDeviceId: 'd1' });
+    await swapped(pub, 2);
+    expect(pub?.mediaStreamTrack.enabled).toBe(false);
+    usePrefs.getState().setPrefs({ rnnoise: !usePrefs.getState().rnnoise });
+    await swapped(pub, 3);
+    expect(pub?.mediaStreamTrack.enabled).toBe(false);
+    await voice.leave();
+  });
+
+  it('VAD with the gate closed: a device switch keeps the mic silent', async () => {
+    const pub = await join();
+    expect(pub?.mediaStreamTrack.enabled).toBe(false);
+    usePrefs.getState().setPrefs({ micDeviceId: 'd1' });
+    await swapped(pub, 2);
+    expect(pub?.mediaStreamTrack.enabled).toBe(false);
+    expect(useVoice.getState().transmitting).toBe(false);
+    await voice.leave();
+  });
+
+  it.each(['voice', 'ptt'] as const)('muted (%s): musician mode on / off keeps the track muted and silent', async (mode) => {
+    usePrefs.getState().setPrefs(mode === 'ptt' ? ptt : { micMode: 'voice' });
+    const pub = await join();
+    voice.toggleMute();
+    await settle();
+    expect(pub?.isMuted).toBe(true);
+    usePrefs.getState().setPrefs({ musicianMode: true });
+    await swapped(pub, 2);
+    expect(pub?.isMuted).toBe(true);
+    expect(pub?.mediaStreamTrack.enabled).toBe(false);
+    expect(useVoice.getState().transmitting).toBe(false);
+    usePrefs.getState().setPrefs({ musicianMode: false });
+    await swapped(pub, 3);
+    expect(pub?.isMuted).toBe(true);
+    expect(pub?.mediaStreamTrack.enabled).toBe(false);
+    await voice.leave();
+  });
+
+  it('listen-only (no SPEAK): musician mode captures and publishes nothing', async () => {
+    joinVoice.mockImplementationOnce((roomId: string) => Promise.resolve({ url: 'wss://lk', token: `t-${roomId}`, canSpeak: false, canStream: false, media: { audioBitrateKbps: 32 } }));
+    await voice.join('A', 'ws');
+    await settle();
+    usePrefs.getState().setPrefs({ musicianMode: true });
+    await settle();
+    expect(pipelines).toHaveLength(0);
+    expect(FakeRoom.all.at(-1)?.published).toHaveLength(0);
     await voice.leave();
   });
 });
@@ -2312,5 +2669,566 @@ describe('auto-mute after silence («Выключать микрофон, есл
     expect(prefsChanges).toBe(0);
     expect([...changed].every((k) => ['transmitting', 'speaking', 'gateOpen'].includes(k))).toBe(true);
     await voice.leave();
+  });
+});
+
+describe('a phone call parks the room (ADR-0133)', () => {
+  type Pub = { source: string; trackSid: string; kind: string; isMuted: boolean; subscriptionStatus: string; setSubscribed: ReturnType<typeof vi.fn>; setEnabled: () => void };
+  const pub = (source: string, trackSid: string): Pub => ({ source, trackSid, kind: 'audio', isMuted: false, subscriptionStatus: 'desired', setSubscribed: vi.fn(), setEnabled: () => undefined });
+  const participant = (identity: string, pubs: Pub[]) => ({
+    identity,
+    trackPublications: new Map(pubs.map((p) => [p.trackSid, p])),
+    getTrackPublication: (source: string) => pubs.find((p) => p.source === source),
+    getTrackPublicationBySid: (sid: string) => pubs.find((p) => p.trackSid === sid),
+  });
+  const last = (p: Pub): unknown => p.setSubscribed.mock.calls.at(-1)?.[0];
+  /** In room A with Борис's mic; local tracks are visible to the parking as publications. */
+  async function inRoom(): Promise<{ room: FakeRoom; mic: Pub }> {
+    await voice.join('A', 'ws');
+    const room = FakeRoom.all.at(-1) as FakeRoom;
+    const mic = pub('microphone', 'TR_mic_b');
+    room.remoteParticipants.set('u2:b', participant('u2:b', [mic]));
+    room.emit('TrackPublished', mic, room.remoteParticipants.get('u2:b'));
+    return { room, mic };
+  }
+  async function answer(callId = 'c1'): Promise<boolean> {
+    const { setPhoneJoin } = await import('../lib/sipInbound');
+    const parked = await voice.park();
+    setPhoneJoin(`sipin:${callId}`, { url: 'wss://lk', token: `t-${callId}`, identity: 'answer', canSpeak: true } as never);
+    voice.unmuteForAnswer(); // as services/sipInbound.ts acceptInbound
+    await voice.join(`sipin:${callId}`, '', { call: true });
+    return parked;
+  }
+
+  it('«Принять»: the room stays connected with nothing sent or received; hang-up brings it back without a reconnect', async () => {
+    const { room, mic } = await inRoom();
+    voice.toggleMute(); // muted before the call
+    await settle();
+    updateSelf.mockClear();
+    expect(await answer()).toBe(true);
+    expect(room.disconnects).toHaveLength(0);
+    expect(room.published).toHaveLength(0);
+    expect(last(mic)).toBe(false);
+    expect(updateSelf).toHaveBeenCalledWith({ onPhone: true });
+    expect(useVoice.getState()).toMatchObject({ roomId: 'sipin:c1', parked: { roomId: 'A', workspaceId: 'ws' } });
+    const phoneRoom = FakeRoom.all.at(-1) as FakeRoom;
+    expect(phoneRoom).not.toBe(room);
+    // A mic published in the parked room meanwhile is not subscribed (its handlers are silent).
+    const late = pub('microphone', 'TR_mic_c');
+    room.remoteParticipants.set('u3:c', participant('u3:c', [late]));
+    room.emit('TrackPublished', late, room.remoteParticipants.get('u3:c'));
+    expect(late.setSubscribed).not.toHaveBeenCalled();
+    await voice.leave(); // hang up
+    await settle();
+    await settle();
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', workspaceId: 'ws', phase: 'connected', parked: null, muted: true });
+    expect(voice.currentRoomId).toBe('A');
+    expect(joinVoice.mock.calls.map((c) => c[0])).toEqual(['A']); // no new /join
+    expect(room.disconnects).toHaveLength(0);
+    expect(room.published).toHaveLength(1);
+    expect([last(mic), last(late)]).toEqual([true, true]);
+    expect(updateSelf).toHaveBeenLastCalledWith(expect.objectContaining({ muted: true, onPhone: false }));
+  });
+
+  it('«Выйти» from the parked room leaves it and keeps the phone call', async () => {
+    const { room } = await inRoom();
+    await answer();
+    voice.leaveParked();
+    await settle();
+    expect(room.disconnects).toHaveLength(1);
+    expect(leaveVoice).toHaveBeenCalledWith('A');
+    expect(useVoice.getState()).toMatchObject({ roomId: 'sipin:c1', phase: 'connected', parked: null });
+    await voice.leave();
+    await settle();
+    expect(useVoice.getState().roomId).toBeNull(); // nothing to come back to
+  });
+
+  it('another room picked during the call is entered after it; a one-to-one call drops the parked room', async () => {
+    const { room } = await inRoom();
+    await answer();
+    await voice.join('B', 'ws');
+    await settle();
+    expect(room.disconnects).toHaveLength(1);
+    expect(leaveVoice).toHaveBeenCalledWith('A');
+    expect(useVoice.getState()).toMatchObject({ roomId: 'sipin:c1', parked: { roomId: 'B', workspaceId: 'ws' } });
+    await voice.leave();
+    await settle();
+    expect(useVoice.getState()).toMatchObject({ roomId: 'B', phase: 'connected', parked: null });
+    expect(joinVoice.mock.calls.map((c) => c[0])).toEqual(['A', 'B']);
+
+    await answer('c2');
+    expect(useVoice.getState().parked).toMatchObject({ roomId: 'B' });
+    await voice.join('dm', '', { call: true });
+    await settle();
+    expect(useVoice.getState()).toMatchObject({ roomId: 'dm', parked: null });
+    expect(leaveVoice).toHaveBeenCalledWith('B');
+  });
+
+  it('a moderator removal of the parked room: no resume after the call', async () => {
+    const { room } = await inRoom();
+    await answer();
+    room.emit('Disconnected', 'PARTICIPANT_REMOVED');
+    expect(useVoice.getState().parked).toBeNull();
+    await voice.leave();
+    await settle();
+    expect(useVoice.getState().roomId).toBeNull();
+    expect(joinVoice).toHaveBeenCalledTimes(1);
+  });
+
+  it('a parked connection lost meanwhile: the room is joined again after the call', async () => {
+    const { room } = await inRoom();
+    await answer();
+    room.state = 'Disconnected';
+    room.emit('Disconnected', 'SIGNAL_CLOSE');
+    expect(useVoice.getState().parked).toMatchObject({ roomId: 'A' });
+    await voice.leave();
+    await settle();
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected' });
+    expect(joinVoice.mock.calls.map((c) => c[0])).toEqual(['A', 'A']);
+  });
+
+  it('a seat kept «on the phone» (reload during the call, idempotent /join): the connect clears the flag', async () => {
+    const { useWorkspaces } = await import('../stores/workspaces');
+    const { useSession } = await import('../stores/session');
+    useSession.setState({ me: { user: { id: 'u1' } } } as never);
+    useWorkspaces.setState({ byId: { ws: { ws: {}, voice: { u1: { userId: 'u1', roomId: 'A', onPhone: true } } } } as never });
+    await voice.join('A', 'ws', { resumed: true });
+    await settle();
+    expect(updateSelf).toHaveBeenLastCalledWith(expect.objectContaining({ onPhone: false }));
+    await voice.leave();
+    useWorkspaces.setState({ byId: {} });
+  });
+
+  it('nothing to park in a one-to-one call: the caller leaves it as before', async () => {
+    await voice.join('dm', '', { call: true });
+    expect(await voice.park()).toBe(false);
+    expect(useVoice.getState().parked).toBeNull();
+  });
+});
+
+describe('mic state convergence on a flaky link (ADR-0134)', () => {
+  const offline = (): Promise<void> => Promise.reject(new Error('Failed to fetch'));
+
+  it('a failed PATCH /voice/self is retried until it lands, the UI flags the lag meanwhile', async () => {
+    await voice.join('A', 'ws');
+    updateSelf.mockClear();
+    updateSelf.mockImplementationOnce(offline).mockImplementationOnce(offline);
+    voice.toggleMute();
+    await settle();
+    expect(updateSelf).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(updateSelf).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(600);
+    expect(useVoice.getState().micSyncLag).toBe(true);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(updateSelf).toHaveBeenCalledTimes(3);
+    expect(updateSelf).toHaveBeenLastCalledWith(expect.objectContaining({ muted: true }));
+    expect(useVoice.getState().micSyncLag).toBe(false);
+  });
+
+  it('an older PATCH never lands after a newer one: one in flight, the latest intent last', async () => {
+    await voice.join('A', 'ws');
+    await settle();
+    updateSelf.mockClear();
+    let release!: () => void;
+    updateSelf.mockImplementationOnce(() => new Promise<void>((r) => (release = r)));
+    voice.toggleMute();
+    voice.toggleMute();
+    voice.toggleMute();
+    expect(updateSelf).toHaveBeenCalledTimes(1);
+    release();
+    await settle();
+    expect(updateSelf).toHaveBeenCalledTimes(2);
+    expect(updateSelf).toHaveBeenLastCalledWith(expect.objectContaining({ muted: true }));
+  });
+
+  it('the gateway back: my flags are re-asserted when the server copy differs', async () => {
+    const { useSession } = await import('../stores/session');
+    const { useWorkspaces } = await import('../stores/workspaces');
+    useSession.setState({ me: { user: { id: 'u1' } } } as never);
+    await voice.join('A', 'ws');
+    voice.toggleMute();
+    await settle();
+    updateSelf.mockClear();
+    // The server lost the PATCH meanwhile (READY carries its copy: unmuted).
+    useWorkspaces.setState({ byId: { ws: { ws: {}, voice: { u1: { userId: 'u1', roomId: 'A', muted: false, deafened: false } } } } as never });
+    voice.onGatewayBack();
+    await settle();
+    expect(updateSelf).toHaveBeenCalledWith(expect.objectContaining({ muted: true }));
+  });
+
+  it('a rejecting unmute during Reconnecting is retried with backoff, not in a tight loop', async () => {
+    await voice.join('A', 'ws');
+    voice.toggleMute();
+    await settle();
+    const track = FakeRoom.all[0]?.published[0];
+    expect(track?.isMuted).toBe(true);
+    FakeLocalAudioTrack.ops = 0;
+    FakeLocalAudioTrack.failOps = 3;
+    voice.toggleMute();
+    await settle();
+    expect(FakeLocalAudioTrack.ops).toBe(1);
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(useVoice.getState().micSyncLag).toBe(true);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(track?.isMuted).toBe(false);
+    expect(FakeLocalAudioTrack.ops).toBe(4);
+    expect(useVoice.getState().micSyncLag).toBe(false);
+  });
+
+  it('a hung unmute does not block the mic for good: timed out and tried again', async () => {
+    await voice.join('A', 'ws');
+    voice.toggleMute();
+    await settle();
+    const track = FakeRoom.all[0]?.published[0];
+    FakeLocalAudioTrack.hangOps = 1;
+    voice.toggleMute();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(useVoice.getState().muted).toBe(false);
+    expect(track?.isMuted).toBe(false);
+  });
+
+  it('LiveKit Reconnected re-asserts the mic and my flags', async () => {
+    await voice.join('A', 'ws');
+    voice.toggleMute();
+    await settle();
+    updateSelf.mockClear();
+    FakeRoom.all[0]?.emit('Reconnected');
+    await settle();
+    expect(updateSelf).toHaveBeenCalledWith(expect.objectContaining({ muted: true }));
+  });
+
+  it('leaving voice stops every retry timer', async () => {
+    await voice.join('A', 'ws');
+    updateSelf.mockImplementation(offline);
+    voice.toggleMute();
+    await settle();
+    await voice.leave();
+    const n = updateSelf.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(updateSelf.mock.calls.length).toBe(n);
+    expect(useVoice.getState().micSyncLag).toBe(false);
+  });
+});
+
+describe('one mic view for the panel, my row and the island (#96)', () => {
+  const ptt = { micMode: 'ptt' as const, pttReleaseMs: 0, pttBinding: { kind: 'key' as const, code: 66, label: 'F8', mode: 'hold' as const } };
+  const view = async () => {
+    const { selfMicNow } = await import('../features/voice/selfMic');
+    const { selfMicGlyph } = await import('../lib/voiceLogic');
+    const m = selfMicNow();
+    return { ...m, glyph: selfMicGlyph(m, useVoice.getState().pttDown) };
+  };
+  /** My server copy (VOICE_STATE_UPDATE) as the room list reads it. */
+  const seat = async (s: { roomId: string; muted: boolean; deafened?: boolean; serverMuted?: boolean; ptt?: boolean } | null): Promise<void> => {
+    const { useWorkspaces } = await import('../stores/workspaces');
+    useWorkspaces.setState({ byId: { ws: { ws: {}, voice: s ? { u1: { userId: 'u1', deafened: false, ...s } } : {} } } } as never);
+  };
+  const track = () => FakeRoom.all.at(-1)?.published[0];
+  const hold = (down: boolean) => (voice as unknown as { onPtt(ev: { down: boolean }): void }).onPtt({ down });
+  beforeEach(async () => {
+    const { useSession } = await import('../stores/session');
+    useSession.setState({ me: { user: { id: 'u1' } } } as never);
+  });
+  afterEach(() => {
+    usePrefs.getState().setPrefs({ micMode: 'voice', musicianMode: false, micDeviceId: null });
+  });
+
+  it('the reported case: this device idle, my seat muted on another device — panel and row both crossed', async () => {
+    // Before #96 the panel drew this device's pre-join intent (mic on) and the row the server copy (off).
+    await seat({ roomId: 'A', muted: true });
+    expect(useVoice.getState().muted).toBe(false);
+    expect(await view()).toMatchObject({ elsewhere: true, muted: true, glyph: 'muted' });
+    // The other device unmutes / turns PTT on: both follow the server at once.
+    await seat({ roomId: 'A', muted: false, ptt: true });
+    expect(await view()).toMatchObject({ muted: false, glyph: 'ptt-idle' });
+    await seat({ roomId: 'A', muted: false });
+    expect(await view()).toMatchObject({ muted: false, glyph: 'live' });
+    await seat(null);
+    expect(await view()).toMatchObject({ elsewhere: false, here: false, muted: false });
+  });
+
+  it('a click / hotkey while another device holds the seat changes nothing and says where to switch', async () => {
+    const { toast } = await import('../stores/toasts');
+    await seat({ roomId: 'A', muted: true });
+    voice.toggleMute();
+    voice.toggleDeafen();
+    expect(useVoice.getState()).toMatchObject({ muted: false, deafened: false });
+    expect(vi.mocked(toast.info).mock.calls.map((c) => c[0])).toEqual([
+      'Голос подключён на другом устройстве — переключайте там',
+      'Голос подключён на другом устройстве — переключайте там',
+    ]);
+    expect(updateSelf).not.toHaveBeenCalled();
+  });
+
+  it('in the call: the intent wins over a lagging server copy, on every click', async () => {
+    await voice.join('A', 'ws');
+    await settle();
+    await seat({ roomId: 'A', muted: false });
+    let release!: () => void;
+    updateSelf.mockImplementationOnce(() => new Promise<void>((r) => (release = r)));
+    voice.toggleMute(); // the PATCH hangs: the server still says «on»
+    expect(await view()).toMatchObject({ here: true, muted: true, glyph: 'muted' });
+    await settle();
+    expect(track()?.isMuted).toBe(true);
+    voice.toggleMute();
+    expect(await view()).toMatchObject({ muted: false, glyph: 'live' });
+    release();
+    await settle();
+  });
+
+  it('a moderator mute from the server: crossed everywhere, with the server-mute flag', async () => {
+    await voice.join('A', 'ws');
+    voice.reconcileSelfState({ roomId: 'A', muted: true, deafened: false, serverMuted: true });
+    expect(await view()).toMatchObject({ muted: true, serverMuted: true, glyph: 'muted' });
+    voice.reconcileSelfState({ roomId: 'A', muted: true, deafened: false, serverMuted: false });
+    expect(await view()).toMatchObject({ muted: true, serverMuted: false });
+  });
+
+  it('deafen implies the crossed mic in both places', async () => {
+    await voice.join('A', 'ws');
+    voice.toggleDeafen();
+    expect(await view()).toMatchObject({ muted: true, deafened: true, glyph: 'muted' });
+  });
+
+  it('PTT: pale in the list while the key is up, live (green dot) while held, off when muted', async () => {
+    usePrefs.getState().setPrefs(ptt);
+    await voice.join('A', 'ws');
+    await settle();
+    expect(await view()).toMatchObject({ ptt: true, muted: false, glyph: 'ptt-idle' });
+    hold(true);
+    expect(await view()).toMatchObject({ glyph: 'live' });
+    hold(false);
+    await settle();
+    expect(await view()).toMatchObject({ glyph: 'ptt-idle' });
+    voice.toggleMute();
+    expect(await view()).toMatchObject({ glyph: 'muted' });
+  });
+
+  it('a one-to-one call is voice activation only: no PTT wait in the view', async () => {
+    usePrefs.getState().setPrefs(ptt);
+    await voice.join('A', 'ws');
+    useVoice.setState({ call: true });
+    expect(await view()).toMatchObject({ ptt: false, glyph: 'live' });
+  });
+
+  it('device switch / loss, musician mode and a reconnect keep the view and the track on the intent', async () => {
+    usePrefs.getState().setPrefs(ptt);
+    await voice.join('A', 'ws');
+    await vi.waitFor(() => expect(track()).toBeDefined());
+    voice.toggleMute();
+    await settle();
+    expect(await view()).toMatchObject({ muted: true, glyph: 'muted' });
+    // Input device switch: the capture is swapped in place.
+    usePrefs.getState().setPrefs({ micDeviceId: 'd1' });
+    await vi.waitFor(() => expect(pipelines.length).toBe(2));
+    await settle();
+    expect(await view()).toMatchObject({ muted: true, glyph: 'muted' });
+    expect(track()?.isMuted).toBe(true);
+    // Musician mode on.
+    usePrefs.getState().setPrefs({ musicianMode: true });
+    await vi.waitFor(() => expect(pipelines.length).toBe(3));
+    await settle();
+    expect(await view()).toMatchObject({ muted: true, glyph: 'muted' });
+    expect(track()?.isMuted).toBe(true);
+    // The device lost (capture ended by the OS): rebuilt.
+    pipelines.at(-1)?.onEnded?.();
+    await vi.waitFor(() => expect(pipelines.length).toBe(4));
+    await settle();
+    expect(await view()).toMatchObject({ muted: true });
+    expect(track()?.isMuted).toBe(true);
+    // A full reconnect: the new room publishes the mic muted, as the view says.
+    FakeRoom.all[0]?.emit('Disconnected', 'SIGNAL_CLOSE');
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(FakeRoom.all).toHaveLength(2);
+    expect(await view()).toMatchObject({ here: true, muted: true, glyph: 'muted' });
+    expect(track()?.isMuted).toBe(true);
+    // And back on: the view and the track agree again.
+    voice.toggleMute();
+    await settle();
+    expect(await view()).toMatchObject({ muted: false, glyph: 'ptt-idle' });
+    expect(track()?.isMuted).toBe(false);
+    await voice.leave();
+  });
+});
+
+describe('the page away and back', () => {
+  const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
+  const doc = document as unknown as { hidden?: boolean };
+  const setHidden = (hidden: boolean): void => {
+    doc.hidden = hidden;
+    for (const fn of docListeners.get('visibilitychange') ?? []) fn({});
+  };
+  const reconnecting = (room: FakeRoom): void => {
+    room.state = 'Reconnecting';
+    room.emit('ConnectionStateChanged', 'Reconnecting');
+  };
+  beforeEach(async () => {
+    const { toast } = await import('../stores/toasts');
+    vi.mocked(toast.error).mockClear();
+    pushToast.mockClear();
+  });
+  afterEach(() => {
+    doc.hidden = false;
+    (navigator as unknown as { userAgent: string }).userAgent = 'test';
+  });
+
+  it('back after a long hide with LiveKit still reconnecting: rejoins at once; no cue while hidden; no outage toast', async () => {
+    await voice.join('A', 'ws');
+    const a = FakeRoom.all[0];
+    if (!a) throw new Error('no room');
+    playSound.mockClear();
+    setHidden(true);
+    reconnecting(a);
+    expect(playSound).not.toHaveBeenCalled(); // a hidden web page: no «disconnect»
+    await vi.advanceTimersByTimeAsync(25_000);
+    joinVoice.mockClear();
+    setHidden(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(joinVoice.mock.calls).toEqual([['A']]); // not after the 5 s / 30 s timers
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected' });
+    expect(playSound.mock.calls).toEqual([['reconnect']]);
+    expect(pushToast).not.toHaveBeenCalled(); // the outage is only logged
+  });
+
+  it('a short hide: LiveKit’s own resume gets the visible grace (15 s) before the seat check rejoins', async () => {
+    await voice.join('A', 'ws');
+    const a = FakeRoom.all[0];
+    if (!a) throw new Error('no room');
+    setHidden(true);
+    reconnecting(a);
+    await vi.advanceTimersByTimeAsync(3_000);
+    joinVoice.mockClear();
+    setHidden(false);
+    await vi.advanceTimersByTimeAsync(14_000);
+    expect(joinVoice).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2_500); // the grace + the cycle's first 1 s
+    expect(joinVoice.mock.calls).toEqual([['A']]);
+  });
+
+  it('autoplay refused: «Вы не слышите собеседников»; the tap runs room.startAudio()', async () => {
+    await voice.join('A', 'ws');
+    const a = FakeRoom.all[0];
+    if (!a) throw new Error('no room');
+    a.canPlaybackAudio = false;
+    a.emit('AudioPlaybackStatusChanged', false);
+    expect(pushToast).toHaveBeenCalledTimes(1);
+    const [kind, text, action] = pushToast.mock.calls[0] as [string, string, { label: string; run: () => void }];
+    expect([kind, text, action.label]).toEqual(['info', 'Вы не слышите собеседников', 'Включить звук']);
+    action.run();
+    expect(a.startAudio).toHaveBeenCalledTimes(1);
+  });
+
+  it('the sound prompt is raised once while it is on screen, closed when playback is possible, raised again if refused again', async () => {
+    await voice.join('A', 'ws');
+    const a = FakeRoom.all[0];
+    if (!a) throw new Error('no room');
+    a.canPlaybackAudio = false;
+    a.emit('AudioPlaybackStatusChanged', false);
+    a.emit('AudioPlaybackStatusChanged', false);
+    expect(pushToast).toHaveBeenCalledTimes(1);
+    a.canPlaybackAudio = true;
+    a.emit('AudioPlaybackStatusChanged', true);
+    expect(dismissToast).toHaveBeenCalledTimes(1);
+    expect(shown.ids).toEqual([]);
+    a.canPlaybackAudio = false;
+    a.emit('AudioPlaybackStatusChanged', false);
+    expect(pushToast).toHaveBeenCalledTimes(2);
+  });
+
+  it('the sound prompt is never held back by other toasts on screen', async () => {
+    await voice.join('A', 'ws');
+    const a = FakeRoom.all[0];
+    if (!a) throw new Error('no room');
+    shown.ids.push(900, 901, 902); // somebody else’s toasts
+    a.canPlaybackAudio = false;
+    a.emit('AudioPlaybackStatusChanged', false);
+    expect(pushToast).toHaveBeenCalledTimes(1);
+    expect(pushToast.mock.calls[0]?.[1]).toBe('Вы не слышите собеседников');
+  });
+
+  it('a subscribed mic without a track is resubscribed (at most twice), never a rejoin', async () => {
+    await voice.join('A', 'ws');
+    const a = FakeRoom.all[0];
+    if (!a) throw new Error('no room');
+    const pub = { source: 'microphone', trackSid: 'TR_b', kind: 'audio', isMuted: false, isDesired: true, track: undefined, setSubscribed: vi.fn(), setEnabled: () => undefined };
+    a.remoteParticipants.set('u2:b', { identity: 'u2:b', trackPublications: new Map([['TR_b', pub]]), getTrackPublication: (s: string) => (s === 'microphone' ? pub : undefined) });
+    joinVoice.mockClear();
+    a.emit('Reconnected');
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(pub.setSubscribed.mock.calls).toEqual([[false]]);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(pub.setSubscribed.mock.calls).toEqual([[false], [true]]);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(pub.setSubscribed.mock.calls).toEqual([[false], [true], [false], [true]]);
+    expect(joinVoice).not.toHaveBeenCalled();
+  });
+
+  it('the system holds the mic: «Ждём микрофон», one rebuild after ~2 s visible, «Вас не слышно» when it fails; no toast, no micError', async () => {
+    await voice.join('A', 'ws');
+    const p = pipelines[0];
+    if (!p) throw new Error('no pipeline');
+    p.muted = true;
+    p.onMute?.(true);
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(useVoice.getState()).toMatchObject({ micTrouble: 'recovering', micError: null, phase: 'connected' });
+    micStarts.failNext = Object.assign(new Error('could not start audio source'), { name: 'NotReadableError' });
+    await vi.advanceTimersByTimeAsync(600);
+    expect(micStarts.n).toBe(2);
+    expect(useVoice.getState().micTrouble).toBe('unheard'); // the header / strip status
+    expect(useVoice.getState().micError).toBeNull(); // that line is for device and permission errors
+    expect(pushToast).not.toHaveBeenCalled(); // the line is enough
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(micStarts.n).toBe(2); // one rebuild per episode
+  });
+
+  it('the system lets the mic go: the trouble clears, the context resumes, no rebuild', async () => {
+    await voice.join('A', 'ws');
+    const p = pipelines[0];
+    if (!p) throw new Error('no pipeline');
+    p.muted = true;
+    p.onMute?.(true);
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(useVoice.getState().micTrouble).toBe('recovering');
+    p.muted = false;
+    p.onMute?.(false);
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(useVoice.getState().micTrouble).toBeNull();
+    expect(p.resumeContext).toHaveBeenCalled();
+    expect(micStarts.n).toBe(1);
+  });
+
+  it('a suspended capture context (an interruption) is resumed, not rebuilt', async () => {
+    await voice.join('A', 'ws');
+    const p = pipelines[0];
+    if (!p) throw new Error('no pipeline');
+    p.ctx = 'interrupted';
+    p.onContextState?.('interrupted');
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(p.resumeContext).toHaveBeenCalled();
+    expect(p.ctx).toBe('running');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(pipelines).toHaveLength(1);
+  });
+
+  it('a hidden iPhone page never restarts the capture: the ended track is rebuilt once visible', async () => {
+    (navigator as unknown as { userAgent: string }).userAgent = IPHONE_UA;
+    vi.resetModules();
+    docListeners.clear();
+    ({ voice } = await import('./voice'));
+    ({ useVoice } = await import('../stores/voice'));
+    voice.init();
+    await voice.join('A', 'ws');
+    const p = pipelines.at(-1);
+    if (!p) throw new Error('no pipeline');
+    const starts = micStarts.n;
+    setHidden(true);
+    p.track.stop();
+    p.onEnded?.();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(micStarts.n).toBe(starts);
+    setHidden(false);
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(micStarts.n).toBe(starts + 1);
   });
 });

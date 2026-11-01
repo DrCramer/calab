@@ -2,11 +2,10 @@ import type { MessageInitShape } from '@bufbuild/protobuf';
 import { SipRouteKind, type SipRouteTarget, type SipRouteTargetSchema } from '@calaba/protocol';
 import { t, type MessageKey } from '../i18n';
 import { ApiError } from './api/client';
-import { formatPhone } from './sip';
 
 /*
  * The telephony exchange (ADR-0117) on the client: routes as <select> values, number input,
- * the server's 422 / 409 fields → texts. Used by features/workspace/TelephonyExchange.
+ * the server's 422 / 409 fields → texts. Used by features/telephony/settings (the station's pages).
  */
 
 export type TargetInit = MessageInitShape<typeof SipRouteTargetSchema>;
@@ -86,53 +85,13 @@ export function fieldError(e: unknown): { field: string; text: string } | null {
   return key ? { field: e.field, text: t(key) } : null;
 }
 
-// ---------------------------------------------------------------- the telephony tabs (CBF-77)
-
-/** The tabs of «Настройки пространства → Телефония», in order. */
-export const TELEPHONY_TABS = ['calls', 'numbers', 'groups', 'ivr', 'settings'] as const;
-export type TelephonyTabId = (typeof TELEPHONY_TABS)[number];
-
-export const TELEPHONY_TAB_LABEL: Record<TelephonyTabId, MessageKey> = {
-  calls: 'pbx.tab.calls',
-  numbers: 'pbx.tab.numbers',
-  groups: 'pbx.tab.groups',
-  ivr: 'pbx.tab.ivr',
-  settings: 'pbx.tab.settings',
-};
-
-const isTelephonyTab = (v: unknown): v is TelephonyTabId => typeof v === 'string' && (TELEPHONY_TABS as readonly string[]).includes(v);
-const TAB_STORE = 'calaba-telephony-tab';
-
-/**
- * The tab the viewer looked at last: a per-viewer convenience in localStorage; storage that
- * throws or holds junk gives `fallback`.
- */
-export function rememberedTelephonyTab(fallback: TelephonyTabId): TelephonyTabId {
-  try {
-    const v = localStorage.getItem(TAB_STORE);
-    return isTelephonyTab(v) ? v : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-export function rememberTelephonyTab(tab: TelephonyTabId): void {
-  try {
-    localStorage.setItem(TAB_STORE, tab);
-  } catch {
-    // private mode / blocked storage: the choice lives until the dialog closes
-  }
-}
-
 // ---------------------------------------------------------------- react-query keys
 
 export const extensionsKey = (ws: string): readonly unknown[] => ['sipExtensions', ws];
 export const groupsKey = (ws: string): readonly unknown[] => ['sipGroups', ws];
 export const menusKey = (ws: string): readonly unknown[] => ['sipMenus', ws];
-/** «Активные звонки» (ADR-0128); SIP_CALLS_CHANGED invalidates it (services/dispatch). */
+/** The live calls (ADR-0128, «Недавние» → «Сейчас»); SIP_CALLS_CHANGED invalidates it (services/dispatch). */
 export const activeCallsKey = (ws: string): readonly unknown[] => ['sipActiveCalls', ws];
-/** The call journal under «Активные звонки»; SIP_CALLS_CHANGED invalidates it too. */
-export const journalKey = (ws: string): readonly unknown[] => ['sipJournal', ws];
 
 // ---------------------------------------------------------------- the menu greeting
 
@@ -147,13 +106,7 @@ export function promptFileError(f: { name: string; type: string; size: number })
   return null;
 }
 
-// ---------------------------------------------------------------- active calls
-
-/** A caller's number for the list: E.164 as «+7 916 123-45-67»; a masked one («+7916*****67») in the same groups. */
-export function callerNumber(n: string, masked: boolean): string {
-  if (masked && /^\+7[\d*]{10}$/.test(n)) return `+7 ${n.slice(2, 5)} ${n.slice(5, 8)}-${n.slice(8, 10)}-${n.slice(10)}`;
-  return masked ? n : formatPhone(n);
-}
+// ---------------------------------------------------------------- live calls
 
 /**
  * Coalesces SIP_CALLS_CHANGED (ADR-0128): a busy exchange sends one per step of every call, and

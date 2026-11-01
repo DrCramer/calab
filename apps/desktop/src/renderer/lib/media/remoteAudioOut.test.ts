@@ -182,3 +182,151 @@ describe('RemoteAudioOut — engines without setSinkId', () => {
     expect([a.muted, b.muted]).toEqual([true, true]);
   });
 });
+
+describe('replayPaused (audio paused by an interruption / the background)', () => {
+  /** An element with play(): `outcome` decides what the next play() does. */
+  const playable = (paused: boolean, outcome: 'ok' | 'blocked' | 'fail' = 'ok') => {
+    const a = new FakeAudio() as FakeAudio & HTMLMediaElement & { plays: number };
+    let isPaused = paused;
+    a.plays = 0;
+    Object.defineProperty(a, 'paused', { get: () => isPaused });
+    Object.defineProperty(a, 'play', {
+      value: () => {
+        a.plays++;
+        if (outcome === 'ok') {
+          isPaused = false;
+          return Promise.resolve();
+        }
+        return Promise.reject(Object.assign(new Error('nope'), { name: outcome === 'blocked' ? 'NotAllowedError' : 'AbortError' }));
+      },
+    });
+    return a;
+  };
+
+  it('plays only the paused elements, once each, and counts what happened', async () => {
+    const state: AudioOutState = { deafened: false, userVolumes: {}, mutedUsers: {}, streamVolume: {} };
+    const out = new RemoteAudioOut<FakeAudio & HTMLMediaElement & { plays: number }>(() => state);
+    const playing = playable(false);
+    const paused = playable(true);
+    const blocked = playable(true, 'blocked');
+    const broken = playable(true, 'fail');
+    out.add('a', playing, 'u1', false);
+    out.add('b', paused, 'u2', false);
+    out.add('c', blocked, 'u3', false);
+    out.add('d', broken, 'u4', false);
+    expect(await out.replayPaused()).toEqual({ resumed: 1, blocked: 1, failed: 1 });
+    expect([playing.plays, paused.plays, blocked.plays, broken.plays]).toEqual([0, 1, 1, 1]);
+    // The next pass touches only what is still paused (no loop of its own).
+    expect(await out.replayPaused()).toEqual({ resumed: 0, blocked: 1, failed: 1 });
+    expect(paused.plays).toBe(1);
+  });
+
+  it('keeps deafen: a replayed element stays muted', async () => {
+    const out = new RemoteAudioOut<FakeAudio & HTMLMediaElement & { plays: number }>(() => ({ deafened: true, userVolumes: {}, mutedUsers: {}, streamVolume: {} }));
+    const el = playable(true);
+    out.add('a', el, 'u1', false);
+    await out.replayPaused();
+    expect(el.plays).toBe(1);
+    expect(el.muted).toBe(true);
+  });
+
+  it('elements without play() (unit fakes, old engines) are skipped', async () => {
+    const out = new RemoteAudioOut<FakeAudio & HTMLMediaElement>(() => ({ deafened: false, userVolumes: {}, mutedUsers: {}, streamVolume: {} }));
+    out.add('a', new FakeAudio() as FakeAudio & HTMLMediaElement, 'u1', false);
+    expect(await out.replayPaused()).toEqual({ resumed: 0, blocked: 0, failed: 0 });
+  });
+});
+
+describe('rebind (the OS switched the output: headphones in or out, #255)', () => {
+  /** An element with a stream: counts srcObject writes and play() calls. */
+  const bound = (stream: object | null, outcome: 'ok' | 'blocked' = 'ok') => {
+    const a = new FakeAudio() as FakeAudio & HTMLMediaElement & { writes: (object | null)[]; plays: number };
+    let src = stream;
+    a.writes = [];
+    a.plays = 0;
+    Object.defineProperty(a, 'srcObject', {
+      get: () => src,
+      set: (v: object | null) => {
+        a.writes.push(v);
+        src = v;
+      },
+    });
+    Object.defineProperty(a, 'play', {
+      value: () => {
+        a.plays++;
+        return outcome === 'ok' ? Promise.resolve() : Promise.reject(Object.assign(new Error('nope'), { name: 'NotAllowedError' }));
+      },
+    });
+    return a;
+  };
+
+  it('re-assigns every element its own stream on the chosen sink and plays it again', async () => {
+    const state: AudioOutState = { deafened: false, userVolumes: {}, mutedUsers: {}, streamVolume: {} };
+    const out = new RemoteAudioOut<ReturnType<typeof bound>>(() => state);
+    const s1 = {};
+    const s2 = {};
+    const a = bound(s1);
+    const b = bound(s2, 'blocked');
+    const none = bound(null);
+    out.add('a', a, 'u1', false);
+    out.add('b', b, 'u2', false);
+    out.add('c', none, 'u3', false);
+    await out.setSink('headphones');
+    expect(await out.rebind()).toEqual({ rebound: 2, blocked: 1 });
+    expect(a.writes).toEqual([null, s1]);
+    expect(b.writes).toEqual([null, s2]);
+    expect(a.srcObject).toBe(s1);
+    expect([a.plays, b.plays, none.plays]).toEqual([1, 1, 0]);
+    expect(a.sinkId).toBe('headphones');
+  });
+
+  it('keeps deafen across the re-bind', async () => {
+    const out = new RemoteAudioOut<ReturnType<typeof bound>>(() => ({ deafened: true, userVolumes: {}, mutedUsers: {}, streamVolume: {} }));
+    const a = bound({});
+    a.resetOnSink = true;
+    out.add('a', a, 'u1', false);
+    await out.rebind();
+    expect(a.muted).toBe(true);
+  });
+});
+
+describe('sink ops are serialised per element (a re-bind cannot race a switch)', () => {
+  it('a slow setSinkId in flight: the next switch and the re-bind wait; the newest id lands last', async () => {
+    const out = new RemoteAudioOut<FakeAudio & HTMLMediaElement>(() => ({ deafened: false, userVolumes: {}, mutedUsers: {}, streamVolume: {} }));
+    const a = new FakeAudio() as FakeAudio & HTMLMediaElement;
+    const calls: string[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const pending: (() => void)[] = [];
+    Object.defineProperty(a, 'srcObject', { value: {}, writable: true });
+    Object.defineProperty(a, 'setSinkId', {
+      value: (id: string) => {
+        calls.push(id);
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        return new Promise<void>((resolve) =>
+          pending.push(() => {
+            inFlight--;
+            a.sinkId = id;
+            resolve();
+          }),
+        );
+      },
+    });
+    out.add('a', a, 'u1', false);
+    const first = out.setSink('air');
+    const rebind = out.rebind();
+    const second = out.setSink('default');
+    // Drain one call at a time, as a slow audio service would.
+    for (let i = 0; i < 10 && (pending.length > 0 || calls.length < 3); i++) {
+      await Promise.resolve();
+      pending.shift()?.();
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    await Promise.all([first, rebind, second]);
+    expect(maxInFlight).toBe(1);
+    // The queued ops read the current choice when they run: the older 'air' is never applied.
+    expect(calls).toEqual(['default', 'default', 'default']);
+    expect(a.sinkId).toBe('default');
+  });
+});

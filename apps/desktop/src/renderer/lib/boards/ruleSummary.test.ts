@@ -35,6 +35,11 @@ describe('triggerText', () => {
     expect(triggerText(trg({ case: 'labelChanged', value: { labelId: '', added: false } } as RuleTrigger['kind']), ctx)).toBe('снят лейбл');
     expect(triggerText(trg({ case: 'priorityChanged', value: { toPriority: TaskPriority.URGENT } } as RuleTrigger['kind']), ctx)).toBe('приоритет → Срочно');
     expect(triggerText(trg({ case: 'git', value: { event: RuleGitEvent.PR_MERGED } } as RuleTrigger['kind']), ctx)).toBe('PR смержен');
+    expect(triggerText(trg({ case: 'git', value: { event: RuleGitEvent.PR_MERGED, targetBranches: ['main', 'release/*'] } } as RuleTrigger['kind']), ctx)).toBe('PR смержен в main, release/*');
+    expect(triggerText(trg({ case: 'git', value: { event: RuleGitEvent.PR_DRAFT_OPENED } } as RuleTrigger['kind']), ctx)).toBe('открыт черновик PR');
+    expect(triggerText(trg({ case: 'git', value: { event: RuleGitEvent.PR_APPROVED } } as RuleTrigger['kind']), ctx)).toBe('PR одобрен');
+    expect(triggerText(trg({ case: 'release', value: { environments: ['prod'] } } as RuleTrigger['kind']), ctx)).toBe('задача вошла в релиз prod');
+    expect(triggerText(trg({ case: 'release', value: { environments: [] as string[] } } as RuleTrigger['kind']), ctx)).toBe('задача вошла в релиз');
     expect(triggerText(trg({ case: 'dueIn', value: { days: 0 } } as RuleTrigger['kind']), ctx)).toBe('срок сегодня');
     expect(triggerText(trg({ case: 'overdue', value: { days: 3 } } as RuleTrigger['kind']), ctx)).toBe('просрочена на 3 дн.');
     expect(triggerText(trg({ case: 'stale', value: { days: 14 } } as RuleTrigger['kind']), ctx)).toBe('без движения 14 дн.');

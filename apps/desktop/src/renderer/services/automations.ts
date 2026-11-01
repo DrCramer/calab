@@ -206,6 +206,19 @@ export async function saveGit(workspaceId: string, boardId: string, provider: Gi
   }
 }
 
+/** The GitLab backlink settings (board task #101); unset fields stay as they are. */
+export async function saveBacklink(workspaceId: string, boardId: string, patch: { backlink?: boolean; apiToken?: string; gitlabUrl?: string }): Promise<BoardGit | null> {
+  try {
+    const r = await automationsApi.git.patch(boardId, patch);
+    return r.git ?? null;
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 422 && e.field === 'gitlabUrl') toast.error(t('git.backlink.badUrl'));
+    else if (e instanceof ApiError && e.status === 422 && e.field === 'apiToken') toast.error(t('git.backlink.badToken'));
+    else gitFail(e, workspaceId);
+    return null;
+  }
+}
+
 export async function deleteGit(workspaceId: string, boardId: string): Promise<boolean> {
   try {
     await automationsApi.git.remove(boardId);

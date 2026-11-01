@@ -77,7 +77,38 @@ func (s *Service) DeliverDueNotices(ctx context.Context, loc *time.Location) (in
 	}); err != nil {
 		return 0, err
 	}
+	if err := s.PruneNoticeLog(ctx); err != nil && ctx.Err() == nil {
+		slog.WarnContext(ctx, "boards: prune task notice log", "err", err) // never holds up the due notices
+	}
 	return s.DeliverDueNoticesAt(ctx, s.Now(), loc)
+}
+
+// noticePruneBatch is the batch of PruneTaskNoticeLog; noticePruneBatches bounds one sweep of
+// one instance, each batch its own short statement, so a backlog drains over a few sweeps
+// without one long delete (ADR-0141).
+const (
+	noticePruneBatch   = 5000
+	noticePruneBatches = 20
+)
+
+// PruneNoticeLog drops the inbox's task notices older than NoticeLogRetention (ADR-0141).
+func (s *Service) PruneNoticeLog(ctx context.Context) error {
+	cutoff := s.Now().Add(-NoticeLogRetention)
+	for range noticePruneBatches {
+		var n int64
+		err := db.GuardExec(ctx, s.db, func(guarded *sqlc.Queries) error {
+			var err error
+			n, err = guarded.PruneTaskNoticeLog(ctx, cutoff)
+			return err
+		})
+		if err != nil {
+			return err
+		}
+		if n < noticePruneBatch {
+			return nil
+		}
+	}
+	return nil
 }
 
 // DeliverDueNoticesAt is DeliverDueNotices at the moment now (tests).

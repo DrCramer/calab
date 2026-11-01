@@ -1,5 +1,7 @@
 import type { FileMeta } from '@calaba/protocol';
 import { t } from '../i18n';
+import { officeOpens } from '../features/disk/office/bridge';
+import { openOfficeFile } from '../features/disk/office/fileTabs';
 import { filePreview } from '../lib/filePreview';
 import { platform } from '../platform';
 import { toast } from '../stores/toasts';
@@ -20,10 +22,15 @@ export function downloadFile(f: Pick<FileMeta, 'id' | 'name'>): void {
 
 /**
  * A click on an attachment of a list (a task's description, ADR-0103): a picture opens the
- * Lightbox with the list's other pictures (←/→), a PDF the PDF viewer, anything else is downloaded.
+ * Lightbox with the list's other pictures (←/→), a PDF the PDF viewer, an office file the editor, anything else is downloaded.
  */
 export function openAttachment(f: FileMeta, list: readonly FileMeta[]): void {
   const ui = useUi.getState();
+  // Office files: the editor, read-only for an attachment (the server decides, ADR-0143 §7).
+  if (officeOpens(f.name)) {
+    openOfficeFile({ fileId: f.id }, f.name, f.workspaceId);
+    return;
+  }
   const kind = filePreview(f, ui.phone.on);
   if (kind === 'image') {
     const images = list.filter((g) => filePreview(g, ui.phone.on) === 'image');

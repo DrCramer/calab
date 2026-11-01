@@ -13,7 +13,8 @@ import type { ReactNode } from 'react';
 import { cx } from '../../../components/ui';
 import { t, type MessageKey } from '../../../i18n';
 import { haptics } from '../../../lib/haptics';
-import { isAllowedHref } from './extensions';
+import { contentHref, openContentLink } from '../../../services/contentLink';
+import type { PageSource } from './types';
 
 interface Tool {
   id: string;
@@ -36,7 +37,7 @@ const TOOLS: readonly Tool[] = [
   { id: 'code', label: 'wiki.block.code', Icon: Code2, active: (e) => e.isActive('codeBlock'), run: (e) => void e.chain().focus().toggleCodeBlock().run() },
 ];
 
-export function PhoneToolbar({ editor, onBlocks }: { editor: Editor; onBlocks: () => void }): ReactNode {
+export function PhoneToolbar({ editor, onBlocks, pages }: { editor: Editor; onBlocks: () => void; pages?: PageSource }): ReactNode {
   const st = useEditorState({
     editor,
     selector: ({ editor: e }) => ({
@@ -71,14 +72,14 @@ export function PhoneToolbar({ editor, onBlocks }: { editor: Editor; onBlocks: (
           );
         })}
       </div>
-      {st.link && isAllowedHref(st.link) ? (
+      {st.link && contentHref(st.link) ? (
         <button
           type="button"
           aria-label={t('wiki.link.open')}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
             haptics.tap();
-            window.open(st.link, '_blank', 'noopener,noreferrer');
+            openContentLink(st.link, pages);
           }}
           className="grid h-11 w-11 shrink-0 place-items-center border-l border-line text-accent-text"
           data-testid="wiki-tool-open-link"

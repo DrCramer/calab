@@ -6,6 +6,7 @@ import { useMobile } from '../../lib/mobile';
 import { log } from '../../lib/log';
 import { toast } from '../../stores/toasts';
 import { telHref, useContacts, useUsername } from './contacts';
+import { ProfileExtension, useExtensionRow } from './ProfileExtension';
 
 /** Copies a contact and says so («Скопировано»). */
 function copy(text: string): void {
@@ -30,18 +31,15 @@ function CopyButton({ value, label }: { value: string; label: string }): ReactNo
  * «Почта» and «Телефон» of a person (ADR-0077), each with «Скопировать»; the phone is a `tel:` link
  * on a phone. Nothing when I may not see them (contacts.ts) or there are none. `row` — dt/dd pairs
  * for the profile card's list; `section` — the profile dialog's block. `extension` — the member's
- * internal number in this workspace (ADR-0117; the server sends it to no guest), bots' too.
+ * internal number in `workspaceId` (ADR-0117; the server sends it to no guest), bots' too: shown
+ * while telephony is on, a tap calls, the administrator sets it here (ProfileExtension.tsx).
  */
-export function ProfileContacts({ userId, variant, extension = '' }: { userId: string; variant: 'row' | 'section'; extension?: string }): ReactNode {
+export function ProfileContacts({ userId, variant, workspaceId = '', extension = '' }: { userId: string; variant: 'row' | 'section'; workspaceId?: string; extension?: string }): ReactNode {
   const c = useContacts(userId);
   const mobile = useMobile();
-  if ((!c || (!c.email && !c.phone)) && !extension) return null;
-  const ext = extension ? (
-    <span className="flex min-w-0 items-center gap-1.5" data-testid="profile-extension">
-      <span className="selectable min-w-0 tabular-nums">{extension}</span>
-      <CopyButton value={extension} label={t('people.profile.extension')} />
-    </span>
-  ) : null;
+  const showExt = useExtensionRow(workspaceId, userId, extension);
+  if ((!c || (!c.email && !c.phone)) && !showExt) return null;
+  const ext = showExt ? <ProfileExtension workspaceId={workspaceId} userId={userId} extension={extension} /> : null;
   const email = c?.email ? (
     <span className="flex min-w-0 items-center gap-1.5" data-testid="profile-email">
       <span className="selectable min-w-0 [overflow-wrap:anywhere]">

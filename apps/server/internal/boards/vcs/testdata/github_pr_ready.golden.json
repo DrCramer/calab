@@ -1,0 +1,51 @@
+{
+  "Event": {
+    "Provider": "github",
+    "Repo": "acme/app",
+    "RepoURL": "https://github.com/acme/app",
+    "Author": "octocat",
+    "Push": false,
+    "Branch": "",
+    "DefaultBranch": "",
+    "BranchCreated": false,
+    "Commits": null,
+    "PR": {
+      "Number": 43,
+      "Title": "FNG-14 Profile page",
+      "Body": "",
+      "URL": "https://github.com/acme/app/pull/43",
+      "State": "open",
+      "Branch": "feature/fng-14-profile",
+      "Author": "octocat",
+      "Event": "PR_READY",
+      "Draft": false,
+      "Target": "main",
+      "Actor": "octocat",
+      "Users": null,
+      "Once": null,
+      "Forget": null,
+      "SHAs": null
+    }
+  },
+  "Links": [
+    {
+      "Number": 14,
+      "Kind": "pr",
+      "Ref": "43",
+      "Title": "FNG-14 Profile page",
+      "URL": "https://github.com/acme/app/pull/43",
+      "State": "open",
+      "Author": "octocat",
+      "Event": "PR_READY",
+      "Mention": false,
+      "Draft": false,
+      "Branch": "feature/fng-14-profile",
+      "Target": "main",
+      "Actor": "octocat",
+      "Users": null,
+      "Once": null,
+      "Forget": null,
+      "SHAs": null
+    }
+  ]
+}

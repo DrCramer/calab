@@ -623,6 +623,12 @@ export interface MailApi {
      */
     empty(folderId: string): Promise<void>;
     /**
+     * «Прочитать все» (#231): every message of a real folder gets `\Seen` — locally at once, on the
+     * server with one `UID STORE 1:* +FLAGS (\Seen)`; queued while offline, rolled back if refused.
+     * Virtual folders (starred, drafts, outbox): `INVALID`.
+     */
+    markAllRead(folderId: string): Promise<void>;
+    /**
      * Creates a folder on the IMAP server (under `parentId` when given) and in the local list
      * (CBF-39). `NETWORK` offline, `INVALID` for a bad / existing name.
      */
@@ -749,6 +755,7 @@ export const mailMethods = [
   'accounts.setPassword',
   'folders.list',
   'folders.empty',
+  'folders.markAllRead',
   'folders.create',
   'folders.rename',
   'folders.remove',

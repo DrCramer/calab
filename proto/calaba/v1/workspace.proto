@@ -176,6 +176,7 @@ message UpdateWorkspaceRequest {
   // Workspace.owner_sees_private: the workspace owner only (403 OWNER_ONLY for anyone else, not
   // delegable by roles). A change writes a workspace journal entry (WorkspaceAuditEntry).
   optional bool owner_sees_private = 12;
+  optional uint32 default_join_leave_sound_max = 13; // 0..99 (0 = no join/leave cues)
 }
 
 // The workspace journal of private-access decisions (addendum 2026-10-14): the owner switching

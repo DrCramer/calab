@@ -1,0 +1,51 @@
+{
+  "Event": {
+    "Provider": "gitea",
+    "Repo": "team/site",
+    "RepoURL": "https://gitea.example.com/team/site",
+    "Author": "alice",
+    "Push": false,
+    "Branch": "",
+    "DefaultBranch": "",
+    "BranchCreated": false,
+    "Commits": null,
+    "PR": {
+      "Number": 4,
+      "Title": "WIP: FNG-22 Menu",
+      "Body": "",
+      "URL": "https://gitea.example.com/team/site/pulls/4",
+      "State": "open",
+      "Branch": "fng-22-menu",
+      "Author": "alice",
+      "Event": "PR_DRAFT_OPENED",
+      "Draft": true,
+      "Target": "release/3",
+      "Actor": "alice",
+      "Users": null,
+      "Once": null,
+      "Forget": null,
+      "SHAs": null
+    }
+  },
+  "Links": [
+    {
+      "Number": 22,
+      "Kind": "pr",
+      "Ref": "4",
+      "Title": "WIP: FNG-22 Menu",
+      "URL": "https://gitea.example.com/team/site/pulls/4",
+      "State": "open",
+      "Author": "alice",
+      "Event": "PR_DRAFT_OPENED",
+      "Mention": false,
+      "Draft": true,
+      "Branch": "fng-22-menu",
+      "Target": "release/3",
+      "Actor": "alice",
+      "Users": null,
+      "Once": null,
+      "Forget": null,
+      "SHAs": null
+    }
+  ]
+}

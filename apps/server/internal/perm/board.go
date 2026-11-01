@@ -151,6 +151,20 @@ func TaskBits(acc BoardAccess, assignee, approver, watcher, author bool) Bits {
 	return 0
 }
 
+// TaskAuthor reports whether user counts as the author of a task for every author rule — the
+// create-only visibility of ADR-0115 (TaskBits' author), editing and archiving / restoring one's
+// own task with CREATE_TASKS (ADR-0151): the user who created it (createdBy), or the current
+// owner of the bot that created it (botOwner: bots.owner_user_id of created_by, resolved in the
+// same query as the task; nil when created_by is not a bot or the bot was deleted). Rights only:
+// feeds and notices («Мои задачи → Созданные», the outcome of an approval) keep created_by.
+// Mirror of isTaskAuthor in packages/protocol (the client passes the ids of its own bots).
+func TaskAuthor(createdBy, botOwner *uuid.UUID, user uuid.UUID) bool {
+	if user == uuid.Nil {
+		return false
+	}
+	return (createdBy != nil && *createdBy == user) || (botOwner != nil && *botOwner == user)
+}
+
 // TaskRoom maps board bits to the bits in a task's comment room (ADR-0042 §1): VIEW_BOARD →
 // VIEW_ROOM | SEND_MESSAGES | ATTACH_FILES, EDIT_TASKS adds MANAGE_MESSAGES. The room of an
 // archived task is read-only, and so is every task room of a board with the feature COMMENTS

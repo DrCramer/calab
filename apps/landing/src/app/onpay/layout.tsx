@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = { themeColor: '#0e0e10', colorScheme: 'dark' };
+export const viewport: Viewport = { themeColor: '#141416', colorScheme: 'dark' };
 
 export default function OnpayLayout({ children }: { children: ReactNode }) {
   return (

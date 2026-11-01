@@ -7,8 +7,8 @@
 <h1 align="center">Calab</h1>
 
 <p align="center">
-  Your whole team in one window: voice rooms, chat, meetings and tasks — on your own server.<br>
-  <sub>Self-hosted voice-first team messenger. macOS · Windows · Linux · Web.</sub>
+  All your team’s work in one window: voice rooms, chat, meetings, tasks, wiki, canvas, files, mail and phone calls — in the cloud or on your own server.<br>
+  <sub>Voice-first team messenger. macOS · Windows · Linux · Web · phone.</sub>
 </p>
 
 <p align="center">
@@ -28,35 +28,35 @@
 
 ## What it is
 
-Calab is a team messenger where **voice** comes first. Join a room and you hear your colleagues right away; next to it is a Telegram-style chat, a calendar with meetings and Linear-style task boards. Everything runs on your own server: one `docker compose`, PostgreSQL and LiveKit inside, no external services or subscriptions.
+Calab puts the whole work of a team in one window: a message becomes a task, the task gets a meeting, the meeting leaves a recording and a transcript, and the outcome lands on a wiki page and on a canvas. Everything links to everything. **Voice** comes first: join a room and you hear your colleagues right away. Calab runs in the cloud or on your own server (one `docker compose`, PostgreSQL and LiveKit inside).
 
-It is built for teams of up to 20–30 people in voice at once and up to 3 screen shares per room. The client is light: 0.05 % CPU outside a call and ≈ 7 % in voice on a MacBook Air M4.
+Instead of seven services in seven tabs (messenger, video calls, task tracker, wiki, online whiteboard, file storage, mail and a phone system) there is one rail on the left. The client is light: 0.05 % CPU outside a call and ≈ 7 % in voice on a MacBook Air M4.
+
+**Platforms:** macOS · Windows · Linux · Web · phone (the web app works in a phone browser; iPhone and Android apps are coming soon).
+
+<table>
+  <tr>
+    <td width="50%"><img src="apps/landing/public/screens/en/kanban-full.webp" alt="The Product board with four columns of task cards"></td>
+    <td width="50%"><img src="apps/landing/public/screens/en/canvas.webp" alt="The Sprint 12 retro canvas: stickies, arrows, votes and a colleague’s cursor"></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="apps/landing/public/screens/en/phone-call.webp" alt="A call to a phone number from a voice room with a Transfer button"></td>
+    <td width="50%"><img src="apps/landing/public/screens/en/phone-voice.webp" alt="The In voice card on a phone"></td>
+  </tr>
+</table>
 
 ## Features
 
-### Features at a glance
+### Overview, grouped as on the site
 
-| Area | In one line |
+| Group | What is in it |
 |---|---|
-| Voice and video | Voice rooms with clean sound and push-to-talk, screen sharing, camera, meeting gallery, recording with transcript, soundboard, annotations on a shared screen, musician mode |
-| Phone calls (SIP) | Dial a landline or mobile number from a voice room through your own SIP provider |
-| Temporary rooms and guests | A room for an hour or a day with a guest link; guests need no sign-up and are removed after 48 hours of inactivity |
-| Chat | Replies, reactions, stickers, voice messages, forwarding, files with previews, pins, read ticks, mentions |
-| Direct messages and notes | One-on-one chats and calls with an archive; up to 20 private notes shelves |
-| Calendar | Meetings with invitations by email (`.ics`), find a time for several people, CalDAV sync |
-| Task boards | Kanban, list and timeline; full-screen task, approvals, checklists, milestones, automations, intake forms, board webhooks, full change history |
-| Mail | An IMAP/SMTP mail client built into the desktop app |
-| Wiki | Team pages with real-time co-editing, page links, versions and public pages |
-| Disk | Workspace folders and files with per-folder access, public links, trash and a storage meter |
-| Search | `⌘K` finds messages, tasks, comments, events, files, notes and transcripts |
-| Notifications | Per-room levels and per-event task triggers; task notices can be relayed to your own bot (e.g. Telegram) |
-| Bots and integration API | Bots with tokens, TypeScript SDK, WebSocket gateway, signed webhooks, voice, buttons; [developer docs](https://calab.io/en/docs/) |
-| Identity and roles | OIDC SSO, LDAP/AD directory sync, “Sign in with Calab” (OAuth 2); roles by function with private rooms and boards |
-| Members | Profiles with `@nick`, achievements and birthdays, former members kept in history |
-| Billing and plans | Free, Team, Business and a free-for-non-commercial Enterprise on your own server |
-| Phone | The web app works in a phone browser today; iPhone and Android apps are coming |
-| Web apps in the rail | Pin Grafana, the CRM or any site next to Calab; the call keeps going |
-| Self-hosting | One `docker compose`, PostgreSQL and LiveKit inside, automatic certificates and backups |
+| Talk | Voice rooms and screen share (pointer and drawing over the stream, noise and echo cancellation), video meetings (up to 25 tiles), chat with replies, reactions and pins, temporary rooms and guests, recording with a transcript |
+| Work | Task boards (board, list, timeline; forms, automations, approvals, history), calendar with find-a-time and CalDAV, wiki, canvas (stickies, shapes, arrows, voting, timer), files, mail (desktop app) |
+| Order and quiet | `⌘K` search across everything, notification levels per room and task triggers (with forwarding to your own bot), roles and private rooms, web apps pinned in the window |
+| AI | Smart task (Business and above), meeting summaries and transcripts, any LLM client as a bot through MCP. An administrator connects a model once in workspace settings; without it AI does not work |
+| Telephony | Connect a SIP provider: voice menu (IVR), groups, extensions for people and bots, call transfer, call recordings saved to team files (Business and Enterprise) |
+| Self-hosting and control | One `docker compose` on your own server, SSO / Active Directory / roles, open code under BSL 1.1; [docs for developers](https://calab.io/en/docs/) |
 
 ### 🎙 Voice and video
 
@@ -95,6 +95,7 @@ It is built for teams of up to 20–30 people in voice at once and up to 3 scree
 
 - A day view with meetings side by side, the meeting card with attendees and answers, the room with a “Go” button, recurring meetings, reminders.
 - **Invitations by email** with `invite.ics` — the meeting lands in Apple, Google, Outlook or Yandex calendars; external attendees answer by link and join as guests.
+- **Calendar export and subscriptions** (unreleased) — download your meetings as `.ics`, subscribe in Apple Calendar with a button, or scan a QR code from your computer. Personal, read-only links can be replaced or revoked; external apps control refresh timing. [Details](docs/adr/0147-calendar-export-subscription.md).
 - **Find a time** — colleagues’ busy columns, shared free windows and the nearest slots within everyone’s work hours.
 - **CalDAV** — connect Yandex, iCloud, Fastmail or Nextcloud: your busy time counts, Calab meetings appear there by themselves.
 
@@ -238,6 +239,8 @@ Checks: `make lint` from the repository root, `make test` (Go + TS), `make test-
 | Bots | 1 | 5 | 20 | unlimited |
 | Sticker packs | 1 | unlimited | unlimited | unlimited |
 | Task boards | 3 | 30 | 50 | unlimited |
+| Wiki pages | 10 | 50 | 500 | unlimited |
+| Canvases | 3 | 30 | 100 | unlimited |
 | Calendar | ✓ | ✓ | ✓ | ✓ |
 | CalDAV sync | — | ✓ | ✓ | ✓ |
 | Task approvals | ✓ | ✓ | ✓ | ✓ |

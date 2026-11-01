@@ -165,7 +165,21 @@ type FileOutput struct {
 	// FileType is the container: "" = MP4 (AAC, meetings), FileOGG = Ogg/Opus (phone calls,
 	// ADR-0131).
 	FileType string
+	// Audio overrides the default audio encoding (OPUS, 128 kbit/s, 44.1 kHz); nil = default.
+	Audio *AudioEncoding
 }
+
+// AudioEncoding is livekit.EncodingOptions (audio subset), sent as the request's advanced
+// options. The egress mixes to stereo and has no channel-count option; Opus at a low bitrate
+// codes near-identical channels at about the cost of one.
+type AudioEncoding struct {
+	// BitrateKbps is audio_bitrate in kbit/s. The sample rate is left to the egress default.
+	BitrateKbps int
+}
+
+// PhoneAudio is the encoding of a phone call recording (ADR-0131, addendum): callers are on
+// GSM/G.711 lines, so Opus at 24 kbit/s is already well above the line.
+var PhoneAudio = &AudioEncoding{BitrateKbps: 24}
 
 // FileOGG is FileOutput.FileType of an Ogg/Opus recording (livekit.EncodedFileType OGG).
 const FileOGG = "OGG"
@@ -209,12 +223,16 @@ func (e *egressClient) StartAudioRecording(ctx context.Context, room string, out
 		// from the bucket.
 		file["disable_manifest"] = true
 	}
-	var info EgressInfo
-	err := e.call(ctx, "StartRoomCompositeEgress", map[string]any{
+	req := map[string]any{
 		"room_name":    room,
 		"audio_only":   true,
 		"file_outputs": []map[string]any{file},
-	}, &info)
+	}
+	if a := out.Audio; a != nil {
+		req["advanced"] = map[string]any{"audio_codec": "OPUS", "audio_bitrate": a.BitrateKbps}
+	}
+	var info EgressInfo
+	err := e.call(ctx, "StartRoomCompositeEgress", req, &info)
 	if err != nil {
 		return nil, err
 	}

@@ -11,8 +11,15 @@ export interface AnnotState {
   policy: Record<string, boolean>;
   /** My own stream: viewers may annotate it (the switch in my stream's panel). */
   allowMine: boolean;
+  /**
+   * Where I see the viewers' annotations of my stream: over the shared screen (the overlay
+   * window) or only in the preview of my stream (web, a window source, no overlay possible).
+   */
+  mineView: 'screen' | 'preview';
+  /** Someone annotates my stream right now (the panel's indicator); null after a few quiet seconds. */
+  mineActivity: { name: string; kind: 'pointer' | 'stroke' } | null;
 }
 
-export const useAnnot = create<AnnotState>(() => ({ tool: 'none', color: null, policy: {}, allowMine: true }));
+export const useAnnot = create<AnnotState>(() => ({ tool: 'none', color: null, policy: {}, allowMine: true, mineView: 'preview', mineActivity: null }));
 
 export const setAnnot = (p: Partial<AnnotState>): void => useAnnot.setState(p);

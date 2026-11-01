@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { featureOn } from '../../lib/boards/features';
 import { archiveTask, copyTaskKey, copyTaskLink, moveTask } from '../../services/boards';
 import { IS_MAC } from '../../services/hotkeys';
+import { replaceNextNav } from '../../services/navHistory';
 import { taskPermsOf, useBoards } from '../../stores/boards';
 import { MY_TASKS, prefsOf, useBoardsUi, type ViewKind } from '../../stores/boardsUi';
 import { myUserId } from '../../stores/session';
@@ -160,7 +161,11 @@ export function useBoardHotkeys(workspaceId: string, boardId: string): void {
             }
             ui.setFocused(next);
             // The open panel follows the keyboard (Linear).
-            if (ui.taskId) ui.openTask(next);
+            if (ui.taskId) {
+              // J/K / ↑↓ inside the open task move within its history entry (board #113).
+              replaceNextNav();
+              ui.openTask(next);
+            }
             reveal(next);
             return true;
           }

@@ -571,6 +571,292 @@ func (SipActiveStep) EnumDescriptor() ([]byte, []int) {
 	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{9}
 }
 
+// Where a call comes from.
+type SipCallOrigin int32
+
+const (
+	SipCallOrigin_SIP_CALL_ORIGIN_UNSPECIFIED SipCallOrigin = 0
+	SipCallOrigin_SIP_CALL_ORIGIN_ROOM        SipCallOrigin = 1 // a voice room's line (ADR-0046); the room may be deleted since
+	SipCallOrigin_SIP_CALL_ORIGIN_PERSONAL    SipCallOrigin = 2 // a call from the telephony section (ADR-0137 §3)
+	SipCallOrigin_SIP_CALL_ORIGIN_INBOUND     SipCallOrigin = 3 // a call to the workspace's number (ADR-0117)
+	SipCallOrigin_SIP_CALL_ORIGIN_TEST        SipCallOrigin = 4 // the connection test
+)
+
+// Enum value maps for SipCallOrigin.
+var (
+	SipCallOrigin_name = map[int32]string{
+		0: "SIP_CALL_ORIGIN_UNSPECIFIED",
+		1: "SIP_CALL_ORIGIN_ROOM",
+		2: "SIP_CALL_ORIGIN_PERSONAL",
+		3: "SIP_CALL_ORIGIN_INBOUND",
+		4: "SIP_CALL_ORIGIN_TEST",
+	}
+	SipCallOrigin_value = map[string]int32{
+		"SIP_CALL_ORIGIN_UNSPECIFIED": 0,
+		"SIP_CALL_ORIGIN_ROOM":        1,
+		"SIP_CALL_ORIGIN_PERSONAL":    2,
+		"SIP_CALL_ORIGIN_INBOUND":     3,
+		"SIP_CALL_ORIGIN_TEST":        4,
+	}
+)
+
+func (x SipCallOrigin) Enum() *SipCallOrigin {
+	p := new(SipCallOrigin)
+	*p = x
+	return p
+}
+
+func (x SipCallOrigin) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SipCallOrigin) Descriptor() protoreflect.EnumDescriptor {
+	return file_calaba_v1_sip_proto_enumTypes[10].Descriptor()
+}
+
+func (SipCallOrigin) Type() protoreflect.EnumType {
+	return &file_calaba_v1_sip_proto_enumTypes[10]
+}
+
+func (x SipCallOrigin) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SipCallOrigin.Descriptor instead.
+func (SipCallOrigin) EnumDescriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{10}
+}
+
+// A step of a call. user_id is the employee of the step, target_* the menu / group / number /
+// member / room it concerns, its name as it was then.
+type SipCallEventKind int32
+
+const (
+	SipCallEventKind_SIP_CALL_EVENT_KIND_UNSPECIFIED SipCallEventKind = 0
+	// The call began. Inbound: digits = the company number called, reason "direct" / "register";
+	// outbound: user_id = who placed it, target = the room (room calls).
+	SipCallEventKind_SIP_CALL_EVENT_KIND_STARTED  SipCallEventKind = 1
+	SipCallEventKind_SIP_CALL_EVENT_KIND_MENU     SipCallEventKind = 2 // a voice menu plays: target = the menu, digits = the play count
+	SipCallEventKind_SIP_CALL_EVENT_KIND_KEY      SipCallEventKind = 3 // the caller pressed digits; reason "invalid": the menu has no such key
+	SipCallEventKind_SIP_CALL_EVENT_KIND_DIALED   SipCallEventKind = 4 // the caller dialed an internal number digits; reason "found" / "not_found"
+	SipCallEventKind_SIP_CALL_EVENT_KIND_NO_INPUT SipCallEventKind = 5 // the menu got no key in time
+	// The recording notice of target (a menu) plays (ADR-0131); reason "off_hours", no target: the
+	// schedule's off-hours notice (ADR-0138).
+	SipCallEventKind_SIP_CALL_EVENT_KIND_NOTICE SipCallEventKind = 6
+	// A group takes the call: target = the group, reason "ring_all" / "round_robin".
+	SipCallEventKind_SIP_CALL_EVENT_KIND_GROUP SipCallEventKind = 7
+	// user_id's devices start ringing: target = the group, or the number (extension) rung.
+	SipCallEventKind_SIP_CALL_EVENT_KIND_RING SipCallEventKind = 8
+	// user_id's devices stop ringing: reason "no_answer", "declined", "answered_elsewhere",
+	// "fallback", "caller_left", "cancelled", "ended".
+	SipCallEventKind_SIP_CALL_EVENT_KIND_RING_END SipCallEventKind = 9
+	// A group's fallback (ADR-0124): target = where the call goes, reason "timeout" / "nobody" /
+	// "declined".
+	SipCallEventKind_SIP_CALL_EVENT_KIND_FALLBACK SipCallEventKind = 10
+	SipCallEventKind_SIP_CALL_EVENT_KIND_ANSWERED SipCallEventKind = 11 // user_id answered (outbound: the callee, user_id empty)
+	// user_id hands the call over (ADR-0132): to peer_user_id (a member) or target (a number, a group).
+	SipCallEventKind_SIP_CALL_EVENT_KIND_TRANSFER SipCallEventKind = 12
+	// A transfer is over: reason "answered" (user_id took the call), "no_answer", "declined",
+	// "cancelled", "not_connected".
+	SipCallEventKind_SIP_CALL_EVENT_KIND_TRANSFER_END     SipCallEventKind = 13
+	SipCallEventKind_SIP_CALL_EVENT_KIND_DIALING          SipCallEventKind = 14 // outbound: the INVITE goes to the provider
+	SipCallEventKind_SIP_CALL_EVENT_KIND_PROVIDER_RINGING SipCallEventKind = 15 // outbound: the callee's phone rings
+	// The recording (ADR-0131): reason "started", "stored", "failed".
+	SipCallEventKind_SIP_CALL_EVENT_KIND_RECORDING SipCallEventKind = 16
+	// The end: reason = SipCall.reason; user_id = the member who hung up (empty: the caller or the system).
+	SipCallEventKind_SIP_CALL_EVENT_KIND_ENDED SipCallEventKind = 17
+	// The schedule (ADR-0138): reason "off_hours" — the call came outside the working hours;
+	// target = the off-hours route (empty: hang up). A NOTICE with reason "off_hours" (no
+	// target) follows when the schedule has a notice.
+	SipCallEventKind_SIP_CALL_EVENT_KIND_SCHEDULE SipCallEventKind = 18
+)
+
+// Enum value maps for SipCallEventKind.
+var (
+	SipCallEventKind_name = map[int32]string{
+		0:  "SIP_CALL_EVENT_KIND_UNSPECIFIED",
+		1:  "SIP_CALL_EVENT_KIND_STARTED",
+		2:  "SIP_CALL_EVENT_KIND_MENU",
+		3:  "SIP_CALL_EVENT_KIND_KEY",
+		4:  "SIP_CALL_EVENT_KIND_DIALED",
+		5:  "SIP_CALL_EVENT_KIND_NO_INPUT",
+		6:  "SIP_CALL_EVENT_KIND_NOTICE",
+		7:  "SIP_CALL_EVENT_KIND_GROUP",
+		8:  "SIP_CALL_EVENT_KIND_RING",
+		9:  "SIP_CALL_EVENT_KIND_RING_END",
+		10: "SIP_CALL_EVENT_KIND_FALLBACK",
+		11: "SIP_CALL_EVENT_KIND_ANSWERED",
+		12: "SIP_CALL_EVENT_KIND_TRANSFER",
+		13: "SIP_CALL_EVENT_KIND_TRANSFER_END",
+		14: "SIP_CALL_EVENT_KIND_DIALING",
+		15: "SIP_CALL_EVENT_KIND_PROVIDER_RINGING",
+		16: "SIP_CALL_EVENT_KIND_RECORDING",
+		17: "SIP_CALL_EVENT_KIND_ENDED",
+		18: "SIP_CALL_EVENT_KIND_SCHEDULE",
+	}
+	SipCallEventKind_value = map[string]int32{
+		"SIP_CALL_EVENT_KIND_UNSPECIFIED":      0,
+		"SIP_CALL_EVENT_KIND_STARTED":          1,
+		"SIP_CALL_EVENT_KIND_MENU":             2,
+		"SIP_CALL_EVENT_KIND_KEY":              3,
+		"SIP_CALL_EVENT_KIND_DIALED":           4,
+		"SIP_CALL_EVENT_KIND_NO_INPUT":         5,
+		"SIP_CALL_EVENT_KIND_NOTICE":           6,
+		"SIP_CALL_EVENT_KIND_GROUP":            7,
+		"SIP_CALL_EVENT_KIND_RING":             8,
+		"SIP_CALL_EVENT_KIND_RING_END":         9,
+		"SIP_CALL_EVENT_KIND_FALLBACK":         10,
+		"SIP_CALL_EVENT_KIND_ANSWERED":         11,
+		"SIP_CALL_EVENT_KIND_TRANSFER":         12,
+		"SIP_CALL_EVENT_KIND_TRANSFER_END":     13,
+		"SIP_CALL_EVENT_KIND_DIALING":          14,
+		"SIP_CALL_EVENT_KIND_PROVIDER_RINGING": 15,
+		"SIP_CALL_EVENT_KIND_RECORDING":        16,
+		"SIP_CALL_EVENT_KIND_ENDED":            17,
+		"SIP_CALL_EVENT_KIND_SCHEDULE":         18,
+	}
+)
+
+func (x SipCallEventKind) Enum() *SipCallEventKind {
+	p := new(SipCallEventKind)
+	*p = x
+	return p
+}
+
+func (x SipCallEventKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SipCallEventKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_calaba_v1_sip_proto_enumTypes[11].Descriptor()
+}
+
+func (SipCallEventKind) Type() protoreflect.EnumType {
+	return &file_calaba_v1_sip_proto_enumTypes[11]
+}
+
+func (x SipCallEventKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SipCallEventKind.Descriptor instead.
+func (SipCallEventKind) EnumDescriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{11}
+}
+
+type SipCallTargetKind int32
+
+const (
+	SipCallTargetKind_SIP_CALL_TARGET_KIND_UNSPECIFIED SipCallTargetKind = 0
+	SipCallTargetKind_SIP_CALL_TARGET_KIND_MENU        SipCallTargetKind = 1
+	SipCallTargetKind_SIP_CALL_TARGET_KIND_GROUP       SipCallTargetKind = 2
+	SipCallTargetKind_SIP_CALL_TARGET_KIND_EXTENSION   SipCallTargetKind = 3 // target_name = the internal number
+	SipCallTargetKind_SIP_CALL_TARGET_KIND_USER        SipCallTargetKind = 4
+	SipCallTargetKind_SIP_CALL_TARGET_KIND_ROOM        SipCallTargetKind = 5
+)
+
+// Enum value maps for SipCallTargetKind.
+var (
+	SipCallTargetKind_name = map[int32]string{
+		0: "SIP_CALL_TARGET_KIND_UNSPECIFIED",
+		1: "SIP_CALL_TARGET_KIND_MENU",
+		2: "SIP_CALL_TARGET_KIND_GROUP",
+		3: "SIP_CALL_TARGET_KIND_EXTENSION",
+		4: "SIP_CALL_TARGET_KIND_USER",
+		5: "SIP_CALL_TARGET_KIND_ROOM",
+	}
+	SipCallTargetKind_value = map[string]int32{
+		"SIP_CALL_TARGET_KIND_UNSPECIFIED": 0,
+		"SIP_CALL_TARGET_KIND_MENU":        1,
+		"SIP_CALL_TARGET_KIND_GROUP":       2,
+		"SIP_CALL_TARGET_KIND_EXTENSION":   3,
+		"SIP_CALL_TARGET_KIND_USER":        4,
+		"SIP_CALL_TARGET_KIND_ROOM":        5,
+	}
+)
+
+func (x SipCallTargetKind) Enum() *SipCallTargetKind {
+	p := new(SipCallTargetKind)
+	*p = x
+	return p
+}
+
+func (x SipCallTargetKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SipCallTargetKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_calaba_v1_sip_proto_enumTypes[12].Descriptor()
+}
+
+func (SipCallTargetKind) Type() protoreflect.EnumType {
+	return &file_calaba_v1_sip_proto_enumTypes[12]
+}
+
+func (x SipCallTargetKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SipCallTargetKind.Descriptor instead.
+func (SipCallTargetKind) EnumDescriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{12}
+}
+
+type SipPhoneLabel int32
+
+const (
+	SipPhoneLabel_SIP_PHONE_LABEL_UNSPECIFIED SipPhoneLabel = 0 // = OTHER
+	SipPhoneLabel_SIP_PHONE_LABEL_MOBILE      SipPhoneLabel = 1
+	SipPhoneLabel_SIP_PHONE_LABEL_WORK        SipPhoneLabel = 2
+	SipPhoneLabel_SIP_PHONE_LABEL_HOME        SipPhoneLabel = 3
+	SipPhoneLabel_SIP_PHONE_LABEL_OTHER       SipPhoneLabel = 4
+)
+
+// Enum value maps for SipPhoneLabel.
+var (
+	SipPhoneLabel_name = map[int32]string{
+		0: "SIP_PHONE_LABEL_UNSPECIFIED",
+		1: "SIP_PHONE_LABEL_MOBILE",
+		2: "SIP_PHONE_LABEL_WORK",
+		3: "SIP_PHONE_LABEL_HOME",
+		4: "SIP_PHONE_LABEL_OTHER",
+	}
+	SipPhoneLabel_value = map[string]int32{
+		"SIP_PHONE_LABEL_UNSPECIFIED": 0,
+		"SIP_PHONE_LABEL_MOBILE":      1,
+		"SIP_PHONE_LABEL_WORK":        2,
+		"SIP_PHONE_LABEL_HOME":        3,
+		"SIP_PHONE_LABEL_OTHER":       4,
+	}
+)
+
+func (x SipPhoneLabel) Enum() *SipPhoneLabel {
+	p := new(SipPhoneLabel)
+	*p = x
+	return p
+}
+
+func (x SipPhoneLabel) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SipPhoneLabel) Descriptor() protoreflect.EnumDescriptor {
+	return file_calaba_v1_sip_proto_enumTypes[13].Descriptor()
+}
+
+func (SipPhoneLabel) Type() protoreflect.EnumType {
+	return &file_calaba_v1_sip_proto_enumTypes[13]
+}
+
+func (x SipPhoneLabel) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SipPhoneLabel.Descriptor instead.
+func (SipPhoneLabel) EnumDescriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{13}
+}
+
 // The workspace's SIP provider account (one per workspace). GET never returns the password.
 type SipSettings struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -621,8 +907,17 @@ type SipSettings struct {
 	// The server can record calls (LiveKit Egress is configured). The switches can be set either
 	// way; without it nothing is recorded.
 	RecordingAvailable bool `protobuf:"varint,26,opt,name=recording_available,json=recordingAvailable,proto3" json:"recording_available,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// The workspace's telephony policy (ADR-0137, PUT /api/workspaces/{id}/sip/policy): the
+	// journal is kept retention_months (1, 3, 6, 12, 24, 36; default 12), outbound calls are
+	// limited per hour to out_per_hour for the workspace (default 120) and out_per_user_hour for
+	// one member (default 30).
+	RetentionMonths uint32 `protobuf:"varint,27,opt,name=retention_months,json=retentionMonths,proto3" json:"retention_months,omitempty"`
+	OutPerHour      uint32 `protobuf:"varint,28,opt,name=out_per_hour,json=outPerHour,proto3" json:"out_per_hour,omitempty"`
+	OutPerUserHour  uint32 `protobuf:"varint,29,opt,name=out_per_user_hour,json=outPerUserHour,proto3" json:"out_per_user_hour,omitempty"`
+	// The working-hours schedule of the entry point (ADR-0138, PUT /api/workspaces/{id}/sip/schedule).
+	Schedule      *SipSchedule `protobuf:"bytes,30,opt,name=schedule,proto3" json:"schedule,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SipSettings) Reset() {
@@ -837,6 +1132,203 @@ func (x *SipSettings) GetRecordingAvailable() bool {
 	return false
 }
 
+func (x *SipSettings) GetRetentionMonths() uint32 {
+	if x != nil {
+		return x.RetentionMonths
+	}
+	return 0
+}
+
+func (x *SipSettings) GetOutPerHour() uint32 {
+	if x != nil {
+		return x.OutPerHour
+	}
+	return 0
+}
+
+func (x *SipSettings) GetOutPerUserHour() uint32 {
+	if x != nil {
+		return x.OutPerUserHour
+	}
+	return 0
+}
+
+func (x *SipSettings) GetSchedule() *SipSchedule {
+	if x != nil {
+		return x.Schedule
+	}
+	return nil
+}
+
+// One span of working time (ADR-0138): it starts on weekday at start_min minutes after midnight
+// and ends at end_min — the same day when end_min > start_min, the next day when end_min <
+// start_min (a night shift, 22:00–02:00 = 1320 → 120). Times are the schedule's time zone.
+type SipScheduleInterval struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Weekday       uint32                 `protobuf:"varint,1,opt,name=weekday,proto3" json:"weekday,omitempty"`                   // 1 = Monday … 7 = Sunday
+	StartMin      uint32                 `protobuf:"varint,2,opt,name=start_min,json=startMin,proto3" json:"start_min,omitempty"` // 0..1439
+	EndMin        uint32                 `protobuf:"varint,3,opt,name=end_min,json=endMin,proto3" json:"end_min,omitempty"`       // 1..1440 (1440 = midnight), never start_min
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SipScheduleInterval) Reset() {
+	*x = SipScheduleInterval{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipScheduleInterval) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipScheduleInterval) ProtoMessage() {}
+
+func (x *SipScheduleInterval) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipScheduleInterval.ProtoReflect.Descriptor instead.
+func (*SipScheduleInterval) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *SipScheduleInterval) GetWeekday() uint32 {
+	if x != nil {
+		return x.Weekday
+	}
+	return 0
+}
+
+func (x *SipScheduleInterval) GetStartMin() uint32 {
+	if x != nil {
+		return x.StartMin
+	}
+	return 0
+}
+
+func (x *SipScheduleInterval) GetEndMin() uint32 {
+	if x != nil {
+		return x.EndMin
+	}
+	return 0
+}
+
+// The working-hours schedule of the inbound entry point (ADR-0138). Off: every inbound call
+// follows the entry point (inbound_target). On: a call that comes outside the working hours
+// follows off_hours instead — after the notice when one is uploaded (any route; a typical
+// one is «hang up» with a message). Checked once, when the call comes in.
+type SipSchedule struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Enabled  bool                   `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	TimeZone string                 `protobuf:"bytes,2,opt,name=time_zone,json=timeZone,proto3" json:"time_zone,omitempty"` // IANA zone; empty in requests = Europe/Moscow
+	// At most 6 intervals starting on one weekday, none overlapping (a night shift counts into the
+	// next day, Sunday's into Monday). Enabled needs at least one.
+	Hours []*SipScheduleInterval `protobuf:"bytes,3,rep,name=hours,proto3" json:"hours,omitempty"`
+	// The Russian production calendar (the table of ADR-0136): a weekday off (a public holiday, a
+	// moved day off) has no working hours; a working Saturday / Sunday works by its own hours, or —
+	// without them — by the first weekday Monday–Friday that has some. Years the table lacks: as
+	// without the calendar.
+	ProductionCalendarRu bool `protobuf:"varint,4,opt,name=production_calendar_ru,json=productionCalendarRu,proto3" json:"production_calendar_ru,omitempty"`
+	// Where an off-hours call goes: a menu, a person or a bot (EXTENSION), a group, or HANGUP
+	// (SipCall.reason "off_hours"); REPEAT is refused. missing: the object was deleted (the call
+	// hangs up).
+	OffHours *SipRouteTarget `protobuf:"bytes,5,opt,name=off_hours,json=offHours,proto3" json:"off_hours,omitempty"`
+	// Output only: the notice played to an off-hours call before its route (empty = none).
+	NoticeFileId     string `protobuf:"bytes,6,opt,name=notice_file_id,json=noticeFileId,proto3" json:"notice_file_id,omitempty"`
+	NoticeDurationMs uint32 `protobuf:"varint,7,opt,name=notice_duration_ms,json=noticeDurationMs,proto3" json:"notice_duration_ms,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *SipSchedule) Reset() {
+	*x = SipSchedule{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipSchedule) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipSchedule) ProtoMessage() {}
+
+func (x *SipSchedule) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipSchedule.ProtoReflect.Descriptor instead.
+func (*SipSchedule) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SipSchedule) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *SipSchedule) GetTimeZone() string {
+	if x != nil {
+		return x.TimeZone
+	}
+	return ""
+}
+
+func (x *SipSchedule) GetHours() []*SipScheduleInterval {
+	if x != nil {
+		return x.Hours
+	}
+	return nil
+}
+
+func (x *SipSchedule) GetProductionCalendarRu() bool {
+	if x != nil {
+		return x.ProductionCalendarRu
+	}
+	return false
+}
+
+func (x *SipSchedule) GetOffHours() *SipRouteTarget {
+	if x != nil {
+		return x.OffHours
+	}
+	return nil
+}
+
+func (x *SipSchedule) GetNoticeFileId() string {
+	if x != nil {
+		return x.NoticeFileId
+	}
+	return ""
+}
+
+func (x *SipSchedule) GetNoticeDurationMs() uint32 {
+	if x != nil {
+		return x.NoticeDurationMs
+	}
+	return 0
+}
+
 // The registration at the provider (REGISTER mode, ADR-0121). The password is never sent back.
 type SipRegistration struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -862,7 +1354,7 @@ type SipRegistration struct {
 
 func (x *SipRegistration) Reset() {
 	*x = SipRegistration{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[1]
+	mi := &file_calaba_v1_sip_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -874,7 +1366,7 @@ func (x *SipRegistration) String() string {
 func (*SipRegistration) ProtoMessage() {}
 
 func (x *SipRegistration) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[1]
+	mi := &file_calaba_v1_sip_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -887,7 +1379,7 @@ func (x *SipRegistration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipRegistration.ProtoReflect.Descriptor instead.
 func (*SipRegistration) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{1}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SipRegistration) GetRegistrar() string {
@@ -983,7 +1475,7 @@ type SipRegistrationInput struct {
 
 func (x *SipRegistrationInput) Reset() {
 	*x = SipRegistrationInput{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[2]
+	mi := &file_calaba_v1_sip_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -995,7 +1487,7 @@ func (x *SipRegistrationInput) String() string {
 func (*SipRegistrationInput) ProtoMessage() {}
 
 func (x *SipRegistrationInput) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[2]
+	mi := &file_calaba_v1_sip_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1008,7 +1500,7 @@ func (x *SipRegistrationInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipRegistrationInput.ProtoReflect.Descriptor instead.
 func (*SipRegistrationInput) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{2}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *SipRegistrationInput) GetRegistrar() string {
@@ -1064,7 +1556,7 @@ type GetSipSettingsResponse struct {
 
 func (x *GetSipSettingsResponse) Reset() {
 	*x = GetSipSettingsResponse{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[3]
+	mi := &file_calaba_v1_sip_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1076,7 +1568,7 @@ func (x *GetSipSettingsResponse) String() string {
 func (*GetSipSettingsResponse) ProtoMessage() {}
 
 func (x *GetSipSettingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[3]
+	mi := &file_calaba_v1_sip_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1089,7 +1581,7 @@ func (x *GetSipSettingsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSipSettingsResponse.ProtoReflect.Descriptor instead.
 func (*GetSipSettingsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{3}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GetSipSettingsResponse) GetSettings() *SipSettings {
@@ -1129,7 +1621,7 @@ type PutSipSettingsRequest struct {
 
 func (x *PutSipSettingsRequest) Reset() {
 	*x = PutSipSettingsRequest{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[4]
+	mi := &file_calaba_v1_sip_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1141,7 +1633,7 @@ func (x *PutSipSettingsRequest) String() string {
 func (*PutSipSettingsRequest) ProtoMessage() {}
 
 func (x *PutSipSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[4]
+	mi := &file_calaba_v1_sip_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1154,7 +1646,7 @@ func (x *PutSipSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutSipSettingsRequest.ProtoReflect.Descriptor instead.
 func (*PutSipSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{4}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *PutSipSettingsRequest) GetEnabled() bool {
@@ -1243,7 +1735,7 @@ type PutSipSettingsResponse struct {
 
 func (x *PutSipSettingsResponse) Reset() {
 	*x = PutSipSettingsResponse{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[5]
+	mi := &file_calaba_v1_sip_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1255,7 +1747,7 @@ func (x *PutSipSettingsResponse) String() string {
 func (*PutSipSettingsResponse) ProtoMessage() {}
 
 func (x *PutSipSettingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[5]
+	mi := &file_calaba_v1_sip_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1268,7 +1760,7 @@ func (x *PutSipSettingsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutSipSettingsResponse.ProtoReflect.Descriptor instead.
 func (*PutSipSettingsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{5}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PutSipSettingsResponse) GetSettings() *SipSettings {
@@ -1295,7 +1787,7 @@ type PutSipRecordingRequest struct {
 
 func (x *PutSipRecordingRequest) Reset() {
 	*x = PutSipRecordingRequest{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[6]
+	mi := &file_calaba_v1_sip_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1307,7 +1799,7 @@ func (x *PutSipRecordingRequest) String() string {
 func (*PutSipRecordingRequest) ProtoMessage() {}
 
 func (x *PutSipRecordingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[6]
+	mi := &file_calaba_v1_sip_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1320,7 +1812,7 @@ func (x *PutSipRecordingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutSipRecordingRequest.ProtoReflect.Descriptor instead.
 func (*PutSipRecordingRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{6}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *PutSipRecordingRequest) GetRecordInbound() bool {
@@ -1346,7 +1838,7 @@ type PutSipRecordingResponse struct {
 
 func (x *PutSipRecordingResponse) Reset() {
 	*x = PutSipRecordingResponse{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[7]
+	mi := &file_calaba_v1_sip_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1358,7 +1850,7 @@ func (x *PutSipRecordingResponse) String() string {
 func (*PutSipRecordingResponse) ProtoMessage() {}
 
 func (x *PutSipRecordingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[7]
+	mi := &file_calaba_v1_sip_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1371,7 +1863,7 @@ func (x *PutSipRecordingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutSipRecordingResponse.ProtoReflect.Descriptor instead.
 func (*PutSipRecordingResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{7}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *PutSipRecordingResponse) GetSettings() *SipSettings {
@@ -1403,7 +1895,7 @@ type TestSipResponse struct {
 
 func (x *TestSipResponse) Reset() {
 	*x = TestSipResponse{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[8]
+	mi := &file_calaba_v1_sip_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1415,7 +1907,7 @@ func (x *TestSipResponse) String() string {
 func (*TestSipResponse) ProtoMessage() {}
 
 func (x *TestSipResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[8]
+	mi := &file_calaba_v1_sip_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1428,7 +1920,7 @@ func (x *TestSipResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TestSipResponse.ProtoReflect.Descriptor instead.
 func (*TestSipResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{8}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *TestSipResponse) GetOk() bool {
@@ -1481,7 +1973,8 @@ type SipCall struct {
 	// Inbound calls (direction IN, ADR-0117). number is the caller's number; status is RINGING
 	// from the moment the line got in (menu and ringing alike) until somebody answers (ACTIVE).
 	// More reasons: "hangup_menu" (a route to «hang up»), "no_input", "no_answer", "no_members",
-	// "loop", "declined" (everybody who rang declined), FAILED "busy_limit", "agent_unavailable",
+	// "loop", "declined" (everybody who rang declined), "off_hours" (outside the schedule's working
+	// hours, its route is «hang up», ADR-0138), FAILED "busy_limit", "agent_unavailable",
 	// "plan", "disabled".
 	AnsweredBy string `protobuf:"bytes,14,opt,name=answered_by,json=answeredBy,proto3" json:"answered_by,omitempty"` // the user who took the call
 	Route      string `protobuf:"bytes,15,opt,name=route,proto3" json:"route,omitempty"`                             // the path for the journal: «menu:<id>/2 → group:<id>»
@@ -1492,13 +1985,35 @@ type SipCall struct {
 	// The provider's Call-ID of an inbound call that came over the registration (ADR-0121); empty
 	// for DIRECT inbound and outbound calls.
 	ProviderCallId string `protobuf:"bytes,18,opt,name=provider_call_id,json=providerCallId,proto3" json:"provider_call_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Caller ID (ADR-0137 §2), output only — in SIP_INBOUND_RING / SIP_CALL_UPDATE of inbound
+	// and personal calls, in the personal call's responses and in READY: the phone book's contact
+	// of the outside number (contact_id, caller_name, caller_company — names as of now), else the
+	// member whose profile phone it is (caller_user_id); empty otherwise and on room calls.
+	CallerName    string `protobuf:"bytes,19,opt,name=caller_name,json=callerName,proto3" json:"caller_name,omitempty"`
+	CallerCompany string `protobuf:"bytes,20,opt,name=caller_company,json=callerCompany,proto3" json:"caller_company,omitempty"`
+	ContactId     string `protobuf:"bytes,21,opt,name=contact_id,json=contactId,proto3" json:"contact_id,omitempty"`
+	CallerUserId  string `protobuf:"bytes,22,opt,name=caller_user_id,json=callerUserId,proto3" json:"caller_user_id,omitempty"`
+	// Where the call comes from (personal: a call from the telephony section, no room).
+	Origin SipCallOrigin `protobuf:"varint,23,opt,name=origin,proto3,enum=calaba.v1.SipCallOrigin" json:"origin,omitempty"`
+	// Inbound calls, output only (SIP_INBOUND_RING, SIP_CALL_UPDATE; ADR-0138) — why the call
+	// rings who it rings: off_hours = it came outside the working hours of the schedule and
+	// follows its off-hours route; via_fallback = the current route was reached through a group's
+	// fallback (ADR-0124: nobody answered in time, everybody busy or declined). Neither: the
+	// regular route (the entry point in working hours, a menu key, a dialed number). Both: an
+	// off-hours route whose group fell back.
+	OffHours    bool `protobuf:"varint,24,opt,name=off_hours,json=offHours,proto3" json:"off_hours,omitempty"`
+	ViaFallback bool `protobuf:"varint,25,opt,name=via_fallback,json=viaFallback,proto3" json:"via_fallback,omitempty"`
+	// A room call dialed with an extension («+7 495 123-45-67 доб. 101», ADR-0046 addendum): the
+	// keys sent as tones after the answer, «,» = a 2 s pause («101», «,2#»). The caller's client
+	// sends them; everyone sees «доб. 101» on the line. Empty = none; number never holds it.
+	Extension     string `protobuf:"bytes,26,opt,name=extension,proto3" json:"extension,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SipCall) Reset() {
 	*x = SipCall{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[9]
+	mi := &file_calaba_v1_sip_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1510,7 +2025,7 @@ func (x *SipCall) String() string {
 func (*SipCall) ProtoMessage() {}
 
 func (x *SipCall) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[9]
+	mi := &file_calaba_v1_sip_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1523,7 +2038,7 @@ func (x *SipCall) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipCall.ProtoReflect.Descriptor instead.
 func (*SipCall) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{9}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *SipCall) GetId() string {
@@ -1652,18 +2167,77 @@ func (x *SipCall) GetProviderCallId() string {
 	return ""
 }
 
+func (x *SipCall) GetCallerName() string {
+	if x != nil {
+		return x.CallerName
+	}
+	return ""
+}
+
+func (x *SipCall) GetCallerCompany() string {
+	if x != nil {
+		return x.CallerCompany
+	}
+	return ""
+}
+
+func (x *SipCall) GetContactId() string {
+	if x != nil {
+		return x.ContactId
+	}
+	return ""
+}
+
+func (x *SipCall) GetCallerUserId() string {
+	if x != nil {
+		return x.CallerUserId
+	}
+	return ""
+}
+
+func (x *SipCall) GetOrigin() SipCallOrigin {
+	if x != nil {
+		return x.Origin
+	}
+	return SipCallOrigin_SIP_CALL_ORIGIN_UNSPECIFIED
+}
+
+func (x *SipCall) GetOffHours() bool {
+	if x != nil {
+		return x.OffHours
+	}
+	return false
+}
+
+func (x *SipCall) GetViaFallback() bool {
+	if x != nil {
+		return x.ViaFallback
+	}
+	return false
+}
+
+func (x *SipCall) GetExtension() string {
+	if x != nil {
+		return x.Extension
+	}
+	return ""
+}
+
 // POST /api/rooms/{id}/calls (PLACE_CALLS + VIEW_ROOM + CONNECT in the room, not a guest; a
 // voice room of a workspace, not archived; the caller has a device in this room's call) →
 // 201 SipCallResponse with status DIALING; SIP_CALL_UPDATE goes to everyone who sees the room
 // on every status change. Errors: 404 no room / DM; 403 no PLACE_CALLS, a guest; 422
 // VALIDATION (field "number": not a phone number) or «not a voice room»; 409 SIP_DISABLED;
 // 409 CONFLICT «join the call first» (the caller is not in this room's call); 409
-// SIP_CALL_ACTIVE; 422 SIP_NUMBER_NOT_ALLOWED; 429 SIP_RATE_LIMITED (20 calls per hour per
-// workspace); 403 WORKSPACE_SUSPENDED. The line rings for up to 45 s; a call lasts 2 h at most.
+// SIP_CALL_ACTIVE; 422 SIP_NUMBER_NOT_ALLOWED; 429 SIP_RATE_LIMITED (SipSettings.out_per_hour
+// calls per hour per workspace, out_per_user_hour per member); 403 WORKSPACE_SUSPENDED. The line rings for up to 45 s; a call lasts 2 h at most.
 type PlaceSipCallRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The number to call: E.164 («+7 916 123-45-67»), or a Russian national number starting
-	// with 8 or 7 (11 digits) — spaces, dashes, dots and brackets are ignored.
+	// with 8 or 7 (11 digits) — spaces, dashes, dots and brackets are ignored. It may end with an
+	// extension: «доб. 101», «ext. 101», «x101», «,101» or «;101» (sip.SplitExtension, vectors in
+	// proto/testdata/phone_numbers.json); the line dials only the number, SipCall.extension keeps
+	// the rest. A bad extension is 422 VALIDATION on «number».
 	Number        string `protobuf:"bytes,1,opt,name=number,proto3" json:"number,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1671,7 +2245,7 @@ type PlaceSipCallRequest struct {
 
 func (x *PlaceSipCallRequest) Reset() {
 	*x = PlaceSipCallRequest{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[10]
+	mi := &file_calaba_v1_sip_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1683,7 +2257,7 @@ func (x *PlaceSipCallRequest) String() string {
 func (*PlaceSipCallRequest) ProtoMessage() {}
 
 func (x *PlaceSipCallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[10]
+	mi := &file_calaba_v1_sip_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1696,7 +2270,7 @@ func (x *PlaceSipCallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlaceSipCallRequest.ProtoReflect.Descriptor instead.
 func (*PlaceSipCallRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{10}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *PlaceSipCallRequest) GetNumber() string {
@@ -1715,7 +2289,7 @@ type SipCallResponse struct {
 
 func (x *SipCallResponse) Reset() {
 	*x = SipCallResponse{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[11]
+	mi := &file_calaba_v1_sip_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1727,7 +2301,7 @@ func (x *SipCallResponse) String() string {
 func (*SipCallResponse) ProtoMessage() {}
 
 func (x *SipCallResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[11]
+	mi := &file_calaba_v1_sip_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1740,7 +2314,7 @@ func (x *SipCallResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipCallResponse.ProtoReflect.Descriptor instead.
 func (*SipCallResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{11}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SipCallResponse) GetCall() *SipCall {
@@ -1771,7 +2345,7 @@ type ListSipCallsResponse struct {
 
 func (x *ListSipCallsResponse) Reset() {
 	*x = ListSipCallsResponse{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[12]
+	mi := &file_calaba_v1_sip_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1783,7 +2357,7 @@ func (x *ListSipCallsResponse) String() string {
 func (*ListSipCallsResponse) ProtoMessage() {}
 
 func (x *ListSipCallsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[12]
+	mi := &file_calaba_v1_sip_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1796,7 +2370,7 @@ func (x *ListSipCallsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSipCallsResponse.ProtoReflect.Descriptor instead.
 func (*ListSipCallsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{12}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListSipCallsResponse) GetCalls() []*SipCall {
@@ -1826,7 +2400,7 @@ type SipCallUpdate struct {
 
 func (x *SipCallUpdate) Reset() {
 	*x = SipCallUpdate{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[13]
+	mi := &file_calaba_v1_sip_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1838,7 +2412,7 @@ func (x *SipCallUpdate) String() string {
 func (*SipCallUpdate) ProtoMessage() {}
 
 func (x *SipCallUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[13]
+	mi := &file_calaba_v1_sip_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1851,7 +2425,7 @@ func (x *SipCallUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipCallUpdate.ProtoReflect.Descriptor instead.
 func (*SipCallUpdate) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{13}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *SipCallUpdate) GetCall() *SipCall {
@@ -1874,7 +2448,7 @@ type SipRouteTarget struct {
 
 func (x *SipRouteTarget) Reset() {
 	*x = SipRouteTarget{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[14]
+	mi := &file_calaba_v1_sip_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1886,7 +2460,7 @@ func (x *SipRouteTarget) String() string {
 func (*SipRouteTarget) ProtoMessage() {}
 
 func (x *SipRouteTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[14]
+	mi := &file_calaba_v1_sip_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1899,7 +2473,7 @@ func (x *SipRouteTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipRouteTarget.ProtoReflect.Descriptor instead.
 func (*SipRouteTarget) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{14}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *SipRouteTarget) GetKind() SipRouteKind {
@@ -1947,7 +2521,7 @@ type SipExtension struct {
 
 func (x *SipExtension) Reset() {
 	*x = SipExtension{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[15]
+	mi := &file_calaba_v1_sip_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1959,7 +2533,7 @@ func (x *SipExtension) String() string {
 func (*SipExtension) ProtoMessage() {}
 
 func (x *SipExtension) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[15]
+	mi := &file_calaba_v1_sip_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1972,7 +2546,7 @@ func (x *SipExtension) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipExtension.ProtoReflect.Descriptor instead.
 func (*SipExtension) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{15}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *SipExtension) GetId() string {
@@ -2055,7 +2629,7 @@ type SipGroupMember struct {
 
 func (x *SipGroupMember) Reset() {
 	*x = SipGroupMember{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[16]
+	mi := &file_calaba_v1_sip_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2067,7 +2641,7 @@ func (x *SipGroupMember) String() string {
 func (*SipGroupMember) ProtoMessage() {}
 
 func (x *SipGroupMember) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[16]
+	mi := &file_calaba_v1_sip_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2080,7 +2654,7 @@ func (x *SipGroupMember) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipGroupMember.ProtoReflect.Descriptor instead.
 func (*SipGroupMember) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{16}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SipGroupMember) GetExtensionId() string {
@@ -2122,7 +2696,7 @@ type SipGroup struct {
 
 func (x *SipGroup) Reset() {
 	*x = SipGroup{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[17]
+	mi := &file_calaba_v1_sip_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2134,7 +2708,7 @@ func (x *SipGroup) String() string {
 func (*SipGroup) ProtoMessage() {}
 
 func (x *SipGroup) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[17]
+	mi := &file_calaba_v1_sip_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2147,7 +2721,7 @@ func (x *SipGroup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipGroup.ProtoReflect.Descriptor instead.
 func (*SipGroup) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{17}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SipGroup) GetId() string {
@@ -2244,7 +2818,7 @@ type SipIvrItem struct {
 
 func (x *SipIvrItem) Reset() {
 	*x = SipIvrItem{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[18]
+	mi := &file_calaba_v1_sip_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2256,7 +2830,7 @@ func (x *SipIvrItem) String() string {
 func (*SipIvrItem) ProtoMessage() {}
 
 func (x *SipIvrItem) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[18]
+	mi := &file_calaba_v1_sip_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2269,7 +2843,7 @@ func (x *SipIvrItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipIvrItem.ProtoReflect.Descriptor instead.
 func (*SipIvrItem) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{18}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *SipIvrItem) GetDigit() string {
@@ -2322,7 +2896,7 @@ type SipIvrMenu struct {
 
 func (x *SipIvrMenu) Reset() {
 	*x = SipIvrMenu{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[19]
+	mi := &file_calaba_v1_sip_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2334,7 +2908,7 @@ func (x *SipIvrMenu) String() string {
 func (*SipIvrMenu) ProtoMessage() {}
 
 func (x *SipIvrMenu) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[19]
+	mi := &file_calaba_v1_sip_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2347,7 +2921,7 @@ func (x *SipIvrMenu) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipIvrMenu.ProtoReflect.Descriptor instead.
 func (*SipIvrMenu) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{19}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *SipIvrMenu) GetId() string {
@@ -2466,7 +3040,7 @@ type ListSipExtensionsResponse struct {
 
 func (x *ListSipExtensionsResponse) Reset() {
 	*x = ListSipExtensionsResponse{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[20]
+	mi := &file_calaba_v1_sip_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2478,7 +3052,7 @@ func (x *ListSipExtensionsResponse) String() string {
 func (*ListSipExtensionsResponse) ProtoMessage() {}
 
 func (x *ListSipExtensionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[20]
+	mi := &file_calaba_v1_sip_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2491,7 +3065,7 @@ func (x *ListSipExtensionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSipExtensionsResponse.ProtoReflect.Descriptor instead.
 func (*ListSipExtensionsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{20}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ListSipExtensionsResponse) GetExtensions() []*SipExtension {
@@ -2518,7 +3092,7 @@ type CreateSipExtensionRequest struct {
 
 func (x *CreateSipExtensionRequest) Reset() {
 	*x = CreateSipExtensionRequest{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[21]
+	mi := &file_calaba_v1_sip_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2530,7 +3104,7 @@ func (x *CreateSipExtensionRequest) String() string {
 func (*CreateSipExtensionRequest) ProtoMessage() {}
 
 func (x *CreateSipExtensionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[21]
+	mi := &file_calaba_v1_sip_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2543,7 +3117,7 @@ func (x *CreateSipExtensionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateSipExtensionRequest.ProtoReflect.Descriptor instead.
 func (*CreateSipExtensionRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{21}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *CreateSipExtensionRequest) GetNumber() string {
@@ -2590,7 +3164,7 @@ type UpdateSipExtensionRequest struct {
 
 func (x *UpdateSipExtensionRequest) Reset() {
 	*x = UpdateSipExtensionRequest{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[22]
+	mi := &file_calaba_v1_sip_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2602,7 +3176,7 @@ func (x *UpdateSipExtensionRequest) String() string {
 func (*UpdateSipExtensionRequest) ProtoMessage() {}
 
 func (x *UpdateSipExtensionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[22]
+	mi := &file_calaba_v1_sip_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2615,7 +3189,7 @@ func (x *UpdateSipExtensionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateSipExtensionRequest.ProtoReflect.Descriptor instead.
 func (*UpdateSipExtensionRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{22}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *UpdateSipExtensionRequest) GetNumber() string {
@@ -2655,7 +3229,7 @@ type SipExtensionResponse struct {
 
 func (x *SipExtensionResponse) Reset() {
 	*x = SipExtensionResponse{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[23]
+	mi := &file_calaba_v1_sip_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2667,7 +3241,7 @@ func (x *SipExtensionResponse) String() string {
 func (*SipExtensionResponse) ProtoMessage() {}
 
 func (x *SipExtensionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[23]
+	mi := &file_calaba_v1_sip_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2680,7 +3254,7 @@ func (x *SipExtensionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipExtensionResponse.ProtoReflect.Descriptor instead.
 func (*SipExtensionResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{23}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *SipExtensionResponse) GetExtension() *SipExtension {
@@ -2700,7 +3274,7 @@ type ListSipGroupsResponse struct {
 
 func (x *ListSipGroupsResponse) Reset() {
 	*x = ListSipGroupsResponse{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[24]
+	mi := &file_calaba_v1_sip_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2712,7 +3286,7 @@ func (x *ListSipGroupsResponse) String() string {
 func (*ListSipGroupsResponse) ProtoMessage() {}
 
 func (x *ListSipGroupsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[24]
+	mi := &file_calaba_v1_sip_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2725,7 +3299,7 @@ func (x *ListSipGroupsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSipGroupsResponse.ProtoReflect.Descriptor instead.
 func (*ListSipGroupsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{24}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ListSipGroupsResponse) GetGroups() []*SipGroup {
@@ -2745,7 +3319,7 @@ type SipGroupMembers struct {
 
 func (x *SipGroupMembers) Reset() {
 	*x = SipGroupMembers{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[25]
+	mi := &file_calaba_v1_sip_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2757,7 +3331,7 @@ func (x *SipGroupMembers) String() string {
 func (*SipGroupMembers) ProtoMessage() {}
 
 func (x *SipGroupMembers) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[25]
+	mi := &file_calaba_v1_sip_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2770,7 +3344,7 @@ func (x *SipGroupMembers) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipGroupMembers.ProtoReflect.Descriptor instead.
 func (*SipGroupMembers) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{25}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *SipGroupMembers) GetExtensionIds() []string {
@@ -2801,7 +3375,7 @@ type CreateSipGroupRequest struct {
 
 func (x *CreateSipGroupRequest) Reset() {
 	*x = CreateSipGroupRequest{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[26]
+	mi := &file_calaba_v1_sip_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2813,7 +3387,7 @@ func (x *CreateSipGroupRequest) String() string {
 func (*CreateSipGroupRequest) ProtoMessage() {}
 
 func (x *CreateSipGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[26]
+	mi := &file_calaba_v1_sip_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2826,7 +3400,7 @@ func (x *CreateSipGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateSipGroupRequest.ProtoReflect.Descriptor instead.
 func (*CreateSipGroupRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{26}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *CreateSipGroupRequest) GetName() string {
@@ -2912,7 +3486,7 @@ type UpdateSipGroupRequest struct {
 
 func (x *UpdateSipGroupRequest) Reset() {
 	*x = UpdateSipGroupRequest{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[27]
+	mi := &file_calaba_v1_sip_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2924,7 +3498,7 @@ func (x *UpdateSipGroupRequest) String() string {
 func (*UpdateSipGroupRequest) ProtoMessage() {}
 
 func (x *UpdateSipGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[27]
+	mi := &file_calaba_v1_sip_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2937,7 +3511,7 @@ func (x *UpdateSipGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateSipGroupRequest.ProtoReflect.Descriptor instead.
 func (*UpdateSipGroupRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{27}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *UpdateSipGroupRequest) GetName() string {
@@ -3012,7 +3586,7 @@ type SipGroupResponse struct {
 
 func (x *SipGroupResponse) Reset() {
 	*x = SipGroupResponse{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[28]
+	mi := &file_calaba_v1_sip_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3024,7 +3598,7 @@ func (x *SipGroupResponse) String() string {
 func (*SipGroupResponse) ProtoMessage() {}
 
 func (x *SipGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[28]
+	mi := &file_calaba_v1_sip_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3037,7 +3611,7 @@ func (x *SipGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipGroupResponse.ProtoReflect.Descriptor instead.
 func (*SipGroupResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{28}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *SipGroupResponse) GetGroup() *SipGroup {
@@ -3057,7 +3631,7 @@ type ListSipIvrMenusResponse struct {
 
 func (x *ListSipIvrMenusResponse) Reset() {
 	*x = ListSipIvrMenusResponse{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[29]
+	mi := &file_calaba_v1_sip_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3069,7 +3643,7 @@ func (x *ListSipIvrMenusResponse) String() string {
 func (*ListSipIvrMenusResponse) ProtoMessage() {}
 
 func (x *ListSipIvrMenusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[29]
+	mi := &file_calaba_v1_sip_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3082,7 +3656,7 @@ func (x *ListSipIvrMenusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSipIvrMenusResponse.ProtoReflect.Descriptor instead.
 func (*ListSipIvrMenusResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{29}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ListSipIvrMenusResponse) GetMenus() []*SipIvrMenu {
@@ -3102,7 +3676,7 @@ type SipIvrItems struct {
 
 func (x *SipIvrItems) Reset() {
 	*x = SipIvrItems{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[30]
+	mi := &file_calaba_v1_sip_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3114,7 +3688,7 @@ func (x *SipIvrItems) String() string {
 func (*SipIvrItems) ProtoMessage() {}
 
 func (x *SipIvrItems) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[30]
+	mi := &file_calaba_v1_sip_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3127,7 +3701,7 @@ func (x *SipIvrItems) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipIvrItems.ProtoReflect.Descriptor instead.
 func (*SipIvrItems) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{30}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *SipIvrItems) GetItems() []*SipIvrItem {
@@ -3162,7 +3736,7 @@ type CreateSipIvrMenuRequest struct {
 
 func (x *CreateSipIvrMenuRequest) Reset() {
 	*x = CreateSipIvrMenuRequest{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[31]
+	mi := &file_calaba_v1_sip_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3174,7 +3748,7 @@ func (x *CreateSipIvrMenuRequest) String() string {
 func (*CreateSipIvrMenuRequest) ProtoMessage() {}
 
 func (x *CreateSipIvrMenuRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[31]
+	mi := &file_calaba_v1_sip_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3187,7 +3761,7 @@ func (x *CreateSipIvrMenuRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateSipIvrMenuRequest.ProtoReflect.Descriptor instead.
 func (*CreateSipIvrMenuRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{31}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *CreateSipIvrMenuRequest) GetName() string {
@@ -3267,7 +3841,7 @@ type UpdateSipIvrMenuRequest struct {
 
 func (x *UpdateSipIvrMenuRequest) Reset() {
 	*x = UpdateSipIvrMenuRequest{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[32]
+	mi := &file_calaba_v1_sip_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3279,7 +3853,7 @@ func (x *UpdateSipIvrMenuRequest) String() string {
 func (*UpdateSipIvrMenuRequest) ProtoMessage() {}
 
 func (x *UpdateSipIvrMenuRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[32]
+	mi := &file_calaba_v1_sip_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3292,7 +3866,7 @@ func (x *UpdateSipIvrMenuRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateSipIvrMenuRequest.ProtoReflect.Descriptor instead.
 func (*UpdateSipIvrMenuRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{32}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *UpdateSipIvrMenuRequest) GetName() string {
@@ -3360,7 +3934,7 @@ type SipIvrMenuResponse struct {
 
 func (x *SipIvrMenuResponse) Reset() {
 	*x = SipIvrMenuResponse{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[33]
+	mi := &file_calaba_v1_sip_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3372,7 +3946,7 @@ func (x *SipIvrMenuResponse) String() string {
 func (*SipIvrMenuResponse) ProtoMessage() {}
 
 func (x *SipIvrMenuResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[33]
+	mi := &file_calaba_v1_sip_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3385,7 +3959,7 @@ func (x *SipIvrMenuResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipIvrMenuResponse.ProtoReflect.Descriptor instead.
 func (*SipIvrMenuResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{33}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *SipIvrMenuResponse) GetMenu() *SipIvrMenu {
@@ -3423,7 +3997,7 @@ type PutSipInboundRequest struct {
 
 func (x *PutSipInboundRequest) Reset() {
 	*x = PutSipInboundRequest{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[34]
+	mi := &file_calaba_v1_sip_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3435,7 +4009,7 @@ func (x *PutSipInboundRequest) String() string {
 func (*PutSipInboundRequest) ProtoMessage() {}
 
 func (x *PutSipInboundRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[34]
+	mi := &file_calaba_v1_sip_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3448,7 +4022,7 @@ func (x *PutSipInboundRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutSipInboundRequest.ProtoReflect.Descriptor instead.
 func (*PutSipInboundRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{34}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *PutSipInboundRequest) GetEnabled() bool {
@@ -3495,7 +4069,7 @@ type PutSipInboundResponse struct {
 
 func (x *PutSipInboundResponse) Reset() {
 	*x = PutSipInboundResponse{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[35]
+	mi := &file_calaba_v1_sip_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3507,7 +4081,7 @@ func (x *PutSipInboundResponse) String() string {
 func (*PutSipInboundResponse) ProtoMessage() {}
 
 func (x *PutSipInboundResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[35]
+	mi := &file_calaba_v1_sip_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3520,7 +4094,7 @@ func (x *PutSipInboundResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutSipInboundResponse.ProtoReflect.Descriptor instead.
 func (*PutSipInboundResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{35}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *PutSipInboundResponse) GetSettings() *SipSettings {
@@ -3544,7 +4118,7 @@ type SipInboundRing struct {
 
 func (x *SipInboundRing) Reset() {
 	*x = SipInboundRing{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[36]
+	mi := &file_calaba_v1_sip_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3556,7 +4130,7 @@ func (x *SipInboundRing) String() string {
 func (*SipInboundRing) ProtoMessage() {}
 
 func (x *SipInboundRing) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[36]
+	mi := &file_calaba_v1_sip_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3569,7 +4143,7 @@ func (x *SipInboundRing) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipInboundRing.ProtoReflect.Descriptor instead.
 func (*SipInboundRing) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{36}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *SipInboundRing) GetCall() *SipCall {
@@ -3598,7 +4172,7 @@ type SipInboundAcceptResponse struct {
 
 func (x *SipInboundAcceptResponse) Reset() {
 	*x = SipInboundAcceptResponse{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[37]
+	mi := &file_calaba_v1_sip_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3610,7 +4184,7 @@ func (x *SipInboundAcceptResponse) String() string {
 func (*SipInboundAcceptResponse) ProtoMessage() {}
 
 func (x *SipInboundAcceptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[37]
+	mi := &file_calaba_v1_sip_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3623,7 +4197,7 @@ func (x *SipInboundAcceptResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipInboundAcceptResponse.ProtoReflect.Descriptor instead.
 func (*SipInboundAcceptResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{37}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *SipInboundAcceptResponse) GetCall() *SipCall {
@@ -3670,7 +4244,7 @@ type TransferSipCallRequest struct {
 
 func (x *TransferSipCallRequest) Reset() {
 	*x = TransferSipCallRequest{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[38]
+	mi := &file_calaba_v1_sip_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3682,7 +4256,7 @@ func (x *TransferSipCallRequest) String() string {
 func (*TransferSipCallRequest) ProtoMessage() {}
 
 func (x *TransferSipCallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[38]
+	mi := &file_calaba_v1_sip_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3695,7 +4269,7 @@ func (x *TransferSipCallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferSipCallRequest.ProtoReflect.Descriptor instead.
 func (*TransferSipCallRequest) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{38}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *TransferSipCallRequest) GetUserId() string {
@@ -3737,7 +4311,7 @@ type ListSipActiveCallsResponse struct {
 
 func (x *ListSipActiveCallsResponse) Reset() {
 	*x = ListSipActiveCallsResponse{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[39]
+	mi := &file_calaba_v1_sip_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3749,7 +4323,7 @@ func (x *ListSipActiveCallsResponse) String() string {
 func (*ListSipActiveCallsResponse) ProtoMessage() {}
 
 func (x *ListSipActiveCallsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[39]
+	mi := &file_calaba_v1_sip_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3762,7 +4336,7 @@ func (x *ListSipActiveCallsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSipActiveCallsResponse.ProtoReflect.Descriptor instead.
 func (*ListSipActiveCallsResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{39}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *ListSipActiveCallsResponse) GetCalls() []*SipActiveCall {
@@ -3785,7 +4359,7 @@ type SipActiveCall struct {
 
 func (x *SipActiveCall) Reset() {
 	*x = SipActiveCall{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[40]
+	mi := &file_calaba_v1_sip_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3797,7 +4371,7 @@ func (x *SipActiveCall) String() string {
 func (*SipActiveCall) ProtoMessage() {}
 
 func (x *SipActiveCall) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[40]
+	mi := &file_calaba_v1_sip_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3810,7 +4384,7 @@ func (x *SipActiveCall) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipActiveCall.ProtoReflect.Descriptor instead.
 func (*SipActiveCall) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{40}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *SipActiveCall) GetCall() *SipCall {
@@ -3860,7 +4434,7 @@ type SipCallsChanged struct {
 
 func (x *SipCallsChanged) Reset() {
 	*x = SipCallsChanged{}
-	mi := &file_calaba_v1_sip_proto_msgTypes[41]
+	mi := &file_calaba_v1_sip_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3872,7 +4446,7 @@ func (x *SipCallsChanged) String() string {
 func (*SipCallsChanged) ProtoMessage() {}
 
 func (x *SipCallsChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_sip_proto_msgTypes[41]
+	mi := &file_calaba_v1_sip_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3885,7 +4459,7 @@ func (x *SipCallsChanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SipCallsChanged.ProtoReflect.Descriptor instead.
 func (*SipCallsChanged) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{41}
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *SipCallsChanged) GetWorkspaceId() string {
@@ -3895,11 +4469,1662 @@ func (x *SipCallsChanged) GetWorkspaceId() string {
 	return ""
 }
 
+type SipCallEvent struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Seq   uint32                 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
+	// Unset: a call from before the journal; its steps are parsed from SipCall.route, in order
+	// but without times.
+	At            *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=at,proto3" json:"at,omitempty"`
+	Kind          SipCallEventKind       `protobuf:"varint,3,opt,name=kind,proto3,enum=calaba.v1.SipCallEventKind" json:"kind,omitempty"`
+	UserId        string                 `protobuf:"bytes,4,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	PeerUserId    string                 `protobuf:"bytes,5,opt,name=peer_user_id,json=peerUserId,proto3" json:"peer_user_id,omitempty"`
+	TargetKind    SipCallTargetKind      `protobuf:"varint,6,opt,name=target_kind,json=targetKind,proto3,enum=calaba.v1.SipCallTargetKind" json:"target_kind,omitempty"`
+	TargetId      string                 `protobuf:"bytes,7,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`       // empty: unknown (deleted, or a call from before the journal)
+	TargetName    string                 `protobuf:"bytes,8,opt,name=target_name,json=targetName,proto3" json:"target_name,omitempty"` // the name at the time of the call; ≤ 64 characters
+	Digits        string                 `protobuf:"bytes,9,opt,name=digits,proto3" json:"digits,omitempty"`
+	Reason        string                 `protobuf:"bytes,10,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SipCallEvent) Reset() {
+	*x = SipCallEvent{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipCallEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipCallEvent) ProtoMessage() {}
+
+func (x *SipCallEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipCallEvent.ProtoReflect.Descriptor instead.
+func (*SipCallEvent) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *SipCallEvent) GetSeq() uint32 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *SipCallEvent) GetAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.At
+	}
+	return nil
+}
+
+func (x *SipCallEvent) GetKind() SipCallEventKind {
+	if x != nil {
+		return x.Kind
+	}
+	return SipCallEventKind_SIP_CALL_EVENT_KIND_UNSPECIFIED
+}
+
+func (x *SipCallEvent) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *SipCallEvent) GetPeerUserId() string {
+	if x != nil {
+		return x.PeerUserId
+	}
+	return ""
+}
+
+func (x *SipCallEvent) GetTargetKind() SipCallTargetKind {
+	if x != nil {
+		return x.TargetKind
+	}
+	return SipCallTargetKind_SIP_CALL_TARGET_KIND_UNSPECIFIED
+}
+
+func (x *SipCallEvent) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
+	}
+	return ""
+}
+
+func (x *SipCallEvent) GetTargetName() string {
+	if x != nil {
+		return x.TargetName
+	}
+	return ""
+}
+
+func (x *SipCallEvent) GetDigits() string {
+	if x != nil {
+		return x.Digits
+	}
+	return ""
+}
+
+func (x *SipCallEvent) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+// An employee of a call and their part in it.
+type SipCallParty struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Placed        bool                   `protobuf:"varint,2,opt,name=placed,proto3" json:"placed,omitempty"`           // placed the call
+	Rang          bool                   `protobuf:"varint,3,opt,name=rang,proto3" json:"rang,omitempty"`               // the call rang them
+	Answered      bool                   `protobuf:"varint,4,opt,name=answered,proto3" json:"answered,omitempty"`       // answered it (or took a transfer)
+	Transferred   bool                   `protobuf:"varint,5,opt,name=transferred,proto3" json:"transferred,omitempty"` // handed it over
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SipCallParty) Reset() {
+	*x = SipCallParty{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipCallParty) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipCallParty) ProtoMessage() {}
+
+func (x *SipCallParty) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipCallParty.ProtoReflect.Descriptor instead.
+func (*SipCallParty) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *SipCallParty) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *SipCallParty) GetPlaced() bool {
+	if x != nil {
+		return x.Placed
+	}
+	return false
+}
+
+func (x *SipCallParty) GetRang() bool {
+	if x != nil {
+		return x.Rang
+	}
+	return false
+}
+
+func (x *SipCallParty) GetAnswered() bool {
+	if x != nil {
+		return x.Answered
+	}
+	return false
+}
+
+func (x *SipCallParty) GetTransferred() bool {
+	if x != nil {
+		return x.Transferred
+	}
+	return false
+}
+
+// A contact of the workspace's phone book (ADR-0137 §2).
+type SipContactRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Company       string                 `protobuf:"bytes,3,opt,name=company,proto3" json:"company,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SipContactRef) Reset() {
+	*x = SipContactRef{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipContactRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipContactRef) ProtoMessage() {}
+
+func (x *SipContactRef) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipContactRef.ProtoReflect.Descriptor instead.
+func (*SipContactRef) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *SipContactRef) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SipContactRef) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SipContactRef) GetCompany() string {
+	if x != nil {
+		return x.Company
+	}
+	return ""
+}
+
+// A row of the journal: the call and what the list shows of it, without its events.
+type SipJournalEntry struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Call         *SipCall               `protobuf:"bytes,1,opt,name=call,proto3" json:"call,omitempty"`
+	Origin       SipCallOrigin          `protobuf:"varint,2,opt,name=origin,proto3,enum=calaba.v1.SipCallOrigin" json:"origin,omitempty"`
+	PeerE164     string                 `protobuf:"bytes,3,opt,name=peer_e164,json=peerE164,proto3" json:"peer_e164,omitempty"`               // the outside party's number, E.164; empty: not a number (hidden)
+	Contact      *SipContactRef         `protobuf:"bytes,4,opt,name=contact,proto3" json:"contact,omitempty"`                                 // the contact of peer_e164, names as of now
+	MemberUserId string                 `protobuf:"bytes,5,opt,name=member_user_id,json=memberUserId,proto3" json:"member_user_id,omitempty"` // peer_e164 is an employee's profile phone (never to bots)
+	// Waiting: from the start to the answer (menu and ringing), for a call nobody answered to its
+	// end; talking: from the answer to the end (0 while live or never answered).
+	WaitMs uint32 `protobuf:"varint,6,opt,name=wait_ms,json=waitMs,proto3" json:"wait_ms,omitempty"`
+	TalkMs uint32 `protobuf:"varint,7,opt,name=talk_ms,json=talkMs,proto3" json:"talk_ms,omitempty"`
+	// An inbound call nobody answered after it rang somebody, or that ended in a menu (no input,
+	// a route to «hang up»). A call a colleague answered is not missed.
+	Missed        bool            `protobuf:"varint,8,opt,name=missed,proto3" json:"missed,omitempty"`
+	Parties       []*SipCallParty `protobuf:"bytes,9,rep,name=parties,proto3" json:"parties,omitempty"`
+	HasEvents     bool            `protobuf:"varint,10,opt,name=has_events,json=hasEvents,proto3" json:"has_events,omitempty"` // false: a call from before the journal (the detail parses its route)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SipJournalEntry) Reset() {
+	*x = SipJournalEntry{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipJournalEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipJournalEntry) ProtoMessage() {}
+
+func (x *SipJournalEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipJournalEntry.ProtoReflect.Descriptor instead.
+func (*SipJournalEntry) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *SipJournalEntry) GetCall() *SipCall {
+	if x != nil {
+		return x.Call
+	}
+	return nil
+}
+
+func (x *SipJournalEntry) GetOrigin() SipCallOrigin {
+	if x != nil {
+		return x.Origin
+	}
+	return SipCallOrigin_SIP_CALL_ORIGIN_UNSPECIFIED
+}
+
+func (x *SipJournalEntry) GetPeerE164() string {
+	if x != nil {
+		return x.PeerE164
+	}
+	return ""
+}
+
+func (x *SipJournalEntry) GetContact() *SipContactRef {
+	if x != nil {
+		return x.Contact
+	}
+	return nil
+}
+
+func (x *SipJournalEntry) GetMemberUserId() string {
+	if x != nil {
+		return x.MemberUserId
+	}
+	return ""
+}
+
+func (x *SipJournalEntry) GetWaitMs() uint32 {
+	if x != nil {
+		return x.WaitMs
+	}
+	return 0
+}
+
+func (x *SipJournalEntry) GetTalkMs() uint32 {
+	if x != nil {
+		return x.TalkMs
+	}
+	return 0
+}
+
+func (x *SipJournalEntry) GetMissed() bool {
+	if x != nil {
+		return x.Missed
+	}
+	return false
+}
+
+func (x *SipJournalEntry) GetParties() []*SipCallParty {
+	if x != nil {
+		return x.Parties
+	}
+	return nil
+}
+
+func (x *SipJournalEntry) GetHasEvents() bool {
+	if x != nil {
+		return x.HasEvents
+	}
+	return false
+}
+
+type ListSipJournalResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entries       []*SipJournalEntry     `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	NextCursor    string                 `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"` // empty = no more
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSipJournalResponse) Reset() {
+	*x = ListSipJournalResponse{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSipJournalResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSipJournalResponse) ProtoMessage() {}
+
+func (x *ListSipJournalResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSipJournalResponse.ProtoReflect.Descriptor instead.
+func (*ListSipJournalResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *ListSipJournalResponse) GetEntries() []*SipJournalEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+func (x *ListSipJournalResponse) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
+}
+
+// The recording of a call (ADR-0131), only when the reader may view its Disk file.
+type SipJournalRecording struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FileId        string                 `protobuf:"bytes,1,opt,name=file_id,json=fileId,proto3" json:"file_id,omitempty"`
+	DiskItemId    string                 `protobuf:"bytes,2,opt,name=disk_item_id,json=diskItemId,proto3" json:"disk_item_id,omitempty"`
+	DurationMs    uint32                 `protobuf:"varint,3,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SipJournalRecording) Reset() {
+	*x = SipJournalRecording{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipJournalRecording) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipJournalRecording) ProtoMessage() {}
+
+func (x *SipJournalRecording) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipJournalRecording.ProtoReflect.Descriptor instead.
+func (*SipJournalRecording) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *SipJournalRecording) GetFileId() string {
+	if x != nil {
+		return x.FileId
+	}
+	return ""
+}
+
+func (x *SipJournalRecording) GetDiskItemId() string {
+	if x != nil {
+		return x.DiskItemId
+	}
+	return ""
+}
+
+func (x *SipJournalRecording) GetDurationMs() uint32 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
+}
+
+type GetSipJournalEntryResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entry         *SipJournalEntry       `protobuf:"bytes,1,opt,name=entry,proto3" json:"entry,omitempty"`
+	Events        []*SipCallEvent        `protobuf:"bytes,2,rep,name=events,proto3" json:"events,omitempty"` // in order
+	Recording     *SipJournalRecording   `protobuf:"bytes,3,opt,name=recording,proto3" json:"recording,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSipJournalEntryResponse) Reset() {
+	*x = GetSipJournalEntryResponse{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSipJournalEntryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSipJournalEntryResponse) ProtoMessage() {}
+
+func (x *GetSipJournalEntryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSipJournalEntryResponse.ProtoReflect.Descriptor instead.
+func (*GetSipJournalEntryResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *GetSipJournalEntryResponse) GetEntry() *SipJournalEntry {
+	if x != nil {
+		return x.Entry
+	}
+	return nil
+}
+
+func (x *GetSipJournalEntryResponse) GetEvents() []*SipCallEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *GetSipJournalEntryResponse) GetRecording() *SipJournalRecording {
+	if x != nil {
+		return x.Recording
+	}
+	return nil
+}
+
+// PUT /api/workspaces/{id}/sip/schedule (MANAGE_INTEGRATIONS, the telephony plan; the provider
+// settings saved first, else 409 CONFLICT) → 200 PutSipScheduleResponse: the working-hours
+// schedule of the entry point (ADR-0138), replaced as a whole. 422 VALIDATION: field
+// "timeZone" (not an IANA zone), "hours" (out of range, overlapping, more than 6 a day, none
+// while enabled), "offHours" (unknown target, REPEAT), "noticeSourceFileId" (as a menu's
+// prompt: the caller's own upload, MP3 / Ogg / WAV up to 3 minutes).
+type PutSipScheduleRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Schedule *SipSchedule           `protobuf:"bytes,1,opt,name=schedule,proto3" json:"schedule,omitempty"` // notice_file_id / notice_duration_ms are ignored
+	// The off-hours notice: unset = keep it, "" = remove it, an id = the caller's upload,
+	// converted like a menu's prompt.
+	NoticeSourceFileId *string `protobuf:"bytes,2,opt,name=notice_source_file_id,json=noticeSourceFileId,proto3,oneof" json:"notice_source_file_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *PutSipScheduleRequest) Reset() {
+	*x = PutSipScheduleRequest{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutSipScheduleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutSipScheduleRequest) ProtoMessage() {}
+
+func (x *PutSipScheduleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutSipScheduleRequest.ProtoReflect.Descriptor instead.
+func (*PutSipScheduleRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *PutSipScheduleRequest) GetSchedule() *SipSchedule {
+	if x != nil {
+		return x.Schedule
+	}
+	return nil
+}
+
+func (x *PutSipScheduleRequest) GetNoticeSourceFileId() string {
+	if x != nil && x.NoticeSourceFileId != nil {
+		return *x.NoticeSourceFileId
+	}
+	return ""
+}
+
+type PutSipScheduleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Settings      *SipSettings           `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutSipScheduleResponse) Reset() {
+	*x = PutSipScheduleResponse{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutSipScheduleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutSipScheduleResponse) ProtoMessage() {}
+
+func (x *PutSipScheduleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutSipScheduleResponse.ProtoReflect.Descriptor instead.
+func (*PutSipScheduleResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *PutSipScheduleResponse) GetSettings() *SipSettings {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+type PutSipPolicyRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// How long calls are kept: 1, 3, 6, 12, 24 or 36 months (0 = 12). Older calls are deleted
+	// within an hour (contacts: those without calls and edits in the period).
+	RetentionMonths uint32 `protobuf:"varint,1,opt,name=retention_months,json=retentionMonths,proto3" json:"retention_months,omitempty"`
+	OutPerHour      uint32 `protobuf:"varint,2,opt,name=out_per_hour,json=outPerHour,proto3" json:"out_per_hour,omitempty"`               // outbound calls per hour of the workspace, 1..1000 (0 = 120)
+	OutPerUserHour  uint32 `protobuf:"varint,3,opt,name=out_per_user_hour,json=outPerUserHour,proto3" json:"out_per_user_hour,omitempty"` // outbound calls per hour of one member, 1..1000 (0 = 30)
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *PutSipPolicyRequest) Reset() {
+	*x = PutSipPolicyRequest{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutSipPolicyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutSipPolicyRequest) ProtoMessage() {}
+
+func (x *PutSipPolicyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutSipPolicyRequest.ProtoReflect.Descriptor instead.
+func (*PutSipPolicyRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *PutSipPolicyRequest) GetRetentionMonths() uint32 {
+	if x != nil {
+		return x.RetentionMonths
+	}
+	return 0
+}
+
+func (x *PutSipPolicyRequest) GetOutPerHour() uint32 {
+	if x != nil {
+		return x.OutPerHour
+	}
+	return 0
+}
+
+func (x *PutSipPolicyRequest) GetOutPerUserHour() uint32 {
+	if x != nil {
+		return x.OutPerUserHour
+	}
+	return 0
+}
+
+type PutSipPolicyResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Settings      *SipSettings           `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutSipPolicyResponse) Reset() {
+	*x = PutSipPolicyResponse{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutSipPolicyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutSipPolicyResponse) ProtoMessage() {}
+
+func (x *PutSipPolicyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutSipPolicyResponse.ProtoReflect.Descriptor instead.
+func (*PutSipPolicyResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *PutSipPolicyResponse) GetSettings() *SipSettings {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+// SIP_JOURNAL_ENTRY: a call appeared, was answered / transferred, or ended (ADR-0137 §1). On the
+// workspace channel to the sessions of members with VIEW_JOURNALS who can view the call's room
+// (if any) and of the call's parties — once per session; never guests, never bots (they read
+// REST). Clients put the entry into a loaded first page when their filters let it in, and
+// re-read an open detail of that call.
+type SipJournalChange struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entry         *SipJournalEntry       `protobuf:"bytes,1,opt,name=entry,proto3" json:"entry,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SipJournalChange) Reset() {
+	*x = SipJournalChange{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipJournalChange) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipJournalChange) ProtoMessage() {}
+
+func (x *SipJournalChange) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipJournalChange.ProtoReflect.Descriptor instead.
+func (*SipJournalChange) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *SipJournalChange) GetEntry() *SipJournalEntry {
+	if x != nil {
+		return x.Entry
+	}
+	return nil
+}
+
+// SIP_MISSED_CHANGED: the member's missed badge of the workspace changed (a call that rang them
+// was missed, or they looked at «Recent» on another device). To the member's user channel.
+type SipMissedChanged struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Count         uint32                 `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SipMissedChanged) Reset() {
+	*x = SipMissedChanged{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipMissedChanged) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipMissedChanged) ProtoMessage() {}
+
+func (x *SipMissedChanged) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipMissedChanged.ProtoReflect.Descriptor instead.
+func (*SipMissedChanged) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *SipMissedChanged) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *SipMissedChanged) GetCount() uint32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+type SipContactPhone struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// E.164 in responses. In requests: E.164, a Russian national number (8 / 7 and 10 digits), or
+	// 10 digits starting with 9 when the workspace's caller ID is a +7 number; spaces, dashes,
+	// dots and brackets are ignored.
+	Number        string        `protobuf:"bytes,1,opt,name=number,proto3" json:"number,omitempty"`
+	Label         SipPhoneLabel `protobuf:"varint,2,opt,name=label,proto3,enum=calaba.v1.SipPhoneLabel" json:"label,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SipContactPhone) Reset() {
+	*x = SipContactPhone{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipContactPhone) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipContactPhone) ProtoMessage() {}
+
+func (x *SipContactPhone) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipContactPhone.ProtoReflect.Descriptor instead.
+func (*SipContactPhone) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *SipContactPhone) GetNumber() string {
+	if x != nil {
+		return x.Number
+	}
+	return ""
+}
+
+func (x *SipContactPhone) GetLabel() SipPhoneLabel {
+	if x != nil {
+		return x.Label
+	}
+	return SipPhoneLabel_SIP_PHONE_LABEL_UNSPECIFIED
+}
+
+type SipContact struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	WorkspaceId   string                 `protobuf:"bytes,2,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`       // ≤ 128 characters; name or company is set
+	Company       string                 `protobuf:"bytes,4,opt,name=company,proto3" json:"company,omitempty"` // ≤ 128 characters
+	Note          string                 `protobuf:"bytes,5,opt,name=note,proto3" json:"note,omitempty"`       // ≤ 1000 characters
+	Phones        []*SipContactPhone     `protobuf:"bytes,6,rep,name=phones,proto3" json:"phones,omitempty"`   // in the contact's order, the first is the main one
+	CreatedBy     string                 `protobuf:"bytes,7,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
+	UpdatedBy     string                 `protobuf:"bytes,8,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SipContact) Reset() {
+	*x = SipContact{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipContact) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipContact) ProtoMessage() {}
+
+func (x *SipContact) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipContact.ProtoReflect.Descriptor instead.
+func (*SipContact) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *SipContact) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SipContact) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *SipContact) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SipContact) GetCompany() string {
+	if x != nil {
+		return x.Company
+	}
+	return ""
+}
+
+func (x *SipContact) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+func (x *SipContact) GetPhones() []*SipContactPhone {
+	if x != nil {
+		return x.Phones
+	}
+	return nil
+}
+
+func (x *SipContact) GetCreatedBy() string {
+	if x != nil {
+		return x.CreatedBy
+	}
+	return ""
+}
+
+func (x *SipContact) GetUpdatedBy() string {
+	if x != nil {
+		return x.UpdatedBy
+	}
+	return ""
+}
+
+func (x *SipContact) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *SipContact) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type ListSipContactsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Contacts      []*SipContact          `protobuf:"bytes,1,rep,name=contacts,proto3" json:"contacts,omitempty"`
+	NextCursor    string                 `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"` // empty = no more
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSipContactsResponse) Reset() {
+	*x = ListSipContactsResponse{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSipContactsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSipContactsResponse) ProtoMessage() {}
+
+func (x *ListSipContactsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSipContactsResponse.ProtoReflect.Descriptor instead.
+func (*ListSipContactsResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *ListSipContactsResponse) GetContacts() []*SipContact {
+	if x != nil {
+		return x.Contacts
+	}
+	return nil
+}
+
+func (x *ListSipContactsResponse) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
+}
+
+type GetSipContactResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Contact       *SipContact            `protobuf:"bytes,1,opt,name=contact,proto3" json:"contact,omitempty"`
+	Calls         []*SipJournalEntry     `protobuf:"bytes,2,rep,name=calls,proto3" json:"calls,omitempty"` // newest first, at most 10
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSipContactResponse) Reset() {
+	*x = GetSipContactResponse{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSipContactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSipContactResponse) ProtoMessage() {}
+
+func (x *GetSipContactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSipContactResponse.ProtoReflect.Descriptor instead.
+func (*GetSipContactResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *GetSipContactResponse) GetContact() *SipContact {
+	if x != nil {
+		return x.Contact
+	}
+	return nil
+}
+
+func (x *GetSipContactResponse) GetCalls() []*SipJournalEntry {
+	if x != nil {
+		return x.Calls
+	}
+	return nil
+}
+
+type SipContactInput struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Company       string                 `protobuf:"bytes,2,opt,name=company,proto3" json:"company,omitempty"`
+	Note          string                 `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
+	Phones        []*SipContactPhone     `protobuf:"bytes,4,rep,name=phones,proto3" json:"phones,omitempty"` // ≤ 10, no repeats
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SipContactInput) Reset() {
+	*x = SipContactInput{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipContactInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipContactInput) ProtoMessage() {}
+
+func (x *SipContactInput) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipContactInput.ProtoReflect.Descriptor instead.
+func (*SipContactInput) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *SipContactInput) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SipContactInput) GetCompany() string {
+	if x != nil {
+		return x.Company
+	}
+	return ""
+}
+
+func (x *SipContactInput) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+func (x *SipContactInput) GetPhones() []*SipContactPhone {
+	if x != nil {
+		return x.Phones
+	}
+	return nil
+}
+
+// PATCH: unset fields stay as they are; phones replace the list as a whole.
+type UpdateSipContactRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          *string                `protobuf:"bytes,1,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	Company       *string                `protobuf:"bytes,2,opt,name=company,proto3,oneof" json:"company,omitempty"`
+	Note          *string                `protobuf:"bytes,3,opt,name=note,proto3,oneof" json:"note,omitempty"`
+	Phones        *SipContactPhones      `protobuf:"bytes,4,opt,name=phones,proto3" json:"phones,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateSipContactRequest) Reset() {
+	*x = UpdateSipContactRequest{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateSipContactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateSipContactRequest) ProtoMessage() {}
+
+func (x *UpdateSipContactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateSipContactRequest.ProtoReflect.Descriptor instead.
+func (*UpdateSipContactRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *UpdateSipContactRequest) GetName() string {
+	if x != nil && x.Name != nil {
+		return *x.Name
+	}
+	return ""
+}
+
+func (x *UpdateSipContactRequest) GetCompany() string {
+	if x != nil && x.Company != nil {
+		return *x.Company
+	}
+	return ""
+}
+
+func (x *UpdateSipContactRequest) GetNote() string {
+	if x != nil && x.Note != nil {
+		return *x.Note
+	}
+	return ""
+}
+
+func (x *UpdateSipContactRequest) GetPhones() *SipContactPhones {
+	if x != nil {
+		return x.Phones
+	}
+	return nil
+}
+
+type SipContactPhones struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Phones        []*SipContactPhone     `protobuf:"bytes,1,rep,name=phones,proto3" json:"phones,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SipContactPhones) Reset() {
+	*x = SipContactPhones{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipContactPhones) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipContactPhones) ProtoMessage() {}
+
+func (x *SipContactPhones) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipContactPhones.ProtoReflect.Descriptor instead.
+func (*SipContactPhones) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *SipContactPhones) GetPhones() []*SipContactPhone {
+	if x != nil {
+		return x.Phones
+	}
+	return nil
+}
+
+type SipContactResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Contact       *SipContact            `protobuf:"bytes,1,opt,name=contact,proto3" json:"contact,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SipContactResponse) Reset() {
+	*x = SipContactResponse{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipContactResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipContactResponse) ProtoMessage() {}
+
+func (x *SipContactResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipContactResponse.ProtoReflect.Descriptor instead.
+func (*SipContactResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *SipContactResponse) GetContact() *SipContact {
+	if x != nil {
+		return x.Contact
+	}
+	return nil
+}
+
+// POST /api/workspaces/{id}/sip/contacts/import?dry_run=1 (multipart/form-data, the CSV in the
+// part "file"; MANAGE_INTEGRATIONS, the telephony plan) → 200 ImportSipContactsResponse. The
+// file: ≤ 1 MB, ≤ 5000 rows besides the header; «,» or «;» between cells (whichever the first
+// row has more of); UTF-8 with or without BOM, else Windows-1251; the first row names the
+// columns, in Russian or English: Имя / ФИО / Name, Компания / Организация / Company, Телефон… /
+// Phone… / Мобильный / Mobile / Рабочий / Work / Домашний / Home / Другой / Other, Заметка /
+// Комментарий / Note — several phone columns, and several numbers in a cell separated by «,»
+// or «;». A row whose number another contact already has (or an earlier row of the file) is
+// skipped with its reason, never merged. dry_run=1 only checks: nothing is written, created is
+// how many would be. 422 VALIDATION file (no file, too large, more than 5000 rows, no
+// recognised header); 429 RATE_LIMITED (20 imports and previews per hour per workspace).
+//
+// GET /api/workspaces/{id}/sip/contacts/export.csv (MANAGE_INTEGRATIONS) → 200 text/csv (UTF-8
+// with BOM, «;»): Имя;Компания;Мобильный;Рабочий;Домашний;Другой;Заметка, one row per contact,
+// several numbers of a label in one cell separated by «, ». A cell a spreadsheet would take for
+// a formula (starting with =, +, -, @, a tab or a line break) is written with a leading «'»
+// (the import drops it again). 429 RATE_LIMITED (20 per hour per workspace).
+type ImportSipContactsResponse struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Created       uint32                  `protobuf:"varint,1,opt,name=created,proto3" json:"created,omitempty"` // contacts created (dry_run: that would be created)
+	Rows          uint32                  `protobuf:"varint,2,opt,name=rows,proto3" json:"rows,omitempty"`       // data rows read
+	Skipped       []*SipContactImportSkip `protobuf:"bytes,3,rep,name=skipped,proto3" json:"skipped,omitempty"`  // in row order
+	DryRun        bool                    `protobuf:"varint,4,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImportSipContactsResponse) Reset() {
+	*x = ImportSipContactsResponse{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[65]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportSipContactsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportSipContactsResponse) ProtoMessage() {}
+
+func (x *ImportSipContactsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[65]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportSipContactsResponse.ProtoReflect.Descriptor instead.
+func (*ImportSipContactsResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{65}
+}
+
+func (x *ImportSipContactsResponse) GetCreated() uint32 {
+	if x != nil {
+		return x.Created
+	}
+	return 0
+}
+
+func (x *ImportSipContactsResponse) GetRows() uint32 {
+	if x != nil {
+		return x.Rows
+	}
+	return 0
+}
+
+func (x *ImportSipContactsResponse) GetSkipped() []*SipContactImportSkip {
+	if x != nil {
+		return x.Skipped
+	}
+	return nil
+}
+
+func (x *ImportSipContactsResponse) GetDryRun() bool {
+	if x != nil {
+		return x.DryRun
+	}
+	return false
+}
+
+type SipContactImportSkip struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Row   uint32                 `protobuf:"varint,1,opt,name=row,proto3" json:"row,omitempty"` // the line of the file, the header is line 1
+	// "number_taken" (contact_id / contact_name have the number), "duplicate" (an earlier row of
+	// the file has it), "no_name", "no_number", "bad_number", "too_many_numbers", "too_long",
+	// "limit" (the workspace would have more than 10 000 contacts).
+	Reason        string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	ContactId     string `protobuf:"bytes,3,opt,name=contact_id,json=contactId,proto3" json:"contact_id,omitempty"`
+	ContactName   string `protobuf:"bytes,4,opt,name=contact_name,json=contactName,proto3" json:"contact_name,omitempty"`
+	Number        string `protobuf:"bytes,5,opt,name=number,proto3" json:"number,omitempty"` // the number the reason is about, when one
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SipContactImportSkip) Reset() {
+	*x = SipContactImportSkip{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SipContactImportSkip) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SipContactImportSkip) ProtoMessage() {}
+
+func (x *SipContactImportSkip) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SipContactImportSkip.ProtoReflect.Descriptor instead.
+func (*SipContactImportSkip) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *SipContactImportSkip) GetRow() uint32 {
+	if x != nil {
+		return x.Row
+	}
+	return 0
+}
+
+func (x *SipContactImportSkip) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *SipContactImportSkip) GetContactId() string {
+	if x != nil {
+		return x.ContactId
+	}
+	return ""
+}
+
+func (x *SipContactImportSkip) GetContactName() string {
+	if x != nil {
+		return x.ContactName
+	}
+	return ""
+}
+
+func (x *SipContactImportSkip) GetNumber() string {
+	if x != nil {
+		return x.Number
+	}
+	return ""
+}
+
+// ---------------------------------------------------------------- the personal call (ADR-0137 §3)
+//
+// POST /api/workspaces/{id}/sip/calls (a person — not a guest, not a bot — with PLACE_CALLS of
+// the workspace itself, room overrides do not count; the telephony plan; Workspace.sip_enabled)
+// → 201 PlaceSipPersonalCallResponse: the call (origin PERSONAL, DIALING, no room) and join — a
+// LiveKit token for the call's own room (microphone and listening only). The client connects
+// with it at once: the number is dialed only after the caller is in the room (not within 15 s:
+// FAILED "not_connected"). SIP_CALL_UPDATE goes to the caller's user channel on every change
+// (their other devices show «on a call»); the live call is also in WorkspaceSnapshot.sip_calls.
+// It ends when the callee hangs up (ENDED "remote"), the caller is gone 30 s (ENDED "lost"),
+// after 2 h, or with DELETE. Outbound limits: SipSettings.out_per_hour and out_per_user_hour,
+// shared with calls from rooms. Errors: 404 not a member; 403 a guest, a bot, no PLACE_CALLS;
+// 409 PLAN_LIMIT; 409 SIP_DISABLED; 409 SIP_BUSY (the caller is in another call); 422 VALIDATION
+// number (not a phone number) / contactId (not a contact of the workspace, or the number is not
+// the contact's); 422 SIP_NUMBER_NOT_ALLOWED; 429 SIP_RATE_LIMITED.
+//
+// DELETE /api/workspaces/{id}/sip/calls/{cid} (the caller, or MANAGE_INTEGRATIONS; a personal
+// call of the workspace) → 200 SipCallResponse ENDED: "hangup" by the caller ("cancelled" before
+// the answer), "hangup_moderator" by an admin. 404 unknown call; 403 someone else's call; 409
+// CONFLICT the call already ended.
+type PlaceSipPersonalCallRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Number        string                 `protobuf:"bytes,1,opt,name=number,proto3" json:"number,omitempty"`                        // as typed (see SipContactPhone.number)
+	ContactId     string                 `protobuf:"bytes,2,opt,name=contact_id,json=contactId,proto3" json:"contact_id,omitempty"` // optional: the contact called; the number must be one of its numbers
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlaceSipPersonalCallRequest) Reset() {
+	*x = PlaceSipPersonalCallRequest{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlaceSipPersonalCallRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlaceSipPersonalCallRequest) ProtoMessage() {}
+
+func (x *PlaceSipPersonalCallRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlaceSipPersonalCallRequest.ProtoReflect.Descriptor instead.
+func (*PlaceSipPersonalCallRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *PlaceSipPersonalCallRequest) GetNumber() string {
+	if x != nil {
+		return x.Number
+	}
+	return ""
+}
+
+func (x *PlaceSipPersonalCallRequest) GetContactId() string {
+	if x != nil {
+		return x.ContactId
+	}
+	return ""
+}
+
+type PlaceSipPersonalCallResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Call          *SipCall               `protobuf:"bytes,1,opt,name=call,proto3" json:"call,omitempty"`
+	Join          *JoinVoiceResponse     `protobuf:"bytes,2,opt,name=join,proto3" json:"join,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlaceSipPersonalCallResponse) Reset() {
+	*x = PlaceSipPersonalCallResponse{}
+	mi := &file_calaba_v1_sip_proto_msgTypes[68]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlaceSipPersonalCallResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlaceSipPersonalCallResponse) ProtoMessage() {}
+
+func (x *PlaceSipPersonalCallResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_sip_proto_msgTypes[68]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlaceSipPersonalCallResponse.ProtoReflect.Descriptor instead.
+func (*PlaceSipPersonalCallResponse) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_sip_proto_rawDescGZIP(), []int{68}
+}
+
+func (x *PlaceSipPersonalCallResponse) GetCall() *SipCall {
+	if x != nil {
+		return x.Call
+	}
+	return nil
+}
+
+func (x *PlaceSipPersonalCallResponse) GetJoin() *JoinVoiceResponse {
+	if x != nil {
+		return x.Join
+	}
+	return nil
+}
+
 var File_calaba_v1_sip_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\n" +
-	"\x13calaba/v1/sip.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x13calaba/v1/rtc.proto\"\xb8\b\n" +
+	"\x13calaba/v1/sip.proto\x12\tcalaba.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x13calaba/v1/rtc.proto\"\xe4\t\n" +
 	"\vSipSettings\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\x12\x12\n" +
@@ -3931,7 +6156,24 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\x16registration_available\x18\x17 \x01(\bR\x15registrationAvailable\x12%\n" +
 	"\x0erecord_inbound\x18\x18 \x01(\bR\rrecordInbound\x12'\n" +
 	"\x0frecord_outbound\x18\x19 \x01(\bR\x0erecordOutbound\x12/\n" +
-	"\x13recording_available\x18\x1a \x01(\bR\x12recordingAvailable\"\xc8\x03\n" +
+	"\x13recording_available\x18\x1a \x01(\bR\x12recordingAvailable\x12)\n" +
+	"\x10retention_months\x18\x1b \x01(\rR\x0fretentionMonths\x12 \n" +
+	"\fout_per_hour\x18\x1c \x01(\rR\n" +
+	"outPerHour\x12)\n" +
+	"\x11out_per_user_hour\x18\x1d \x01(\rR\x0eoutPerUserHour\x122\n" +
+	"\bschedule\x18\x1e \x01(\v2\x16.calaba.v1.SipScheduleR\bschedule\"e\n" +
+	"\x13SipScheduleInterval\x12\x18\n" +
+	"\aweekday\x18\x01 \x01(\rR\aweekday\x12\x1b\n" +
+	"\tstart_min\x18\x02 \x01(\rR\bstartMin\x12\x17\n" +
+	"\aend_min\x18\x03 \x01(\rR\x06endMin\"\xbc\x02\n" +
+	"\vSipSchedule\x12\x18\n" +
+	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x1b\n" +
+	"\ttime_zone\x18\x02 \x01(\tR\btimeZone\x124\n" +
+	"\x05hours\x18\x03 \x03(\v2\x1e.calaba.v1.SipScheduleIntervalR\x05hours\x124\n" +
+	"\x16production_calendar_ru\x18\x04 \x01(\bR\x14productionCalendarRu\x126\n" +
+	"\toff_hours\x18\x05 \x01(\v2\x19.calaba.v1.SipRouteTargetR\boffHours\x12$\n" +
+	"\x0enotice_file_id\x18\x06 \x01(\tR\fnoticeFileId\x12,\n" +
+	"\x12notice_duration_ms\x18\a \x01(\rR\x10noticeDurationMs\"\xc8\x03\n" +
 	"\x0fSipRegistration\x12\x1c\n" +
 	"\tregistrar\x18\x01 \x01(\tR\tregistrar\x12\x16\n" +
 	"\x06domain\x18\x02 \x01(\tR\x06domain\x12\x1f\n" +
@@ -3983,7 +6225,7 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1d\n" +
 	"\n" +
-	"sip_status\x18\x03 \x01(\rR\tsipStatus\"\xab\x05\n" +
+	"sip_status\x18\x03 \x01(\rR\tsipStatus\"\xc8\a\n" +
 	"\aSipCall\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x17\n" +
@@ -4007,7 +6249,17 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\x05route\x18\x0f \x01(\tR\x05route\x12(\n" +
 	"\x10ringing_user_ids\x18\x10 \x03(\tR\x0eringingUserIds\x12\x10\n" +
 	"\x03via\x18\x11 \x01(\tR\x03via\x12(\n" +
-	"\x10provider_call_id\x18\x12 \x01(\tR\x0eproviderCallId\"-\n" +
+	"\x10provider_call_id\x18\x12 \x01(\tR\x0eproviderCallId\x12\x1f\n" +
+	"\vcaller_name\x18\x13 \x01(\tR\n" +
+	"callerName\x12%\n" +
+	"\x0ecaller_company\x18\x14 \x01(\tR\rcallerCompany\x12\x1d\n" +
+	"\n" +
+	"contact_id\x18\x15 \x01(\tR\tcontactId\x12$\n" +
+	"\x0ecaller_user_id\x18\x16 \x01(\tR\fcallerUserId\x120\n" +
+	"\x06origin\x18\x17 \x01(\x0e2\x18.calaba.v1.SipCallOriginR\x06origin\x12\x1b\n" +
+	"\toff_hours\x18\x18 \x01(\bR\boffHours\x12!\n" +
+	"\fvia_fallback\x18\x19 \x01(\bR\vviaFallback\x12\x1c\n" +
+	"\textension\x18\x1a \x01(\tR\textension\"-\n" +
 	"\x13PlaceSipCallRequest\x12\x16\n" +
 	"\x06number\x18\x01 \x01(\tR\x06number\"9\n" +
 	"\x0fSipCallResponse\x12&\n" +
@@ -4189,7 +6441,141 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\tstep_name\x18\x04 \x01(\tR\bstepName\x12#\n" +
 	"\rnumber_masked\x18\x05 \x01(\bR\fnumberMasked\"4\n" +
 	"\x0fSipCallsChanged\x12!\n" +
-	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId*r\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\"\xe5\x02\n" +
+	"\fSipCallEvent\x12\x10\n" +
+	"\x03seq\x18\x01 \x01(\rR\x03seq\x12*\n" +
+	"\x02at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12/\n" +
+	"\x04kind\x18\x03 \x01(\x0e2\x1b.calaba.v1.SipCallEventKindR\x04kind\x12\x17\n" +
+	"\auser_id\x18\x04 \x01(\tR\x06userId\x12 \n" +
+	"\fpeer_user_id\x18\x05 \x01(\tR\n" +
+	"peerUserId\x12=\n" +
+	"\vtarget_kind\x18\x06 \x01(\x0e2\x1c.calaba.v1.SipCallTargetKindR\n" +
+	"targetKind\x12\x1b\n" +
+	"\ttarget_id\x18\a \x01(\tR\btargetId\x12\x1f\n" +
+	"\vtarget_name\x18\b \x01(\tR\n" +
+	"targetName\x12\x16\n" +
+	"\x06digits\x18\t \x01(\tR\x06digits\x12\x16\n" +
+	"\x06reason\x18\n" +
+	" \x01(\tR\x06reason\"\x91\x01\n" +
+	"\fSipCallParty\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x16\n" +
+	"\x06placed\x18\x02 \x01(\bR\x06placed\x12\x12\n" +
+	"\x04rang\x18\x03 \x01(\bR\x04rang\x12\x1a\n" +
+	"\banswered\x18\x04 \x01(\bR\banswered\x12 \n" +
+	"\vtransferred\x18\x05 \x01(\bR\vtransferred\"M\n" +
+	"\rSipContactRef\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
+	"\acompany\x18\x03 \x01(\tR\acompany\"\xfe\x02\n" +
+	"\x0fSipJournalEntry\x12&\n" +
+	"\x04call\x18\x01 \x01(\v2\x12.calaba.v1.SipCallR\x04call\x120\n" +
+	"\x06origin\x18\x02 \x01(\x0e2\x18.calaba.v1.SipCallOriginR\x06origin\x12\x1b\n" +
+	"\tpeer_e164\x18\x03 \x01(\tR\bpeerE164\x122\n" +
+	"\acontact\x18\x04 \x01(\v2\x18.calaba.v1.SipContactRefR\acontact\x12$\n" +
+	"\x0emember_user_id\x18\x05 \x01(\tR\fmemberUserId\x12\x17\n" +
+	"\await_ms\x18\x06 \x01(\rR\x06waitMs\x12\x17\n" +
+	"\atalk_ms\x18\a \x01(\rR\x06talkMs\x12\x16\n" +
+	"\x06missed\x18\b \x01(\bR\x06missed\x121\n" +
+	"\aparties\x18\t \x03(\v2\x17.calaba.v1.SipCallPartyR\aparties\x12\x1d\n" +
+	"\n" +
+	"has_events\x18\n" +
+	" \x01(\bR\thasEvents\"o\n" +
+	"\x16ListSipJournalResponse\x124\n" +
+	"\aentries\x18\x01 \x03(\v2\x1a.calaba.v1.SipJournalEntryR\aentries\x12\x1f\n" +
+	"\vnext_cursor\x18\x02 \x01(\tR\n" +
+	"nextCursor\"q\n" +
+	"\x13SipJournalRecording\x12\x17\n" +
+	"\afile_id\x18\x01 \x01(\tR\x06fileId\x12 \n" +
+	"\fdisk_item_id\x18\x02 \x01(\tR\n" +
+	"diskItemId\x12\x1f\n" +
+	"\vduration_ms\x18\x03 \x01(\rR\n" +
+	"durationMs\"\xbd\x01\n" +
+	"\x1aGetSipJournalEntryResponse\x120\n" +
+	"\x05entry\x18\x01 \x01(\v2\x1a.calaba.v1.SipJournalEntryR\x05entry\x12/\n" +
+	"\x06events\x18\x02 \x03(\v2\x17.calaba.v1.SipCallEventR\x06events\x12<\n" +
+	"\trecording\x18\x03 \x01(\v2\x1e.calaba.v1.SipJournalRecordingR\trecording\"\x9d\x01\n" +
+	"\x15PutSipScheduleRequest\x122\n" +
+	"\bschedule\x18\x01 \x01(\v2\x16.calaba.v1.SipScheduleR\bschedule\x126\n" +
+	"\x15notice_source_file_id\x18\x02 \x01(\tH\x00R\x12noticeSourceFileId\x88\x01\x01B\x18\n" +
+	"\x16_notice_source_file_id\"L\n" +
+	"\x16PutSipScheduleResponse\x122\n" +
+	"\bsettings\x18\x01 \x01(\v2\x16.calaba.v1.SipSettingsR\bsettings\"\x8d\x01\n" +
+	"\x13PutSipPolicyRequest\x12)\n" +
+	"\x10retention_months\x18\x01 \x01(\rR\x0fretentionMonths\x12 \n" +
+	"\fout_per_hour\x18\x02 \x01(\rR\n" +
+	"outPerHour\x12)\n" +
+	"\x11out_per_user_hour\x18\x03 \x01(\rR\x0eoutPerUserHour\"J\n" +
+	"\x14PutSipPolicyResponse\x122\n" +
+	"\bsettings\x18\x01 \x01(\v2\x16.calaba.v1.SipSettingsR\bsettings\"D\n" +
+	"\x10SipJournalChange\x120\n" +
+	"\x05entry\x18\x01 \x01(\v2\x1a.calaba.v1.SipJournalEntryR\x05entry\"K\n" +
+	"\x10SipMissedChanged\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x14\n" +
+	"\x05count\x18\x02 \x01(\rR\x05count\"Y\n" +
+	"\x0fSipContactPhone\x12\x16\n" +
+	"\x06number\x18\x01 \x01(\tR\x06number\x12.\n" +
+	"\x05label\x18\x02 \x01(\x0e2\x18.calaba.v1.SipPhoneLabelR\x05label\"\xe9\x02\n" +
+	"\n" +
+	"SipContact\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
+	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x18\n" +
+	"\acompany\x18\x04 \x01(\tR\acompany\x12\x12\n" +
+	"\x04note\x18\x05 \x01(\tR\x04note\x122\n" +
+	"\x06phones\x18\x06 \x03(\v2\x1a.calaba.v1.SipContactPhoneR\x06phones\x12\x1d\n" +
+	"\n" +
+	"created_by\x18\a \x01(\tR\tcreatedBy\x12\x1d\n" +
+	"\n" +
+	"updated_by\x18\b \x01(\tR\tupdatedBy\x129\n" +
+	"\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"m\n" +
+	"\x17ListSipContactsResponse\x121\n" +
+	"\bcontacts\x18\x01 \x03(\v2\x15.calaba.v1.SipContactR\bcontacts\x12\x1f\n" +
+	"\vnext_cursor\x18\x02 \x01(\tR\n" +
+	"nextCursor\"z\n" +
+	"\x15GetSipContactResponse\x12/\n" +
+	"\acontact\x18\x01 \x01(\v2\x15.calaba.v1.SipContactR\acontact\x120\n" +
+	"\x05calls\x18\x02 \x03(\v2\x1a.calaba.v1.SipJournalEntryR\x05calls\"\x87\x01\n" +
+	"\x0fSipContactInput\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\acompany\x18\x02 \x01(\tR\acompany\x12\x12\n" +
+	"\x04note\x18\x03 \x01(\tR\x04note\x122\n" +
+	"\x06phones\x18\x04 \x03(\v2\x1a.calaba.v1.SipContactPhoneR\x06phones\"\xbd\x01\n" +
+	"\x17UpdateSipContactRequest\x12\x17\n" +
+	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x1d\n" +
+	"\acompany\x18\x02 \x01(\tH\x01R\acompany\x88\x01\x01\x12\x17\n" +
+	"\x04note\x18\x03 \x01(\tH\x02R\x04note\x88\x01\x01\x123\n" +
+	"\x06phones\x18\x04 \x01(\v2\x1b.calaba.v1.SipContactPhonesR\x06phonesB\a\n" +
+	"\x05_nameB\n" +
+	"\n" +
+	"\b_companyB\a\n" +
+	"\x05_note\"F\n" +
+	"\x10SipContactPhones\x122\n" +
+	"\x06phones\x18\x01 \x03(\v2\x1a.calaba.v1.SipContactPhoneR\x06phones\"E\n" +
+	"\x12SipContactResponse\x12/\n" +
+	"\acontact\x18\x01 \x01(\v2\x15.calaba.v1.SipContactR\acontact\"\x9d\x01\n" +
+	"\x19ImportSipContactsResponse\x12\x18\n" +
+	"\acreated\x18\x01 \x01(\rR\acreated\x12\x12\n" +
+	"\x04rows\x18\x02 \x01(\rR\x04rows\x129\n" +
+	"\askipped\x18\x03 \x03(\v2\x1f.calaba.v1.SipContactImportSkipR\askipped\x12\x17\n" +
+	"\adry_run\x18\x04 \x01(\bR\x06dryRun\"\x9a\x01\n" +
+	"\x14SipContactImportSkip\x12\x10\n" +
+	"\x03row\x18\x01 \x01(\rR\x03row\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x1d\n" +
+	"\n" +
+	"contact_id\x18\x03 \x01(\tR\tcontactId\x12!\n" +
+	"\fcontact_name\x18\x04 \x01(\tR\vcontactName\x12\x16\n" +
+	"\x06number\x18\x05 \x01(\tR\x06number\"T\n" +
+	"\x1bPlaceSipPersonalCallRequest\x12\x16\n" +
+	"\x06number\x18\x01 \x01(\tR\x06number\x12\x1d\n" +
+	"\n" +
+	"contact_id\x18\x02 \x01(\tR\tcontactId\"x\n" +
+	"\x1cPlaceSipPersonalCallResponse\x12&\n" +
+	"\x04call\x18\x01 \x01(\v2\x12.calaba.v1.SipCallR\x04call\x120\n" +
+	"\x04join\x18\x02 \x01(\v2\x1c.calaba.v1.JoinVoiceResponseR\x04join*r\n" +
 	"\fSipTransport\x12\x1d\n" +
 	"\x19SIP_TRANSPORT_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11SIP_TRANSPORT_UDP\x10\x01\x12\x15\n" +
@@ -4242,7 +6628,47 @@ const file_calaba_v1_sip_proto_rawDesc = "" +
 	"\x17SIP_ACTIVE_STEP_DIALING\x10\x01\x12\x18\n" +
 	"\x14SIP_ACTIVE_STEP_MENU\x10\x02\x12\x1b\n" +
 	"\x17SIP_ACTIVE_STEP_RINGING\x10\x03\x12\x1d\n" +
-	"\x19SIP_ACTIVE_STEP_CONNECTED\x10\x04B\x96\x01\n" +
+	"\x19SIP_ACTIVE_STEP_CONNECTED\x10\x04*\x9f\x01\n" +
+	"\rSipCallOrigin\x12\x1f\n" +
+	"\x1bSIP_CALL_ORIGIN_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14SIP_CALL_ORIGIN_ROOM\x10\x01\x12\x1c\n" +
+	"\x18SIP_CALL_ORIGIN_PERSONAL\x10\x02\x12\x1b\n" +
+	"\x17SIP_CALL_ORIGIN_INBOUND\x10\x03\x12\x18\n" +
+	"\x14SIP_CALL_ORIGIN_TEST\x10\x04*\x8f\x05\n" +
+	"\x10SipCallEventKind\x12#\n" +
+	"\x1fSIP_CALL_EVENT_KIND_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bSIP_CALL_EVENT_KIND_STARTED\x10\x01\x12\x1c\n" +
+	"\x18SIP_CALL_EVENT_KIND_MENU\x10\x02\x12\x1b\n" +
+	"\x17SIP_CALL_EVENT_KIND_KEY\x10\x03\x12\x1e\n" +
+	"\x1aSIP_CALL_EVENT_KIND_DIALED\x10\x04\x12 \n" +
+	"\x1cSIP_CALL_EVENT_KIND_NO_INPUT\x10\x05\x12\x1e\n" +
+	"\x1aSIP_CALL_EVENT_KIND_NOTICE\x10\x06\x12\x1d\n" +
+	"\x19SIP_CALL_EVENT_KIND_GROUP\x10\a\x12\x1c\n" +
+	"\x18SIP_CALL_EVENT_KIND_RING\x10\b\x12 \n" +
+	"\x1cSIP_CALL_EVENT_KIND_RING_END\x10\t\x12 \n" +
+	"\x1cSIP_CALL_EVENT_KIND_FALLBACK\x10\n" +
+	"\x12 \n" +
+	"\x1cSIP_CALL_EVENT_KIND_ANSWERED\x10\v\x12 \n" +
+	"\x1cSIP_CALL_EVENT_KIND_TRANSFER\x10\f\x12$\n" +
+	" SIP_CALL_EVENT_KIND_TRANSFER_END\x10\r\x12\x1f\n" +
+	"\x1bSIP_CALL_EVENT_KIND_DIALING\x10\x0e\x12(\n" +
+	"$SIP_CALL_EVENT_KIND_PROVIDER_RINGING\x10\x0f\x12!\n" +
+	"\x1dSIP_CALL_EVENT_KIND_RECORDING\x10\x10\x12\x1d\n" +
+	"\x19SIP_CALL_EVENT_KIND_ENDED\x10\x11\x12 \n" +
+	"\x1cSIP_CALL_EVENT_KIND_SCHEDULE\x10\x12*\xda\x01\n" +
+	"\x11SipCallTargetKind\x12$\n" +
+	" SIP_CALL_TARGET_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19SIP_CALL_TARGET_KIND_MENU\x10\x01\x12\x1e\n" +
+	"\x1aSIP_CALL_TARGET_KIND_GROUP\x10\x02\x12\"\n" +
+	"\x1eSIP_CALL_TARGET_KIND_EXTENSION\x10\x03\x12\x1d\n" +
+	"\x19SIP_CALL_TARGET_KIND_USER\x10\x04\x12\x1d\n" +
+	"\x19SIP_CALL_TARGET_KIND_ROOM\x10\x05*\x9b\x01\n" +
+	"\rSipPhoneLabel\x12\x1f\n" +
+	"\x1bSIP_PHONE_LABEL_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16SIP_PHONE_LABEL_MOBILE\x10\x01\x12\x18\n" +
+	"\x14SIP_PHONE_LABEL_WORK\x10\x02\x12\x18\n" +
+	"\x14SIP_PHONE_LABEL_HOME\x10\x03\x12\x19\n" +
+	"\x15SIP_PHONE_LABEL_OTHER\x10\x04B\x96\x01\n" +
 	"\rcom.calaba.v1B\bSipProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 
@@ -4258,130 +6684,194 @@ func file_calaba_v1_sip_proto_rawDescGZIP() []byte {
 	return file_calaba_v1_sip_proto_rawDescData
 }
 
-var file_calaba_v1_sip_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
-var file_calaba_v1_sip_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
+var file_calaba_v1_sip_proto_enumTypes = make([]protoimpl.EnumInfo, 14)
+var file_calaba_v1_sip_proto_msgTypes = make([]protoimpl.MessageInfo, 69)
 var file_calaba_v1_sip_proto_goTypes = []any{
-	(SipTransport)(0),                  // 0: calaba.v1.SipTransport
-	(SipCallStatus)(0),                 // 1: calaba.v1.SipCallStatus
-	(SipCallDirection)(0),              // 2: calaba.v1.SipCallDirection
-	(SipInboundMode)(0),                // 3: calaba.v1.SipInboundMode
-	(SipRegistrationStatus)(0),         // 4: calaba.v1.SipRegistrationStatus
-	(SipRouteKind)(0),                  // 5: calaba.v1.SipRouteKind
-	(SipExtensionKind)(0),              // 6: calaba.v1.SipExtensionKind
-	(SipGroupStrategy)(0),              // 7: calaba.v1.SipGroupStrategy
-	(SipPromptStatus)(0),               // 8: calaba.v1.SipPromptStatus
-	(SipActiveStep)(0),                 // 9: calaba.v1.SipActiveStep
-	(*SipSettings)(nil),                // 10: calaba.v1.SipSettings
-	(*SipRegistration)(nil),            // 11: calaba.v1.SipRegistration
-	(*SipRegistrationInput)(nil),       // 12: calaba.v1.SipRegistrationInput
-	(*GetSipSettingsResponse)(nil),     // 13: calaba.v1.GetSipSettingsResponse
-	(*PutSipSettingsRequest)(nil),      // 14: calaba.v1.PutSipSettingsRequest
-	(*PutSipSettingsResponse)(nil),     // 15: calaba.v1.PutSipSettingsResponse
-	(*PutSipRecordingRequest)(nil),     // 16: calaba.v1.PutSipRecordingRequest
-	(*PutSipRecordingResponse)(nil),    // 17: calaba.v1.PutSipRecordingResponse
-	(*TestSipResponse)(nil),            // 18: calaba.v1.TestSipResponse
-	(*SipCall)(nil),                    // 19: calaba.v1.SipCall
-	(*PlaceSipCallRequest)(nil),        // 20: calaba.v1.PlaceSipCallRequest
-	(*SipCallResponse)(nil),            // 21: calaba.v1.SipCallResponse
-	(*ListSipCallsResponse)(nil),       // 22: calaba.v1.ListSipCallsResponse
-	(*SipCallUpdate)(nil),              // 23: calaba.v1.SipCallUpdate
-	(*SipRouteTarget)(nil),             // 24: calaba.v1.SipRouteTarget
-	(*SipExtension)(nil),               // 25: calaba.v1.SipExtension
-	(*SipGroupMember)(nil),             // 26: calaba.v1.SipGroupMember
-	(*SipGroup)(nil),                   // 27: calaba.v1.SipGroup
-	(*SipIvrItem)(nil),                 // 28: calaba.v1.SipIvrItem
-	(*SipIvrMenu)(nil),                 // 29: calaba.v1.SipIvrMenu
-	(*ListSipExtensionsResponse)(nil),  // 30: calaba.v1.ListSipExtensionsResponse
-	(*CreateSipExtensionRequest)(nil),  // 31: calaba.v1.CreateSipExtensionRequest
-	(*UpdateSipExtensionRequest)(nil),  // 32: calaba.v1.UpdateSipExtensionRequest
-	(*SipExtensionResponse)(nil),       // 33: calaba.v1.SipExtensionResponse
-	(*ListSipGroupsResponse)(nil),      // 34: calaba.v1.ListSipGroupsResponse
-	(*SipGroupMembers)(nil),            // 35: calaba.v1.SipGroupMembers
-	(*CreateSipGroupRequest)(nil),      // 36: calaba.v1.CreateSipGroupRequest
-	(*UpdateSipGroupRequest)(nil),      // 37: calaba.v1.UpdateSipGroupRequest
-	(*SipGroupResponse)(nil),           // 38: calaba.v1.SipGroupResponse
-	(*ListSipIvrMenusResponse)(nil),    // 39: calaba.v1.ListSipIvrMenusResponse
-	(*SipIvrItems)(nil),                // 40: calaba.v1.SipIvrItems
-	(*CreateSipIvrMenuRequest)(nil),    // 41: calaba.v1.CreateSipIvrMenuRequest
-	(*UpdateSipIvrMenuRequest)(nil),    // 42: calaba.v1.UpdateSipIvrMenuRequest
-	(*SipIvrMenuResponse)(nil),         // 43: calaba.v1.SipIvrMenuResponse
-	(*PutSipInboundRequest)(nil),       // 44: calaba.v1.PutSipInboundRequest
-	(*PutSipInboundResponse)(nil),      // 45: calaba.v1.PutSipInboundResponse
-	(*SipInboundRing)(nil),             // 46: calaba.v1.SipInboundRing
-	(*SipInboundAcceptResponse)(nil),   // 47: calaba.v1.SipInboundAcceptResponse
-	(*TransferSipCallRequest)(nil),     // 48: calaba.v1.TransferSipCallRequest
-	(*ListSipActiveCallsResponse)(nil), // 49: calaba.v1.ListSipActiveCallsResponse
-	(*SipActiveCall)(nil),              // 50: calaba.v1.SipActiveCall
-	(*SipCallsChanged)(nil),            // 51: calaba.v1.SipCallsChanged
-	(*timestamppb.Timestamp)(nil),      // 52: google.protobuf.Timestamp
-	(*JoinVoiceResponse)(nil),          // 53: calaba.v1.JoinVoiceResponse
+	(SipTransport)(0),                    // 0: calaba.v1.SipTransport
+	(SipCallStatus)(0),                   // 1: calaba.v1.SipCallStatus
+	(SipCallDirection)(0),                // 2: calaba.v1.SipCallDirection
+	(SipInboundMode)(0),                  // 3: calaba.v1.SipInboundMode
+	(SipRegistrationStatus)(0),           // 4: calaba.v1.SipRegistrationStatus
+	(SipRouteKind)(0),                    // 5: calaba.v1.SipRouteKind
+	(SipExtensionKind)(0),                // 6: calaba.v1.SipExtensionKind
+	(SipGroupStrategy)(0),                // 7: calaba.v1.SipGroupStrategy
+	(SipPromptStatus)(0),                 // 8: calaba.v1.SipPromptStatus
+	(SipActiveStep)(0),                   // 9: calaba.v1.SipActiveStep
+	(SipCallOrigin)(0),                   // 10: calaba.v1.SipCallOrigin
+	(SipCallEventKind)(0),                // 11: calaba.v1.SipCallEventKind
+	(SipCallTargetKind)(0),               // 12: calaba.v1.SipCallTargetKind
+	(SipPhoneLabel)(0),                   // 13: calaba.v1.SipPhoneLabel
+	(*SipSettings)(nil),                  // 14: calaba.v1.SipSettings
+	(*SipScheduleInterval)(nil),          // 15: calaba.v1.SipScheduleInterval
+	(*SipSchedule)(nil),                  // 16: calaba.v1.SipSchedule
+	(*SipRegistration)(nil),              // 17: calaba.v1.SipRegistration
+	(*SipRegistrationInput)(nil),         // 18: calaba.v1.SipRegistrationInput
+	(*GetSipSettingsResponse)(nil),       // 19: calaba.v1.GetSipSettingsResponse
+	(*PutSipSettingsRequest)(nil),        // 20: calaba.v1.PutSipSettingsRequest
+	(*PutSipSettingsResponse)(nil),       // 21: calaba.v1.PutSipSettingsResponse
+	(*PutSipRecordingRequest)(nil),       // 22: calaba.v1.PutSipRecordingRequest
+	(*PutSipRecordingResponse)(nil),      // 23: calaba.v1.PutSipRecordingResponse
+	(*TestSipResponse)(nil),              // 24: calaba.v1.TestSipResponse
+	(*SipCall)(nil),                      // 25: calaba.v1.SipCall
+	(*PlaceSipCallRequest)(nil),          // 26: calaba.v1.PlaceSipCallRequest
+	(*SipCallResponse)(nil),              // 27: calaba.v1.SipCallResponse
+	(*ListSipCallsResponse)(nil),         // 28: calaba.v1.ListSipCallsResponse
+	(*SipCallUpdate)(nil),                // 29: calaba.v1.SipCallUpdate
+	(*SipRouteTarget)(nil),               // 30: calaba.v1.SipRouteTarget
+	(*SipExtension)(nil),                 // 31: calaba.v1.SipExtension
+	(*SipGroupMember)(nil),               // 32: calaba.v1.SipGroupMember
+	(*SipGroup)(nil),                     // 33: calaba.v1.SipGroup
+	(*SipIvrItem)(nil),                   // 34: calaba.v1.SipIvrItem
+	(*SipIvrMenu)(nil),                   // 35: calaba.v1.SipIvrMenu
+	(*ListSipExtensionsResponse)(nil),    // 36: calaba.v1.ListSipExtensionsResponse
+	(*CreateSipExtensionRequest)(nil),    // 37: calaba.v1.CreateSipExtensionRequest
+	(*UpdateSipExtensionRequest)(nil),    // 38: calaba.v1.UpdateSipExtensionRequest
+	(*SipExtensionResponse)(nil),         // 39: calaba.v1.SipExtensionResponse
+	(*ListSipGroupsResponse)(nil),        // 40: calaba.v1.ListSipGroupsResponse
+	(*SipGroupMembers)(nil),              // 41: calaba.v1.SipGroupMembers
+	(*CreateSipGroupRequest)(nil),        // 42: calaba.v1.CreateSipGroupRequest
+	(*UpdateSipGroupRequest)(nil),        // 43: calaba.v1.UpdateSipGroupRequest
+	(*SipGroupResponse)(nil),             // 44: calaba.v1.SipGroupResponse
+	(*ListSipIvrMenusResponse)(nil),      // 45: calaba.v1.ListSipIvrMenusResponse
+	(*SipIvrItems)(nil),                  // 46: calaba.v1.SipIvrItems
+	(*CreateSipIvrMenuRequest)(nil),      // 47: calaba.v1.CreateSipIvrMenuRequest
+	(*UpdateSipIvrMenuRequest)(nil),      // 48: calaba.v1.UpdateSipIvrMenuRequest
+	(*SipIvrMenuResponse)(nil),           // 49: calaba.v1.SipIvrMenuResponse
+	(*PutSipInboundRequest)(nil),         // 50: calaba.v1.PutSipInboundRequest
+	(*PutSipInboundResponse)(nil),        // 51: calaba.v1.PutSipInboundResponse
+	(*SipInboundRing)(nil),               // 52: calaba.v1.SipInboundRing
+	(*SipInboundAcceptResponse)(nil),     // 53: calaba.v1.SipInboundAcceptResponse
+	(*TransferSipCallRequest)(nil),       // 54: calaba.v1.TransferSipCallRequest
+	(*ListSipActiveCallsResponse)(nil),   // 55: calaba.v1.ListSipActiveCallsResponse
+	(*SipActiveCall)(nil),                // 56: calaba.v1.SipActiveCall
+	(*SipCallsChanged)(nil),              // 57: calaba.v1.SipCallsChanged
+	(*SipCallEvent)(nil),                 // 58: calaba.v1.SipCallEvent
+	(*SipCallParty)(nil),                 // 59: calaba.v1.SipCallParty
+	(*SipContactRef)(nil),                // 60: calaba.v1.SipContactRef
+	(*SipJournalEntry)(nil),              // 61: calaba.v1.SipJournalEntry
+	(*ListSipJournalResponse)(nil),       // 62: calaba.v1.ListSipJournalResponse
+	(*SipJournalRecording)(nil),          // 63: calaba.v1.SipJournalRecording
+	(*GetSipJournalEntryResponse)(nil),   // 64: calaba.v1.GetSipJournalEntryResponse
+	(*PutSipScheduleRequest)(nil),        // 65: calaba.v1.PutSipScheduleRequest
+	(*PutSipScheduleResponse)(nil),       // 66: calaba.v1.PutSipScheduleResponse
+	(*PutSipPolicyRequest)(nil),          // 67: calaba.v1.PutSipPolicyRequest
+	(*PutSipPolicyResponse)(nil),         // 68: calaba.v1.PutSipPolicyResponse
+	(*SipJournalChange)(nil),             // 69: calaba.v1.SipJournalChange
+	(*SipMissedChanged)(nil),             // 70: calaba.v1.SipMissedChanged
+	(*SipContactPhone)(nil),              // 71: calaba.v1.SipContactPhone
+	(*SipContact)(nil),                   // 72: calaba.v1.SipContact
+	(*ListSipContactsResponse)(nil),      // 73: calaba.v1.ListSipContactsResponse
+	(*GetSipContactResponse)(nil),        // 74: calaba.v1.GetSipContactResponse
+	(*SipContactInput)(nil),              // 75: calaba.v1.SipContactInput
+	(*UpdateSipContactRequest)(nil),      // 76: calaba.v1.UpdateSipContactRequest
+	(*SipContactPhones)(nil),             // 77: calaba.v1.SipContactPhones
+	(*SipContactResponse)(nil),           // 78: calaba.v1.SipContactResponse
+	(*ImportSipContactsResponse)(nil),    // 79: calaba.v1.ImportSipContactsResponse
+	(*SipContactImportSkip)(nil),         // 80: calaba.v1.SipContactImportSkip
+	(*PlaceSipPersonalCallRequest)(nil),  // 81: calaba.v1.PlaceSipPersonalCallRequest
+	(*PlaceSipPersonalCallResponse)(nil), // 82: calaba.v1.PlaceSipPersonalCallResponse
+	(*timestamppb.Timestamp)(nil),        // 83: google.protobuf.Timestamp
+	(*JoinVoiceResponse)(nil),            // 84: calaba.v1.JoinVoiceResponse
 }
 var file_calaba_v1_sip_proto_depIdxs = []int32{
 	0,  // 0: calaba.v1.SipSettings.transport:type_name -> calaba.v1.SipTransport
-	52, // 1: calaba.v1.SipSettings.updated_at:type_name -> google.protobuf.Timestamp
-	24, // 2: calaba.v1.SipSettings.inbound_target:type_name -> calaba.v1.SipRouteTarget
+	83, // 1: calaba.v1.SipSettings.updated_at:type_name -> google.protobuf.Timestamp
+	30, // 2: calaba.v1.SipSettings.inbound_target:type_name -> calaba.v1.SipRouteTarget
 	3,  // 3: calaba.v1.SipSettings.inbound_mode:type_name -> calaba.v1.SipInboundMode
-	11, // 4: calaba.v1.SipSettings.registration:type_name -> calaba.v1.SipRegistration
-	4,  // 5: calaba.v1.SipRegistration.status:type_name -> calaba.v1.SipRegistrationStatus
-	52, // 6: calaba.v1.SipRegistration.registered_at:type_name -> google.protobuf.Timestamp
-	52, // 7: calaba.v1.SipRegistration.expires_at:type_name -> google.protobuf.Timestamp
-	10, // 8: calaba.v1.GetSipSettingsResponse.settings:type_name -> calaba.v1.SipSettings
-	0,  // 9: calaba.v1.PutSipSettingsRequest.transport:type_name -> calaba.v1.SipTransport
-	10, // 10: calaba.v1.PutSipSettingsResponse.settings:type_name -> calaba.v1.SipSettings
-	10, // 11: calaba.v1.PutSipRecordingResponse.settings:type_name -> calaba.v1.SipSettings
-	2,  // 12: calaba.v1.SipCall.direction:type_name -> calaba.v1.SipCallDirection
-	1,  // 13: calaba.v1.SipCall.status:type_name -> calaba.v1.SipCallStatus
-	52, // 14: calaba.v1.SipCall.started_at:type_name -> google.protobuf.Timestamp
-	52, // 15: calaba.v1.SipCall.answered_at:type_name -> google.protobuf.Timestamp
-	52, // 16: calaba.v1.SipCall.ended_at:type_name -> google.protobuf.Timestamp
-	19, // 17: calaba.v1.SipCallResponse.call:type_name -> calaba.v1.SipCall
-	19, // 18: calaba.v1.ListSipCallsResponse.calls:type_name -> calaba.v1.SipCall
-	19, // 19: calaba.v1.SipCallUpdate.call:type_name -> calaba.v1.SipCall
-	5,  // 20: calaba.v1.SipRouteTarget.kind:type_name -> calaba.v1.SipRouteKind
-	6,  // 21: calaba.v1.SipExtension.kind:type_name -> calaba.v1.SipExtensionKind
-	52, // 22: calaba.v1.SipExtension.created_at:type_name -> google.protobuf.Timestamp
-	25, // 23: calaba.v1.SipGroup.extension:type_name -> calaba.v1.SipExtension
-	7,  // 24: calaba.v1.SipGroup.strategy:type_name -> calaba.v1.SipGroupStrategy
-	24, // 25: calaba.v1.SipGroup.on_fail:type_name -> calaba.v1.SipRouteTarget
-	26, // 26: calaba.v1.SipGroup.members:type_name -> calaba.v1.SipGroupMember
-	52, // 27: calaba.v1.SipGroup.updated_at:type_name -> google.protobuf.Timestamp
-	24, // 28: calaba.v1.SipIvrItem.action:type_name -> calaba.v1.SipRouteTarget
-	8,  // 29: calaba.v1.SipIvrMenu.prompt_status:type_name -> calaba.v1.SipPromptStatus
-	24, // 30: calaba.v1.SipIvrMenu.on_no_input:type_name -> calaba.v1.SipRouteTarget
-	28, // 31: calaba.v1.SipIvrMenu.items:type_name -> calaba.v1.SipIvrItem
-	52, // 32: calaba.v1.SipIvrMenu.updated_at:type_name -> google.protobuf.Timestamp
-	25, // 33: calaba.v1.ListSipExtensionsResponse.extensions:type_name -> calaba.v1.SipExtension
-	25, // 34: calaba.v1.SipExtensionResponse.extension:type_name -> calaba.v1.SipExtension
-	27, // 35: calaba.v1.ListSipGroupsResponse.groups:type_name -> calaba.v1.SipGroup
-	7,  // 36: calaba.v1.CreateSipGroupRequest.strategy:type_name -> calaba.v1.SipGroupStrategy
-	24, // 37: calaba.v1.CreateSipGroupRequest.on_fail:type_name -> calaba.v1.SipRouteTarget
-	35, // 38: calaba.v1.CreateSipGroupRequest.members:type_name -> calaba.v1.SipGroupMembers
-	7,  // 39: calaba.v1.UpdateSipGroupRequest.strategy:type_name -> calaba.v1.SipGroupStrategy
-	24, // 40: calaba.v1.UpdateSipGroupRequest.on_fail:type_name -> calaba.v1.SipRouteTarget
-	35, // 41: calaba.v1.UpdateSipGroupRequest.members:type_name -> calaba.v1.SipGroupMembers
-	27, // 42: calaba.v1.SipGroupResponse.group:type_name -> calaba.v1.SipGroup
-	29, // 43: calaba.v1.ListSipIvrMenusResponse.menus:type_name -> calaba.v1.SipIvrMenu
-	28, // 44: calaba.v1.SipIvrItems.items:type_name -> calaba.v1.SipIvrItem
-	24, // 45: calaba.v1.CreateSipIvrMenuRequest.on_no_input:type_name -> calaba.v1.SipRouteTarget
-	40, // 46: calaba.v1.CreateSipIvrMenuRequest.items:type_name -> calaba.v1.SipIvrItems
-	24, // 47: calaba.v1.UpdateSipIvrMenuRequest.on_no_input:type_name -> calaba.v1.SipRouteTarget
-	40, // 48: calaba.v1.UpdateSipIvrMenuRequest.items:type_name -> calaba.v1.SipIvrItems
-	29, // 49: calaba.v1.SipIvrMenuResponse.menu:type_name -> calaba.v1.SipIvrMenu
-	24, // 50: calaba.v1.PutSipInboundRequest.target:type_name -> calaba.v1.SipRouteTarget
-	3,  // 51: calaba.v1.PutSipInboundRequest.mode:type_name -> calaba.v1.SipInboundMode
-	12, // 52: calaba.v1.PutSipInboundRequest.registration:type_name -> calaba.v1.SipRegistrationInput
-	10, // 53: calaba.v1.PutSipInboundResponse.settings:type_name -> calaba.v1.SipSettings
-	19, // 54: calaba.v1.SipInboundRing.call:type_name -> calaba.v1.SipCall
-	19, // 55: calaba.v1.SipInboundAcceptResponse.call:type_name -> calaba.v1.SipCall
-	53, // 56: calaba.v1.SipInboundAcceptResponse.join:type_name -> calaba.v1.JoinVoiceResponse
-	50, // 57: calaba.v1.ListSipActiveCallsResponse.calls:type_name -> calaba.v1.SipActiveCall
-	19, // 58: calaba.v1.SipActiveCall.call:type_name -> calaba.v1.SipCall
-	9,  // 59: calaba.v1.SipActiveCall.step:type_name -> calaba.v1.SipActiveStep
-	60, // [60:60] is the sub-list for method output_type
-	60, // [60:60] is the sub-list for method input_type
-	60, // [60:60] is the sub-list for extension type_name
-	60, // [60:60] is the sub-list for extension extendee
-	0,  // [0:60] is the sub-list for field type_name
+	17, // 4: calaba.v1.SipSettings.registration:type_name -> calaba.v1.SipRegistration
+	16, // 5: calaba.v1.SipSettings.schedule:type_name -> calaba.v1.SipSchedule
+	15, // 6: calaba.v1.SipSchedule.hours:type_name -> calaba.v1.SipScheduleInterval
+	30, // 7: calaba.v1.SipSchedule.off_hours:type_name -> calaba.v1.SipRouteTarget
+	4,  // 8: calaba.v1.SipRegistration.status:type_name -> calaba.v1.SipRegistrationStatus
+	83, // 9: calaba.v1.SipRegistration.registered_at:type_name -> google.protobuf.Timestamp
+	83, // 10: calaba.v1.SipRegistration.expires_at:type_name -> google.protobuf.Timestamp
+	14, // 11: calaba.v1.GetSipSettingsResponse.settings:type_name -> calaba.v1.SipSettings
+	0,  // 12: calaba.v1.PutSipSettingsRequest.transport:type_name -> calaba.v1.SipTransport
+	14, // 13: calaba.v1.PutSipSettingsResponse.settings:type_name -> calaba.v1.SipSettings
+	14, // 14: calaba.v1.PutSipRecordingResponse.settings:type_name -> calaba.v1.SipSettings
+	2,  // 15: calaba.v1.SipCall.direction:type_name -> calaba.v1.SipCallDirection
+	1,  // 16: calaba.v1.SipCall.status:type_name -> calaba.v1.SipCallStatus
+	83, // 17: calaba.v1.SipCall.started_at:type_name -> google.protobuf.Timestamp
+	83, // 18: calaba.v1.SipCall.answered_at:type_name -> google.protobuf.Timestamp
+	83, // 19: calaba.v1.SipCall.ended_at:type_name -> google.protobuf.Timestamp
+	10, // 20: calaba.v1.SipCall.origin:type_name -> calaba.v1.SipCallOrigin
+	25, // 21: calaba.v1.SipCallResponse.call:type_name -> calaba.v1.SipCall
+	25, // 22: calaba.v1.ListSipCallsResponse.calls:type_name -> calaba.v1.SipCall
+	25, // 23: calaba.v1.SipCallUpdate.call:type_name -> calaba.v1.SipCall
+	5,  // 24: calaba.v1.SipRouteTarget.kind:type_name -> calaba.v1.SipRouteKind
+	6,  // 25: calaba.v1.SipExtension.kind:type_name -> calaba.v1.SipExtensionKind
+	83, // 26: calaba.v1.SipExtension.created_at:type_name -> google.protobuf.Timestamp
+	31, // 27: calaba.v1.SipGroup.extension:type_name -> calaba.v1.SipExtension
+	7,  // 28: calaba.v1.SipGroup.strategy:type_name -> calaba.v1.SipGroupStrategy
+	30, // 29: calaba.v1.SipGroup.on_fail:type_name -> calaba.v1.SipRouteTarget
+	32, // 30: calaba.v1.SipGroup.members:type_name -> calaba.v1.SipGroupMember
+	83, // 31: calaba.v1.SipGroup.updated_at:type_name -> google.protobuf.Timestamp
+	30, // 32: calaba.v1.SipIvrItem.action:type_name -> calaba.v1.SipRouteTarget
+	8,  // 33: calaba.v1.SipIvrMenu.prompt_status:type_name -> calaba.v1.SipPromptStatus
+	30, // 34: calaba.v1.SipIvrMenu.on_no_input:type_name -> calaba.v1.SipRouteTarget
+	34, // 35: calaba.v1.SipIvrMenu.items:type_name -> calaba.v1.SipIvrItem
+	83, // 36: calaba.v1.SipIvrMenu.updated_at:type_name -> google.protobuf.Timestamp
+	31, // 37: calaba.v1.ListSipExtensionsResponse.extensions:type_name -> calaba.v1.SipExtension
+	31, // 38: calaba.v1.SipExtensionResponse.extension:type_name -> calaba.v1.SipExtension
+	33, // 39: calaba.v1.ListSipGroupsResponse.groups:type_name -> calaba.v1.SipGroup
+	7,  // 40: calaba.v1.CreateSipGroupRequest.strategy:type_name -> calaba.v1.SipGroupStrategy
+	30, // 41: calaba.v1.CreateSipGroupRequest.on_fail:type_name -> calaba.v1.SipRouteTarget
+	41, // 42: calaba.v1.CreateSipGroupRequest.members:type_name -> calaba.v1.SipGroupMembers
+	7,  // 43: calaba.v1.UpdateSipGroupRequest.strategy:type_name -> calaba.v1.SipGroupStrategy
+	30, // 44: calaba.v1.UpdateSipGroupRequest.on_fail:type_name -> calaba.v1.SipRouteTarget
+	41, // 45: calaba.v1.UpdateSipGroupRequest.members:type_name -> calaba.v1.SipGroupMembers
+	33, // 46: calaba.v1.SipGroupResponse.group:type_name -> calaba.v1.SipGroup
+	35, // 47: calaba.v1.ListSipIvrMenusResponse.menus:type_name -> calaba.v1.SipIvrMenu
+	34, // 48: calaba.v1.SipIvrItems.items:type_name -> calaba.v1.SipIvrItem
+	30, // 49: calaba.v1.CreateSipIvrMenuRequest.on_no_input:type_name -> calaba.v1.SipRouteTarget
+	46, // 50: calaba.v1.CreateSipIvrMenuRequest.items:type_name -> calaba.v1.SipIvrItems
+	30, // 51: calaba.v1.UpdateSipIvrMenuRequest.on_no_input:type_name -> calaba.v1.SipRouteTarget
+	46, // 52: calaba.v1.UpdateSipIvrMenuRequest.items:type_name -> calaba.v1.SipIvrItems
+	35, // 53: calaba.v1.SipIvrMenuResponse.menu:type_name -> calaba.v1.SipIvrMenu
+	30, // 54: calaba.v1.PutSipInboundRequest.target:type_name -> calaba.v1.SipRouteTarget
+	3,  // 55: calaba.v1.PutSipInboundRequest.mode:type_name -> calaba.v1.SipInboundMode
+	18, // 56: calaba.v1.PutSipInboundRequest.registration:type_name -> calaba.v1.SipRegistrationInput
+	14, // 57: calaba.v1.PutSipInboundResponse.settings:type_name -> calaba.v1.SipSettings
+	25, // 58: calaba.v1.SipInboundRing.call:type_name -> calaba.v1.SipCall
+	25, // 59: calaba.v1.SipInboundAcceptResponse.call:type_name -> calaba.v1.SipCall
+	84, // 60: calaba.v1.SipInboundAcceptResponse.join:type_name -> calaba.v1.JoinVoiceResponse
+	56, // 61: calaba.v1.ListSipActiveCallsResponse.calls:type_name -> calaba.v1.SipActiveCall
+	25, // 62: calaba.v1.SipActiveCall.call:type_name -> calaba.v1.SipCall
+	9,  // 63: calaba.v1.SipActiveCall.step:type_name -> calaba.v1.SipActiveStep
+	83, // 64: calaba.v1.SipCallEvent.at:type_name -> google.protobuf.Timestamp
+	11, // 65: calaba.v1.SipCallEvent.kind:type_name -> calaba.v1.SipCallEventKind
+	12, // 66: calaba.v1.SipCallEvent.target_kind:type_name -> calaba.v1.SipCallTargetKind
+	25, // 67: calaba.v1.SipJournalEntry.call:type_name -> calaba.v1.SipCall
+	10, // 68: calaba.v1.SipJournalEntry.origin:type_name -> calaba.v1.SipCallOrigin
+	60, // 69: calaba.v1.SipJournalEntry.contact:type_name -> calaba.v1.SipContactRef
+	59, // 70: calaba.v1.SipJournalEntry.parties:type_name -> calaba.v1.SipCallParty
+	61, // 71: calaba.v1.ListSipJournalResponse.entries:type_name -> calaba.v1.SipJournalEntry
+	61, // 72: calaba.v1.GetSipJournalEntryResponse.entry:type_name -> calaba.v1.SipJournalEntry
+	58, // 73: calaba.v1.GetSipJournalEntryResponse.events:type_name -> calaba.v1.SipCallEvent
+	63, // 74: calaba.v1.GetSipJournalEntryResponse.recording:type_name -> calaba.v1.SipJournalRecording
+	16, // 75: calaba.v1.PutSipScheduleRequest.schedule:type_name -> calaba.v1.SipSchedule
+	14, // 76: calaba.v1.PutSipScheduleResponse.settings:type_name -> calaba.v1.SipSettings
+	14, // 77: calaba.v1.PutSipPolicyResponse.settings:type_name -> calaba.v1.SipSettings
+	61, // 78: calaba.v1.SipJournalChange.entry:type_name -> calaba.v1.SipJournalEntry
+	13, // 79: calaba.v1.SipContactPhone.label:type_name -> calaba.v1.SipPhoneLabel
+	71, // 80: calaba.v1.SipContact.phones:type_name -> calaba.v1.SipContactPhone
+	83, // 81: calaba.v1.SipContact.created_at:type_name -> google.protobuf.Timestamp
+	83, // 82: calaba.v1.SipContact.updated_at:type_name -> google.protobuf.Timestamp
+	72, // 83: calaba.v1.ListSipContactsResponse.contacts:type_name -> calaba.v1.SipContact
+	72, // 84: calaba.v1.GetSipContactResponse.contact:type_name -> calaba.v1.SipContact
+	61, // 85: calaba.v1.GetSipContactResponse.calls:type_name -> calaba.v1.SipJournalEntry
+	71, // 86: calaba.v1.SipContactInput.phones:type_name -> calaba.v1.SipContactPhone
+	77, // 87: calaba.v1.UpdateSipContactRequest.phones:type_name -> calaba.v1.SipContactPhones
+	71, // 88: calaba.v1.SipContactPhones.phones:type_name -> calaba.v1.SipContactPhone
+	72, // 89: calaba.v1.SipContactResponse.contact:type_name -> calaba.v1.SipContact
+	80, // 90: calaba.v1.ImportSipContactsResponse.skipped:type_name -> calaba.v1.SipContactImportSkip
+	25, // 91: calaba.v1.PlaceSipPersonalCallResponse.call:type_name -> calaba.v1.SipCall
+	84, // 92: calaba.v1.PlaceSipPersonalCallResponse.join:type_name -> calaba.v1.JoinVoiceResponse
+	93, // [93:93] is the sub-list for method output_type
+	93, // [93:93] is the sub-list for method input_type
+	93, // [93:93] is the sub-list for extension type_name
+	93, // [93:93] is the sub-list for extension extendee
+	0,  // [0:93] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_sip_proto_init() }
@@ -4390,18 +6880,20 @@ func file_calaba_v1_sip_proto_init() {
 		return
 	}
 	file_calaba_v1_rtc_proto_init()
-	file_calaba_v1_sip_proto_msgTypes[2].OneofWrappers = []any{}
 	file_calaba_v1_sip_proto_msgTypes[4].OneofWrappers = []any{}
-	file_calaba_v1_sip_proto_msgTypes[22].OneofWrappers = []any{}
-	file_calaba_v1_sip_proto_msgTypes[27].OneofWrappers = []any{}
-	file_calaba_v1_sip_proto_msgTypes[32].OneofWrappers = []any{}
+	file_calaba_v1_sip_proto_msgTypes[6].OneofWrappers = []any{}
+	file_calaba_v1_sip_proto_msgTypes[24].OneofWrappers = []any{}
+	file_calaba_v1_sip_proto_msgTypes[29].OneofWrappers = []any{}
+	file_calaba_v1_sip_proto_msgTypes[34].OneofWrappers = []any{}
+	file_calaba_v1_sip_proto_msgTypes[51].OneofWrappers = []any{}
+	file_calaba_v1_sip_proto_msgTypes[62].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_sip_proto_rawDesc), len(file_calaba_v1_sip_proto_rawDesc)),
-			NumEnums:      10,
-			NumMessages:   42,
+			NumEnums:      14,
+			NumMessages:   69,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { DRAG_THRESHOLD_PX, createRange, minutesAt, moveRange, resizeRange, type Range } from '../../lib/calendar/drag';
 import { addDays, atMinutes, dayEnd, dayKey, dayStart, eventSpan } from '../../lib/calendar/time';
+import type { ScrollTarget } from '../../lib/calendar/scrollTarget';
 import { canEditEvent, eventOf, moveOccurrence } from '../../services/calendar';
 import { useUi } from '../../stores/ui';
 import { cancelWithConfirm, defaultDraft, newEvent } from './actions';
@@ -41,9 +42,9 @@ export function useCloseCardOutside(from: number, to: number): void {
  * phone it is laid out as the drawer closes): on its resizes during the first second, until the
  * user scrolls it. Returns the cleanup.
  */
-export function settleScroll(el: HTMLElement, minute: number): () => void {
+export function settleScroll(el: HTMLElement, target: ScrollTarget): () => void {
   const apply = (): void => {
-    el.scrollTop = Math.max(0, minute * PX_PER_MIN - el.clientHeight / 3);
+    el.scrollTop = Math.max(0, target.minute * PX_PER_MIN - (target.at === 'third' ? el.clientHeight / 3 : 0));
   };
   apply();
   const ro = new ResizeObserver(apply);

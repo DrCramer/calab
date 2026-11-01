@@ -72,7 +72,7 @@ func TestTranslateFields(t *testing.T) {
 		{"approver pending me", cond(v1.TaskField_TASK_FIELD_APPROVER_PENDING, v1.TaskOp_TASK_OP_IS, "me"), "task_approvers x WHERE x.task_id = t.id AND x.state = 'pending' AND x.user_id = ANY($1::uuid[])", 1},
 		{"approver pending any", cond(v1.TaskField_TASK_FIELD_APPROVER_PENDING, v1.TaskOp_TASK_OP_NOT_EMPTY), "EXISTS (SELECT 1 FROM task_approvers x WHERE x.task_id = t.id AND x.state = 'pending')", 0},
 		{"text", cond(v1.TaskField_TASK_FIELD_TEXT, v1.TaskOp_TASK_OP_CONTAINS, "login bug"), "plainto_tsquery('simple', $2)", 2},
-		{"text key", cond(v1.TaskField_TASK_FIELD_TEXT, v1.TaskOp_TASK_OP_CONTAINS, "fng-12"), "t.number = $3 AND t.board_id IN (SELECT kb.id FROM boards kb WHERE kb.key = $4)", 4},
+		{"text key", cond(v1.TaskField_TASK_FIELD_TEXT, v1.TaskOp_TASK_OP_CONTAINS, "fng-12"), "t.number = $3 AND t.board_id IN (SELECT kb.id FROM boards kb WHERE kb.key = ANY($4::text[]))", 4},
 		{"text key prefix", cond(v1.TaskField_TASK_FIELD_TEXT, v1.TaskOp_TASK_OP_CONTAINS, "FNG"), "kb.key LIKE $3", 3},
 	}
 	for _, c := range cases {

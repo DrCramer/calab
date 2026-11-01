@@ -54,6 +54,9 @@ type SessionState struct {
 	Musician bool `json:"mu,omitempty"`
 	// Ptt: the device is in push-to-talk mode (ADR-0130); PATCH /api/voice/self.
 	Ptt bool `json:"pt,omitempty"`
+	// OnPhone: the device parked this room for a phone call (ADR-0133); PATCH /api/voice/self.
+	// A move to another room (a new /join) clears it.
+	OnPhone bool `json:"ph,omitempty"`
 	// Pending: recorded by /join (or an app-level move) and not connected to LiveKit yet;
 	// participant_joined clears it, a device that never connects is removed after 15 s.
 	Pending  bool  `json:"p,omitempty"`
@@ -124,7 +127,7 @@ func ParseRoomName(name string) (workspaceID, roomID uuid.UUID, ok bool) {
 // Aggregate computes the per-user voice state from all of the user's device sessions in a
 // workspace: the user is in the room of their most recently joined session; muted/deafened
 // = all sessions in that room are; streaming / camera / musician = any session in that room
-// is; ptt = all sessions in that room are; pending = all
+// is; ptt / on_phone = all sessions in that room are; pending = all
 // sessions in that room are still connecting (one connected device makes the user connected).
 // Returns a state with empty RoomId when the user has no sessions.
 func Aggregate(workspaceID, userID uuid.UUID, sessions []SessionState) *v1.VoiceState {
@@ -143,7 +146,7 @@ func Aggregate(workspaceID, userID uuid.UUID, sessions []SessionState) *v1.Voice
 		return out
 	}
 	out.RoomId = latest.RoomID.String()
-	out.Muted, out.Deafened, out.Pending, out.Ptt = true, true, true, true
+	out.Muted, out.Deafened, out.Pending, out.Ptt, out.OnPhone = true, true, true, true, true
 	joined := latest.JoinedAt
 	for _, s := range sessions {
 		if s.UserID != userID || s.RoomID != latest.RoomID {
@@ -155,6 +158,7 @@ func Aggregate(workspaceID, userID uuid.UUID, sessions []SessionState) *v1.Voice
 		out.Camera = out.Camera || s.Camera
 		out.Musician = out.Musician || s.Musician
 		out.Ptt = out.Ptt && s.Ptt
+		out.OnPhone = out.OnPhone && s.OnPhone
 		out.Pending = out.Pending && s.Pending
 		joined = min(joined, s.JoinedAt)
 	}
@@ -181,7 +185,8 @@ func Equal(a, b *v1.VoiceState) bool {
 	return a.GetRoomId() == b.GetRoomId() && a.GetMuted() == b.GetMuted() &&
 		a.GetDeafened() == b.GetDeafened() && a.GetStreaming() == b.GetStreaming() && a.GetCamera() == b.GetCamera() &&
 		a.GetJoinedAt().AsTime().Equal(b.GetJoinedAt().AsTime()) && a.GetServerMuted() == b.GetServerMuted() &&
-		a.GetPending() == b.GetPending() && a.GetMusician() == b.GetMusician() && a.GetPtt() == b.GetPtt()
+		a.GetPending() == b.GetPending() && a.GetMusician() == b.GetMusician() && a.GetPtt() == b.GetPtt() &&
+		a.GetOnPhone() == b.GetOnPhone()
 }
 
 // Store is the Redis-backed voice state.

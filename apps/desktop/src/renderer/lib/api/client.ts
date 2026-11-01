@@ -23,7 +23,7 @@ export class ApiError extends Error {
      * that was hit (ROOM_FULL — users; FILE_QUOTA_EXCEEDED — bytes). `retryAfter`: seconds from
      * a 429's `Retry-After` header (ADR-0023: code resend, mail limits).
      */
-    readonly extra: { reason?: string; used?: number; limit?: number; retryAfter?: number; planViolations?: readonly PlanLimitViolation[] } = {},
+    readonly extra: { reason?: string; used?: number; limit?: number; retryAfter?: number; planViolations?: readonly PlanLimitViolation[]; conflictId?: string; conflictName?: string } = {},
   ) {
     super(message);
     this.name = 'ApiError';
@@ -51,7 +51,7 @@ export function retryAfterSeconds(res: Response): number | undefined {
 export async function toApiError(res: Response): Promise<ApiError> {
   const retry = retryAfterSeconds(res);
   try {
-    const b = (await res.json()) as { code?: string; message?: string; field?: string; reason?: string; used?: unknown; limit?: unknown; planLimitsExceeded?: unknown };
+    const b = (await res.json()) as { code?: string; message?: string; field?: string; reason?: string; used?: unknown; limit?: unknown; planLimitsExceeded?: unknown; conflictId?: string; conflictName?: string };
     // protojson: uint64 as a string.
     const num = (v: unknown): number | undefined => (typeof v === 'string' || typeof v === 'number') && Number.isFinite(Number(v)) ? Number(v) : undefined;
     const used = num(b.used);
@@ -64,6 +64,9 @@ export async function toApiError(res: Response): Promise<ApiError> {
       ...(used !== undefined ? { used } : {}),
       ...(limit !== undefined ? { limit } : {}),
       ...(retry !== undefined ? { retryAfter: retry } : {}),
+      // SIP_CONTACT_NUMBER_TAKEN (ADR-0137 §2): the contact that already has the number.
+      ...(b.conflictId ? { conflictId: b.conflictId } : {}),
+      ...(b.conflictName !== undefined && b.conflictId ? { conflictName: b.conflictName } : {}),
     };
     const err = new ApiError(b.code ?? 'ERROR_CODE_UNSPECIFIED', b.message ?? res.statusText, res.status, b.field || undefined, extra);
     for (const h of errorHooks) h(err);

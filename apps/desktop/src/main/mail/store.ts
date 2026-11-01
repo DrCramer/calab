@@ -110,6 +110,21 @@ export const MIGRATIONS: readonly string[] = [
   CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
   CREATE VIRTUAL TABLE fts USING fts5(subject, sender, snippet, body, tokenize = 'unicode61 remove_diacritics 2');
   `,
+  // 2: the `sender` column of the index also holds To / Cc / Bcc names and addresses (search by recipient, #94).
+  `
+  UPDATE fts SET sender = (
+    SELECT m.from_name || ' ' || m.from_addr
+      || COALESCE((SELECT ' ' || group_concat(json_extract(j.value, '$.name') || ' ' || json_extract(j.value, '$.address'), ' ') FROM json_each(m.to_json) j), '')
+      || COALESCE((SELECT ' ' || group_concat(json_extract(j.value, '$.name') || ' ' || json_extract(j.value, '$.address'), ' ') FROM json_each(m.cc_json) j), '')
+      || COALESCE((SELECT ' ' || group_concat(json_extract(j.value, '$.name') || ' ' || json_extract(j.value, '$.address'), ' ') FROM json_each(m.bcc_json) j), '')
+    FROM messages m WHERE m.rid = fts.rowid)
+  WHERE rowid IN (SELECT rid FROM messages);
+  UPDATE fts SET
+    subject = replace(replace(subject, 'ё', 'е'), 'Ё', 'Е'),
+    sender = replace(replace(sender, 'ё', 'е'), 'Ё', 'Е'),
+    snippet = replace(replace(snippet, 'ё', 'е'), 'Ё', 'Е'),
+    body = replace(replace(body, 'ё', 'е'), 'Ё', 'Е');
+  `,
 ];
 
 export function migrate(db: DatabaseSync, steps: readonly string[] = MIGRATIONS): number {
@@ -242,6 +257,14 @@ export interface OutgoingMeta {
   messageIdHdr: string;
 }
 
+/** Search folds ё to е on both sides (index and query), so «Пётр» and «Петр» are the same word. */
+export const fold = (t: string): string => t.replace(/ё/g, 'е').replace(/Ё/g, 'Е');
+
+/** The searchable «people» text of a message: sender, then To / Cc / Bcc (names and addresses). */
+export function peopleText(from: { name: string; address: string }, ...lists: Array<ReadonlyArray<{ name: string; address: string }>>): string {
+  return fold([from, ...lists.flat()].map((a) => `${a.name} ${a.address}`).join(' '));
+}
+
 const addrJson = (a: MailAddress[]): string => JSON.stringify(a.map((x) => ({ name: x.name, address: x.address })));
 
 export class MailStore {
@@ -286,7 +309,7 @@ export class MailStore {
         }
         if (fixed === null || fixed === cur) continue;
         upd.run(fixed, r['rid'] ?? null);
-        fts.run(fixed, r['rid'] ?? null);
+        fts.run(fold(fixed), r['rid'] ?? null);
       }
       this.setMeta('snippet_version', SNIPPET_VERSION);
     });
@@ -452,6 +475,14 @@ export class MailStore {
     return rows.map((r) => str(r['id']));
   }
 
+  /** Messages of a folder not yet seen (id, thread). */
+  unseenInFolder(row: number): Array<{ id: string; threadId: string }> {
+    return this.db
+      .prepare('SELECT id, thread_id FROM messages WHERE folder_row = ? AND seen = 0')
+      .all(row)
+      .map((r) => ({ id: str(r['id']), threadId: str(r['thread_id']) }));
+  }
+
   folderCounts(row: number): { unread: number; total: number } {
     const r = this.db.prepare('SELECT COUNT(*) AS total, COALESCE(SUM(seen = 0), 0) AS unread FROM messages WHERE folder_row = ?').get(row);
     return { unread: num(r?.['unread']), total: num(r?.['total']) };
@@ -573,7 +604,7 @@ export class MailStore {
       );
     this.db
       .prepare('INSERT INTO fts (rowid, subject, sender, snippet, body) VALUES (?, ?, ?, ?, ?)')
-      .run(r.lastInsertRowid, m.subject, `${m.from.name} ${m.from.address}`, m.snippet, '');
+      .run(r.lastInsertRowid, fold(m.subject), peopleText(m.from, m.to, m.cc, m.bcc), fold(m.snippet), '');
     return { id, threadId, inserted: true };
   }
 
@@ -631,7 +662,7 @@ export class MailStore {
       for (const r of rows) {
         const cols = Object.keys(r);
         this.db.prepare(`INSERT OR REPLACE INTO messages (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...cols.map((c) => (r[c] ?? null) as SQLInputValue));
-        this.db.prepare('INSERT OR REPLACE INTO fts (rowid, subject, sender, snippet, body) VALUES (?, ?, ?, ?, ?)').run(r['rid'] ?? null, str(r['subject']), `${str(r['from_name'])} ${str(r['from_addr'])}`, str(r['snippet']), '');
+        this.db.prepare('INSERT OR REPLACE INTO fts (rowid, subject, sender, snippet, body) VALUES (?, ?, ?, ?, ?)').run(r['rid'] ?? null, fold(str(r['subject'])), peopleText({ name: str(r['from_name']), address: str(r['from_addr']) }, json<MailAddress[]>(r['to_json'], []), json<MailAddress[]>(r['cc_json'], []), json<MailAddress[]>(r['bcc_json'], [])), fold(str(r['snippet'])), '');
       }
     });
   }
@@ -837,7 +868,7 @@ export class MailStore {
       this.db.prepare('DELETE FROM attachments WHERE message_id = ?').run(id);
       const ins = this.db.prepare('INSERT INTO attachments (message_id, idx, name, mime, size, cid, inline, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
       for (const a of attachments) ins.run(id, a.id, a.name, a.mime, a.size, a.cid ?? null, a.inline ? 1 : 0, a.data ? this.putBlob(a.data) : null);
-      this.db.prepare('UPDATE fts SET body = ? WHERE rowid = ?').run((body.text ?? '').slice(0, 200_000), r['rid'] ?? null);
+      this.db.prepare('UPDATE fts SET body = ? WHERE rowid = ?').run(fold((body.text ?? '').slice(0, 200_000)), r['rid'] ?? null);
     });
   }
 
@@ -976,8 +1007,7 @@ function registerSmartMatch(db: DatabaseSync): void {
 
 /** Free text → an FTS5 query: every word as a quoted prefix term (no operators from the user). */
 export function ftsQuery(text: string): string | null {
-  const words = text
-    .normalize('NFKC')
+  const words = fold(text.normalize('NFKC'))
     .split(/[\s"'()*:^{}[\]+\-~<>@.,;!?/\\|]+/u)
     .filter((w) => w.length > 0)
     .slice(0, 12);

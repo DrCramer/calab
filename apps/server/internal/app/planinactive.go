@@ -28,10 +28,14 @@ var planInactiveRoutes = map[string]string{
 	"POST /api/messages/{id}/interactions":               plans.RestrictedSend,
 	"POST /api/messages/{id}/buttons/{buttonId}/contact": plans.RestrictedSend,
 	// files
-	"POST /api/workspaces/{id}/files":       plans.RestrictedUpload,
-	"POST /api/boards/{id}/files":           plans.RestrictedUpload,
-	"POST /api/workspaces/{id}/disk/upload": plans.RestrictedUpload, // ADR-0094
-	"POST /api/wiki/pages/{id}/files":       plans.RestrictedUpload, // ADR-0096
+	"POST /api/workspaces/{id}/files":          plans.RestrictedUpload,
+	"POST /api/boards/{id}/files":              plans.RestrictedUpload,
+	"POST /api/workspaces/{id}/disk/upload":    plans.RestrictedUpload, // ADR-0094
+	"POST /api/workspaces/{id}/disk/import":    plans.RestrictedUpload, // ADR-0143
+	"POST /api/disk/items/{id}/office/convert": plans.RestrictedUpload,
+	"POST /api/workspaces/{id}/office/convert": plans.RestrictedUpload,
+	"POST /api/workspaces/{id}/office/create":  plans.RestrictedUpload,
+	"POST /api/wiki/pages/{id}/files":          plans.RestrictedUpload, // ADR-0096
 	// pictures made of an upload: backgrounds, achievement images (an edit that replaces the
 	// picture is refused inside achievements), sticker replacement, bot avatars
 	"POST /api/workspaces/{id}/backgrounds":         plans.RestrictedUpload,

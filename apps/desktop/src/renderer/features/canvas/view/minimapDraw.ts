@@ -75,6 +75,11 @@ export function drawMinimap(ctx: Ctx2D, scene: Scene, palette: CanvasPalette, fr
         ctx.lineWidth = 1;
         ctx.strokeRect(r.x + 0.5, r.y + 0.5, Math.max(r.w - 1, 1), Math.max(r.h - 1, 1));
       }
+    } else if (o.kind === 'image') {
+      // A picture: one plain plaque, like its stand-in before it loads.
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = palette.plaque;
+      ctx.fillRect(r.x, r.y, px(r.w), px(r.h));
     } else {
       ctx.globalAlpha = 0.4;
       ctx.fillStyle = resolveColor(palette, o.color) ?? palette.ink;

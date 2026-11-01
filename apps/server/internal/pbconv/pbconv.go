@@ -238,7 +238,26 @@ func EncodeSettings(s *v1.UserSettings) ([]byte, error) {
 	s.HideMessageTextInNotifications = false // dedicated privacy column (ADR-0072)
 	s.TaskNotifyOff = nil                    // users.task_notify_off (ADR-0089)
 	s.TaskNotifyBots = nil                   // users.task_notify_bots (ADR-0090)
+	s.CalendarZones = nil                    // users.calendar_zones (board #85)
 	return protojson.MarshalOptions{EmitDefaultValues: true}.Marshal(s)
+}
+
+// CalendarZones decodes users.calendar_zones (board #85); a broken value reads as none.
+func CalendarZones(raw []byte) []*v1.CalendarZone {
+	var rows []struct {
+		Zone  string `json:"zone"`
+		Label string `json:"label"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &rows) != nil {
+		return []*v1.CalendarZone{}
+	}
+	out := make([]*v1.CalendarZone, 0, len(rows))
+	for _, r := range rows {
+		if r.Zone != "" {
+			out = append(out, &v1.CalendarZone{Zone: r.Zone, Label: r.Label})
+		}
+	}
+	return out
 }
 
 // DefaultSettings are the settings of a new user.
@@ -269,6 +288,7 @@ func Me(u sqlc.User) *v1.Me {
 	for _, d := range u.WorkDays {
 		settings.WorkHours.Days = append(settings.WorkHours.Days, uint32(max(d, 0))) //nolint:gosec // 1..7
 	}
+	settings.CalendarZones = CalendarZones(u.CalendarZones)
 	me := &v1.Me{User: WithContacts(User(u), u), Email: email, Settings: settings,
 		EmailVerified: u.IsGuest || u.EmailVerifiedAt != nil,                 // guests have no email to verify
 		IsSuperadmin:  u.EmailVerifiedAt != nil && superadmin.IsPtr(u.Email)} // an unverified address proves nothing
@@ -303,10 +323,11 @@ func Session(s sqlc.Session, current uuid.UUID) *v1.Session {
 // WorkspaceDefaults returns the workspace media defaults.
 func WorkspaceDefaults(w sqlc.Workspace) *v1.RoomMediaSettings {
 	return &v1.RoomMediaSettings{
-		AudioBitrateKbps: uint32(w.DefaultAudioBitrateKbps), //nolint:gosec // DB CHECK bounds it
-		MaxStreamPreset:  PresetFromDB(w.DefaultMaxStreamPreset),
-		MaxStreams:       uint32(w.DefaultMaxStreams),  //nolint:gosec // DB CHECK bounds it
-		CameraLimit:      uint32(w.DefaultCameraLimit), //nolint:gosec // DB CHECK bounds it
+		AudioBitrateKbps:  uint32(w.DefaultAudioBitrateKbps), //nolint:gosec // DB CHECK bounds it
+		MaxStreamPreset:   PresetFromDB(w.DefaultMaxStreamPreset),
+		MaxStreams:        uint32(w.DefaultMaxStreams),                      //nolint:gosec // DB CHECK bounds it
+		CameraLimit:       uint32(w.DefaultCameraLimit),                     //nolint:gosec // DB CHECK bounds it
+		JoinLeaveSoundMax: proto.Uint32(uint32(w.DefaultJoinLeaveSoundMax)), //nolint:gosec // DB CHECK bounds it
 	}
 }
 
@@ -517,16 +538,21 @@ func MediaOverride(r sqlc.Room) *v1.RoomMediaOverride {
 		v := uint32(*r.CameraLimit) //nolint:gosec // DB CHECK bounds it
 		o.CameraLimit = &v
 	}
+	if r.JoinLeaveSoundMax != nil {
+		v := uint32(*r.JoinLeaveSoundMax) //nolint:gosec // DB CHECK bounds it
+		o.JoinLeaveSoundMax = &v
+	}
 	return o
 }
 
 // EffectiveMedia merges the room override over the workspace defaults.
 func EffectiveMedia(r sqlc.Room, defaults *v1.RoomMediaSettings) *v1.RoomMediaSettings {
 	m := &v1.RoomMediaSettings{
-		AudioBitrateKbps: defaults.GetAudioBitrateKbps(),
-		MaxStreamPreset:  defaults.GetMaxStreamPreset(),
-		MaxStreams:       defaults.GetMaxStreams(),
-		CameraLimit:      defaults.GetCameraLimit(),
+		AudioBitrateKbps:  defaults.GetAudioBitrateKbps(),
+		MaxStreamPreset:   defaults.GetMaxStreamPreset(),
+		MaxStreams:        defaults.GetMaxStreams(),
+		CameraLimit:       defaults.GetCameraLimit(),
+		JoinLeaveSoundMax: proto.Uint32(JoinLeaveSoundMax(defaults)),
 	}
 	o := MediaOverride(r)
 	if o.AudioBitrateKbps != nil {
@@ -541,7 +567,21 @@ func EffectiveMedia(r sqlc.Room, defaults *v1.RoomMediaSettings) *v1.RoomMediaSe
 	if o.CameraLimit != nil {
 		m.CameraLimit = *o.CameraLimit
 	}
+	if o.JoinLeaveSoundMax != nil {
+		m.JoinLeaveSoundMax = proto.Uint32(*o.JoinLeaveSoundMax)
+	}
 	return m
+}
+
+// DefaultJoinLeaveSoundMax is the join/leave cue threshold when nothing is set.
+const DefaultJoinLeaveSoundMax = 10
+
+// JoinLeaveSoundMax is m's join/leave cue threshold; unset = DefaultJoinLeaveSoundMax.
+func JoinLeaveSoundMax(m *v1.RoomMediaSettings) uint32 {
+	if m == nil || m.JoinLeaveSoundMax == nil {
+		return DefaultJoinLeaveSoundMax
+	}
+	return m.GetJoinLeaveSoundMax()
 }
 
 // Override converts a room_permissions row.

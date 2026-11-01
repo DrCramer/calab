@@ -67,3 +67,11 @@ The **Active calls** tab lists calls in progress: direction, step (voice menu, r
 ## Bots and telephony
 
 A bot can be given an internal number and used as the target of a menu key, a fallback or a group member. A bot does **not** answer such calls by itself: its code has to handle the `SIP_INBOUND_RING` event, confirm the call with an accept request and join the call's voice room — everything after that (speech recognition and synthesis, creating tasks) is the bot's own logic. There is no ready-made no-code bot, so first make sure your bot does this; otherwise a call to the bot goes unanswered and falls through to the fallback or ends. More on bots in [Bots and integration API](../bots).
+
+The call in `SIP_INBOUND_RING` (and in `SIP_CALL_UPDATE`) tells the bot why it rings:
+
+- `offHours: true` — the call came outside the working hours of the inbound schedule and follows its off-hours route (for example straight to the bot).
+- `viaFallback: true` — the bot was reached through a group's fallback: nobody in the group answered in time, everybody was busy or declined.
+- Neither — the regular route: the entry point during working hours, a menu key or a dialed extension. Both — an off-hours route whose group fell back to the bot.
+
+A call that the schedule hangs up ends with reason `off_hours`.

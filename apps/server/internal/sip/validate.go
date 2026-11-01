@@ -46,6 +46,97 @@ func NormalizeNumber(s string) (string, bool) {
 	return n, e164.MatchString(n)
 }
 
+// NormalizeContactNumber is NormalizeNumber for what people type into the phone book, the
+// dial pad and an imported file (ADR-0137 §2): besides its forms, a Russian mobile number
+// without the trunk prefix — 10 digits starting with 9 — becomes +7… when the workspace's own
+// number (callerID) is a +7 number.
+func NormalizeContactNumber(s, callerID string) (string, bool) {
+	if n, ok := NormalizeNumber(s); ok {
+		return n, true
+	}
+	if !strings.HasPrefix(callerID, "+7") {
+		return "", false
+	}
+	var b strings.Builder
+	for _, r := range strings.TrimSpace(s) {
+		switch {
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == ' ' || r == '-' || r == '.' || r == '(' || r == ')' || r == ' ':
+		default:
+			return "", false
+		}
+	}
+	if d := b.String(); len(d) == 10 && d[0] == '9' {
+		return "+7" + d, true
+	}
+	return "", false
+}
+
+// MaxExtension is the longest extension a dialed number may carry: keys and pauses.
+const MaxExtension = 20
+
+// SplitExtension separates an extension from a dialed number (ADR-0046 addendum «Тональный
+// набор»): «+7 495 123-45-67 доб. 101», «…ext. 101», «… x101», «…,101» or «…;101». The marker
+// itself is the first 2 s pause after the answer; in the extension every further «,» or «;» is
+// one more pause (kept as «,»), the keys are 0-9 * #; spaces, NBSP, dots and dashes are
+// skipped. number is the text before the marker (for NormalizeNumber); without a marker it is
+// the whole input and ext is empty. ok = false for a marker with no keys after it, anything
+// else after it, or an extension longer than MaxExtension.
+func SplitExtension(s string) (number, ext string, ok bool) {
+	s = strings.TrimSpace(s)
+	at, size := -1, 0
+	for i, r := range s {
+		n := 1
+		if r != ',' && r != ';' && r != 'x' && r != 'X' {
+			n = max(foldPrefix(s[i:], "доб"), foldPrefix(s[i:], "ext"))
+		}
+		if n > 0 {
+			at, size = i, n
+			break
+		}
+	}
+	if at < 0 {
+		return s, "", true
+	}
+	var b strings.Builder
+	keys := 0
+	for _, r := range s[at+size:] {
+		switch {
+		case r >= '0' && r <= '9', r == '*', r == '#':
+			b.WriteRune(r)
+			keys++
+		case r == ',' || r == ';':
+			b.WriteByte(',')
+		case r == ' ' || r == '\u00a0' || r == '.' || r == '-':
+		default:
+			return "", "", false
+		}
+	}
+	ext = strings.TrimRight(b.String(), ",")
+	if keys == 0 || len(ext) > MaxExtension {
+		return "", "", false
+	}
+	return strings.TrimSpace(s[:at]), ext, true
+}
+
+// foldPrefix is the byte length of s's prefix that equals p ignoring case, or 0.
+func foldPrefix(s, p string) int {
+	n, end := utf8.RuneCountInString(p), 0
+	for i := range s {
+		if n == 0 {
+			break
+		}
+		n--
+		_, w := utf8.DecodeRuneInString(s[i:])
+		end = i + w
+	}
+	if n > 0 || !strings.EqualFold(s[:end], p) {
+		return 0
+	}
+	return end
+}
+
 // prefixRe: an allowed prefix, «+» and 1..15 digits.
 var prefixRe = regexp.MustCompile(`^\+[0-9]{1,15}$`)
 

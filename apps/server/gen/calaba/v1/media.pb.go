@@ -109,8 +109,11 @@ type RoomMediaSettings struct {
 	MaxStreamPreset  ScreenSharePreset      `protobuf:"varint,2,opt,name=max_stream_preset,json=maxStreamPreset,proto3,enum=calaba.v1.ScreenSharePreset" json:"max_stream_preset,omitempty"`
 	MaxStreams       uint32                 `protobuf:"varint,3,opt,name=max_streams,json=maxStreams,proto3" json:"max_streams,omitempty"`
 	CameraLimit      uint32                 `protobuf:"varint,4,opt,name=camera_limit,json=cameraLimit,proto3" json:"camera_limit,omitempty"` // webcams at once in the room, 0..25; 0 = cameras off; default 6
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Others' join/leave cues play only while the room (with that person) has at most this many
+	// people: 0..99, 0 = never; default 10. Always set by the server; unset (older server) = 10.
+	JoinLeaveSoundMax *uint32 `protobuf:"varint,5,opt,name=join_leave_sound_max,json=joinLeaveSoundMax,proto3,oneof" json:"join_leave_sound_max,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *RoomMediaSettings) Reset() {
@@ -171,17 +174,26 @@ func (x *RoomMediaSettings) GetCameraLimit() uint32 {
 	return 0
 }
 
+func (x *RoomMediaSettings) GetJoinLeaveSoundMax() uint32 {
+	if x != nil && x.JoinLeaveSoundMax != nil {
+		return *x.JoinLeaveSoundMax
+	}
+	return 0
+}
+
 var File_calaba_v1_media_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_media_proto_rawDesc = "" +
 	"\n" +
-	"\x15calaba/v1/media.proto\x12\tcalaba.v1\"\xcf\x01\n" +
+	"\x15calaba/v1/media.proto\x12\tcalaba.v1\"\x9e\x02\n" +
 	"\x11RoomMediaSettings\x12,\n" +
 	"\x12audio_bitrate_kbps\x18\x01 \x01(\rR\x10audioBitrateKbps\x12H\n" +
 	"\x11max_stream_preset\x18\x02 \x01(\x0e2\x1c.calaba.v1.ScreenSharePresetR\x0fmaxStreamPreset\x12\x1f\n" +
 	"\vmax_streams\x18\x03 \x01(\rR\n" +
 	"maxStreams\x12!\n" +
-	"\fcamera_limit\x18\x04 \x01(\rR\vcameraLimit*\xca\x03\n" +
+	"\fcamera_limit\x18\x04 \x01(\rR\vcameraLimit\x124\n" +
+	"\x14join_leave_sound_max\x18\x05 \x01(\rH\x00R\x11joinLeaveSoundMax\x88\x01\x01B\x17\n" +
+	"\x15_join_leave_sound_max*\xca\x03\n" +
 	"\x11ScreenSharePreset\x12#\n" +
 	"\x1fSCREEN_SHARE_PRESET_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bSCREEN_SHARE_PRESET_ECONOMY\x10\x01\x12\x1c\n" +
@@ -233,6 +245,7 @@ func file_calaba_v1_media_proto_init() {
 	if File_calaba_v1_media_proto != nil {
 		return
 	}
+	file_calaba_v1_media_proto_msgTypes[0].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

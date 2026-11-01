@@ -28,6 +28,7 @@ export const ruCanvasComments = {
   'canvasComments.resolve': 'Решить',
   'canvasComments.reopen': 'Открыть снова',
   'canvasComments.showPin': 'Показать на холсте',
+  'canvasComments.newThread': 'Новая ветка',
   'canvasComments.pinLabel': 'Комментарий: {name}',
   'canvasComments.gone': 'Комментарий удалён или недоступен',
   'canvasComments.tooLong': 'Не больше {n} символов',

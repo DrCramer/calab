@@ -335,10 +335,20 @@ export function describe(a: TaskActivity, ctx: HistoryCtx, now = new Date()): Hi
       return entry(a, milestonesText(f, ctx, now));
     case 'git':
       return entry(a, gitText(f));
+    case 'release': // board task #101: after {release_id, name, environment, sha, url}
+      return entry(a, t('boards.act.release', { name: clip(str(f?.['name'])), env: str(f?.['environment']) }));
     default:
       return entry(a, t('boards.act.changed'));
   }
 }
+
+/** Pull request events of board task #101 with their own line (RuleGitEvent names). */
+const GIT_PR_EVENT: Partial<Record<string, MessageKey>> = {
+  PR_DRAFT_OPENED: 'boards.act.gitDraft',
+  PR_READY: 'boards.act.gitReady',
+  PR_REVIEW_REQUESTED: 'boards.act.gitReview',
+  PR_APPROVED: 'boards.act.gitApproved',
+};
 
 /** A «git» entry (ADR-0060 §4): after {event, kind, repo, ref, state…}. */
 function gitText(f: Json): string {
@@ -347,6 +357,10 @@ function gitText(f: Json): string {
   const ref = kind === 'pr' ? `${s('repo')}#${s('ref')}` : kind === 'commit' ? `${s('repo')}@${s('ref').slice(0, 7)}` : s('ref');
   if (kind === 'pr' && s('state') === 'merged') return t('boards.act.gitMerged', { ref });
   if (kind === 'pr' && s('state') === 'closed') return t('boards.act.gitClosed', { ref });
+  if (kind === 'pr') {
+    const key = GIT_PR_EVENT[s('event')];
+    if (key) return t(key, { ref });
+  }
   return t('boards.act.git', { what: t(kind === 'pr' ? 'boards.act.gitPr' : kind === 'commit' ? 'boards.act.gitCommit' : 'boards.act.gitBranch'), ref });
 }
 

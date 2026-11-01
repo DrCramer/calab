@@ -60,6 +60,10 @@ const (
 	// scopeCanvasComment: /api/canvas/comments/{id} (ADR-0127 wave 4), the workspace of the
 	// comment's canvas.
 	scopeCanvasComment
+	// scopeOffice: GET /api/office/config (ADR-0143) — ?item= is a Disk item (its workspace, like
+	// scopeDiskItem); ?file= is an attachment, checked like scopeFile reads (files.CanRead in the
+	// handler under this exact policy context).
+	scopeOffice
 )
 
 // billingRecoveryRoutes: workspace routes besides scopeBilling the owner (and a BILLING_TOPUP /
@@ -73,6 +77,16 @@ var billingRecoveryRoutes = map[string]bool{
 // identityRoutes enumerates every route. Unknown paths fail closed; a new registration
 // always requires an explicit authority and resource classification.
 var identityRoutes = map[string]identityScope{
+	"GET /api/workspaces/{id}/calendar.ics":             scopeWorkspace,
+	"GET /api/events/{id}/calendar.ics":                 scopeEvent,
+	"GET /api/workspaces/{id}/calendar-subscription":    scopeWorkspace,
+	"POST /api/workspaces/{id}/calendar-subscription":   scopeWorkspace,
+	"PUT /api/workspaces/{id}/calendar-subscription":    scopeWorkspace,
+	"DELETE /api/workspaces/{id}/calendar-subscription": scopeWorkspace,
+	"GET /api/calendar-feed.ics":                        scopePublic,
+	"GET /api/calendar-connect":                         scopePublic,
+	"POST /api/me/calendar-widget":                      scopeAggregate,
+	"GET /api/calendar-widget":                          scopePublic, // ADR-0145: purpose-specific grant and fresh session/policy checks.
 	// Native endpoint management uses independent local-account authority. Delivery and
 	// resolve additionally recheck the exact persisted session against the target policy.
 	"GET /api/me/push-capabilities":                                                     scopeGlobal,
@@ -214,6 +228,7 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/me/mentions":                                                scopeAggregate,
 	"GET /api/me/sessions":                                                scopeGlobal,
 	"GET /api/me/sticker-packs":                                           scopeAggregate,
+	"GET /api/me/task-notices":                                            scopeAggregate,
 	"GET /api/me/tasks":                                                   scopeAggregate,
 	"GET /api/search":                                                     scopeAggregate,
 	"GET /api/messages/{id}/reactions/{emoji}":                            scopeMessage,
@@ -225,6 +240,7 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/rooms/{id}/invites":                                         scopeRoom,
 	"GET /api/rooms/{id}/messages":                                        scopeRoom,
 	"GET /api/rooms/{id}/messages/{messageId}":                            scopeRoom,
+	"GET /api/rooms/{id}/messages/{messageId}/readers":                    scopeRoom,
 	"GET /api/rooms/{id}/pins":                                            scopeRoom,
 	"GET /api/rooms/{id}/recordings/{rid}/transcript":                     scopeRoom,
 	"GET /api/sticker-packs/{id}":                                         scopePack,
@@ -452,6 +468,20 @@ var identityRoutes = map[string]identityScope{
 	"PUT /api/workspaces/{id}/rooms/order":                                scopeWorkspace,
 	"PUT /api/workspaces/{id}/sip/inbound":                                scopeWorkspace,
 	"PUT /api/workspaces/{id}/sip/recording":                              scopeWorkspace,
+	"PUT /api/workspaces/{id}/sip/policy":                                 scopeWorkspace,
+	"PUT /api/workspaces/{id}/sip/schedule":                               scopeWorkspace,
+	"GET /api/workspaces/{id}/sip/journal":                                scopeWorkspace,
+	"GET /api/workspaces/{id}/sip/journal/{cid}":                          scopeWorkspace,
+	"POST /api/workspaces/{id}/sip/journal/seen":                          scopeWorkspace,
+	"GET /api/workspaces/{id}/sip/contacts":                               scopeWorkspace,
+	"POST /api/workspaces/{id}/sip/contacts":                              scopeWorkspace,
+	"GET /api/workspaces/{id}/sip/contacts/export.csv":                    scopeWorkspace,
+	"POST /api/workspaces/{id}/sip/contacts/import":                       scopeWorkspace,
+	"GET /api/workspaces/{id}/sip/contacts/{cid}":                         scopeWorkspace,
+	"PATCH /api/workspaces/{id}/sip/contacts/{cid}":                       scopeWorkspace,
+	"DELETE /api/workspaces/{id}/sip/contacts/{cid}":                      scopeWorkspace,
+	"POST /api/workspaces/{id}/sip/calls":                                 scopeWorkspace,
+	"DELETE /api/workspaces/{id}/sip/calls/{cid}":                         scopeWorkspace,
 	"POST /api/sip/inbound/{cid}/accept":                                  scopeGlobal,
 	"POST /api/sip/inbound/{cid}/decline":                                 scopeGlobal,
 	"POST /api/sip/inbound/{cid}/join":                                    scopeGlobal,
@@ -463,34 +493,43 @@ var identityRoutes = map[string]identityScope{
 	// Boards 2.0 (ADR-0058).
 	"GET /api/workspaces/{id}/board-categories":  scopeWorkspace,
 	"POST /api/workspaces/{id}/board-categories": scopeWorkspace,
-	"PUT /api/workspaces/{id}/boards/order":      scopeWorkspace,
-	"PATCH /api/board-categories/{id}":           scopeBoardCategory,
-	"DELETE /api/board-categories/{id}":          scopeBoardCategory,
-	"POST /api/tasks/{id}/checklists":            scopeTask,
-	"PATCH /api/checklists/{id}":                 scopeChecklist,
-	"DELETE /api/checklists/{id}":                scopeChecklist,
-	"POST /api/checklists/{id}/items":            scopeChecklist,
-	"PATCH /api/checklist-items/{id}":            scopeChecklistItem,
-	"DELETE /api/checklist-items/{id}":           scopeChecklistItem,
-	"POST /api/checklist-items/{id}/convert":     scopeChecklistItem,
-	"POST /api/tasks/{id}/milestones":            scopeTask,
-	"PATCH /api/task-milestones/{id}":            scopeTaskMilestone,
-	"DELETE /api/task-milestones/{id}":           scopeTaskMilestone,
-	"GET /api/boards/{id}/webhook":               scopeBoard,
-	"PUT /api/boards/{id}/webhook":               scopeBoard,
-	"DELETE /api/boards/{id}/webhook":            scopeBoard,
-	"POST /api/boards/{id}/webhook/ping":         scopeBoard,
+	// Saved task searches (ADR-0139).
+	"GET /api/workspaces/{id}/task-searches":          scopeWorkspace,
+	"POST /api/workspaces/{id}/task-searches":         scopeWorkspace,
+	"PATCH /api/workspaces/{id}/task-searches/{sid}":  scopeWorkspace,
+	"DELETE /api/workspaces/{id}/task-searches/{sid}": scopeWorkspace,
+	"PUT /api/workspaces/{id}/boards/order":           scopeWorkspace,
+	"PATCH /api/board-categories/{id}":                scopeBoardCategory,
+	"DELETE /api/board-categories/{id}":               scopeBoardCategory,
+	"POST /api/tasks/{id}/checklists":                 scopeTask,
+	"PATCH /api/checklists/{id}":                      scopeChecklist,
+	"DELETE /api/checklists/{id}":                     scopeChecklist,
+	"POST /api/checklists/{id}/items":                 scopeChecklist,
+	"PATCH /api/checklist-items/{id}":                 scopeChecklistItem,
+	"DELETE /api/checklist-items/{id}":                scopeChecklistItem,
+	"POST /api/checklist-items/{id}/convert":          scopeChecklistItem,
+	"POST /api/tasks/{id}/milestones":                 scopeTask,
+	"PATCH /api/task-milestones/{id}":                 scopeTaskMilestone,
+	"DELETE /api/task-milestones/{id}":                scopeTaskMilestone,
+	"GET /api/boards/{id}/webhook":                    scopeBoard,
+	"PUT /api/boards/{id}/webhook":                    scopeBoard,
+	"DELETE /api/boards/{id}/webhook":                 scopeBoard,
+	"POST /api/boards/{id}/webhook/ping":              scopeBoard,
 	// Automations (ADR-0060). The repository delivery is public like POST /api/rtc/webhook:
 	// no session, the hosting signs it with the board's secret.
-	"GET /api/boards/{id}/rules":           scopeBoard,
-	"POST /api/boards/{id}/rules":          scopeBoard,
-	"PATCH /api/rules/{id}":                scopeRule,
-	"DELETE /api/rules/{id}":               scopeRule,
-	"POST /api/rules/{id}/test":            scopeRule,
-	"GET /api/rules/{id}/runs":             scopeRule,
-	"GET /api/boards/{id}/git":             scopeBoard,
-	"PUT /api/boards/{id}/git":             scopeBoard,
-	"DELETE /api/boards/{id}/git":          scopeBoard,
+	"GET /api/boards/{id}/rules":  scopeBoard,
+	"POST /api/boards/{id}/rules": scopeBoard,
+	"PATCH /api/rules/{id}":       scopeRule,
+	"DELETE /api/rules/{id}":      scopeRule,
+	"POST /api/rules/{id}/test":   scopeRule,
+	"GET /api/rules/{id}/runs":    scopeRule,
+	"GET /api/boards/{id}/git":    scopeBoard,
+	"PUT /api/boards/{id}/git":    scopeBoard,
+	"DELETE /api/boards/{id}/git": scopeBoard,
+	"PATCH /api/boards/{id}/git":  scopeBoard, // the GitLab backlink (board task #101)
+	// Releases (board task #101): CI posts with a bot token; EDIT_TASKS on the board.
+	"POST /api/boards/{id}/releases":       scopeBoard,
+	"GET /api/boards/{id}/releases":        scopeBoard,
 	"POST /api/git/boards/{id}/{provider}": scopePublic,
 	// Disk (ADR-0094 §7). The public link routes are anonymous like public forms; the handler
 	// applies auth.CheckPublicCapability of the link's workspace.
@@ -518,6 +557,17 @@ var identityRoutes = map[string]identityScope{
 	"GET /api/public/disk/{code}":                scopePublic,
 	"GET /api/public/disk/{code}/content":        scopePublic,
 	"GET /api/public/disk/{code}/thumbnail":      scopePublic,
+	"POST /api/workspaces/{id}/disk/import":      scopeWorkspace,
+	// Office editing (ADR-0143): the config resolves its target from ?item= / ?file=
+	// (scopeOffice); the file and callback URLs are the Document Server's, authenticated by our
+	// URL token and its JWT.
+	"GET /api/office/capabilities":             scopeAggregate,
+	"GET /api/office/config":                   scopeOffice,
+	"POST /api/disk/items/{id}/office/convert": scopeDiskItem,
+	"POST /api/workspaces/{id}/office/convert": scopeWorkspace,
+	"POST /api/workspaces/{id}/office/create":  scopeWorkspace,
+	"GET /api/office/file/{token}":             scopePublic,
+	"POST /api/office/callback/{token}":        scopePublic,
 	// Wiki (ADR-0096 §8). The sync socket authenticates in-band (the token frame, like the
 	// gateway) and applies the workspace policy itself (wiki.Authenticator); the public link
 	// routes are anonymous like the Disk's, with auth.CheckPublicCapability in the handler.
@@ -681,6 +731,13 @@ func identityGate(q *sqlc.Queries, a *auth.Service, planActive func(ctx context.
 			next.ServeHTTP(w, r)
 			return
 		}
+		if scope == scopeOffice {
+			if r.URL.Query().Get("item") == "" {
+				next.ServeHTTP(w, r) // ?file=: the handler's files.CanRead checks every reference
+				return
+			}
+			scope = scopeDiskItem
+		}
 		var err error
 		mutation := auth.MutationOptions{}
 		switch scope {
@@ -786,6 +843,9 @@ func identityTarget(r *http.Request, q *sqlc.Queries, sc identityScope) (uuid.UU
 	raw := r.PathValue("id")
 	if sc == scopeApp {
 		raw = r.PathValue("appId")
+	}
+	if r.Pattern == "GET /api/office/config" {
+		raw = r.URL.Query().Get("item")
 	}
 	id, err := uuid.Parse(raw)
 	if err != nil {
@@ -978,6 +1038,8 @@ func IdentityRouteClass(pattern string) string {
 		return "canvas_item"
 	case scopeCanvasComment:
 		return "canvas_comment"
+	case scopeOffice:
+		return "office"
 	default:
 		return "specialized"
 	}

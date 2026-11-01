@@ -36,6 +36,7 @@ message RoomMediaOverride {
   optional ScreenSharePreset max_stream_preset = 2;
   optional uint32 max_streams = 3;        // 0..10
   optional uint32 camera_limit = 4;       // 0..25 (0 = cameras off)
+  optional uint32 join_leave_sound_max = 5; // 0..99 (0 = no join/leave cues)
 }
 
 message Room {

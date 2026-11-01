@@ -4,12 +4,12 @@ import { Copy, Dices, Trash2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { PlanLock } from '../../components/PlanLock';
-import { Button, Card, Input, Row, Select, Spinner, Tip, cx } from '../../components/ui';
+import { Button, Card, Input, PasswordInput, Row, Select, Spinner, Switch, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { GIT_PROVIDERS, GIT_STEPS, GIT_STEPS_COMMON, generateGitSecret, gitHookUrl, type GitStep } from '../../lib/boards/git';
 import { fmt } from '../../lib/format';
 import { planHas } from '../../lib/plan';
-import { deleteGit, loadGit, saveGit } from '../../services/automations';
+import { deleteGit, loadGit, saveBacklink, saveGit } from '../../services/automations';
 import { copyText } from '../../services/boards';
 import { useSession } from '../../stores/session';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
@@ -124,6 +124,7 @@ export function GitTab({ board }: { board: Board }): ReactNode {
         </Card>
       ) : null}
       {allowed ? form : <PlanLock plan="team" testId="git-lock">{form}</PlanLock>}
+      {allowed && git?.provider === GitProvider.GITLAB ? <BacklinkCard board={board} git={git} onSaved={setGit} /> : null}
       <Card title={t('git.url')} footer={git ? undefined : t('git.urlPre')}>
         <div className="flex items-center gap-2 px-3 py-2" data-testid="git-url">
           {url ? (
@@ -147,6 +148,56 @@ export function GitTab({ board }: { board: Board }): ReactNode {
       </Card>
       {git ? <GitStatus git={git} workspaceId={board.workspaceId} /> : null}
     </>
+  );
+}
+
+/**
+ * «Ссылка на задачу в GitLab» (board task #101): off by default — the note carries the task's
+ * title to everyone who can read the merge request. The token is write-only: the field stays
+ * empty, «Задан» says one is kept, an empty save keeps it, «Удалить токен» removes it.
+ */
+function BacklinkCard({ board, git, onSaved }: { board: Board; git: BoardGit; onSaved: (g: BoardGit) => void }): ReactNode {
+  const [url, setUrl] = useState(git.gitlabUrl);
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async (patch: { backlink?: boolean; apiToken?: string; gitlabUrl?: string }): Promise<void> => {
+    setBusy(true);
+    const g = await saveBacklink(board.workspaceId, board.id, patch);
+    setBusy(false);
+    if (!g) return;
+    onSaved(g);
+    setToken('');
+    setUrl(g.gitlabUrl);
+  };
+  const dirty = token.trim() !== '' || url.trim() !== git.gitlabUrl;
+  const status = !git.backlinkError ? '' : !git.hasApiToken ? t('git.backlink.noToken') : !git.gitlabUrl ? t('git.backlink.noUrl') : t('git.lastError', { error: git.backlinkError });
+  return (
+    <Card title={t('git.backlink.card')} footer={t('git.backlink.footer')}>
+      <div className="px-3 py-1.5" data-testid="git-backlink">
+        <Switch checked={git.backlink} disabled={busy} onChange={(v) => void save({ backlink: v })} label={t('git.backlink.switch')} hint={t('git.backlink.hint', { key: board.key })} />
+      </div>
+      <Row label={t('git.backlink.url')}>
+        <Input className="w-64" value={url} maxLength={512} placeholder="https://gitlab.com" onChange={(e) => setUrl(e.target.value)} aria-label={t('git.backlink.url')} data-testid="git-backlink-url" />
+      </Row>
+      <Row label={t('git.backlink.token')} hint={git.hasApiToken ? t('git.backlink.tokenKept') : t('git.backlink.tokenHint')}>
+        <PasswordInput className="w-64" value={token} maxLength={256} autoComplete="off" placeholder={git.hasApiToken ? '••••••••' : 'glpat-…'} onChange={(e) => setToken(e.target.value)} aria-label={t('git.backlink.token')} data-testid="git-backlink-token" />
+      </Row>
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+        <Button size="sm" busy={busy} disabled={!dirty} onClick={() => void save({ ...(token.trim() ? { apiToken: token.trim() } : {}), ...(url.trim() !== git.gitlabUrl ? { gitlabUrl: url.trim() } : {}) })} data-testid="git-backlink-save">
+          {t('common.save')}
+        </Button>
+        {git.hasApiToken ? (
+          <Button size="sm" variant="secondary" disabled={busy} onClick={() => void save({ apiToken: '' })} data-testid="git-backlink-forget">
+            {t('git.backlink.forget')}
+          </Button>
+        ) : null}
+      </div>
+      {status ? (
+        <p className="break-words px-3 pb-2.5 text-caption text-danger-text" role="status" data-testid="git-backlink-error">
+          {status}
+        </p>
+      ) : null}
+    </Card>
   );
 }
 

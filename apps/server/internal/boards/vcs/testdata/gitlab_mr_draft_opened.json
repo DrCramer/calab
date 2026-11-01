@@ -1,0 +1,21 @@
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": {"id": 1, "name": "Administrator", "username": "root"},
+  "project": {"id": 1, "name": "Gitlab Test", "path_with_namespace": "gitlabhq/gitlab-test", "web_url": "https://gitlab.example.com/gitlabhq/gitlab-test"},
+  "object_attributes": {
+    "id": 100,
+    "iid": 8,
+    "title": "Draft: FNG-9 Search filters",
+    "description": "",
+    "url": "https://gitlab.example.com/gitlabhq/gitlab-test/-/merge_requests/8",
+    "state": "opened",
+    "action": "open",
+    "source_branch": "feature/fng-9-filters",
+    "target_branch": "preprod",
+    "draft": true,
+    "work_in_progress": true
+  },
+  "reviewers": [],
+  "changes": {}
+}

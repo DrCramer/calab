@@ -1,0 +1,215 @@
+/* Typography of rich text shared by the wiki editor and the read view of a task description (docs/08 «Доски»,
+   board #107: what is edited looks as what is read). Small and eager: imported by WikiEditor (lazy) and by
+   boards/DescriptionView (main chunk) — one set of rules, no editor mount in read mode. Theme tokens only. */
+
+
+.wiki-prose {
+  color: var(--color-fg);
+  font-size: 15px;
+  line-height: 24px;
+  outline: none;
+  overflow-wrap: anywhere;
+  padding-bottom: 0;
+  caret-color: var(--color-accent);
+}
+.wiki-prose {
+  min-width: 0;
+  max-width: 100%;
+}
+/* Wide blocks (a resized table, a long code line, a wide image, an embed) scroll or shrink inside their own box,
+   never widen the page (owner 14.10: «вики в редакторе не помещается по ширине»). */
+.wiki-prose > *,
+.wiki-prose li,
+.wiki-prose blockquote {
+  max-width: 100%;
+  min-width: 0;
+}
+.wiki-prose img,
+.wiki-prose video,
+.wiki-prose iframe {
+  max-width: 100%;
+  height: auto;
+}
+.wiki-prose pre {
+  max-width: 100%;
+}
+.wiki-prose .tableWrapper {
+  max-width: 100%;
+}
+.wiki-prose > * + * {
+  margin-top: var(--space-2);
+}
+.wiki-prose p {
+  min-height: 24px;
+}
+.wiki-prose h1,
+.wiki-prose h2,
+.wiki-prose h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.wiki-prose h1 {
+  font-size: var(--text-large);
+  line-height: var(--text-large--line-height);
+  margin-top: var(--space-7);
+}
+.wiki-prose h2 {
+  font-size: var(--text-title);
+  line-height: var(--text-title--line-height);
+  margin-top: var(--space-6);
+}
+.wiki-prose h3 {
+  font-size: var(--text-headline);
+  line-height: var(--text-headline--line-height);
+  margin-top: var(--space-5);
+}
+.wiki-prose > :first-child {
+  margin-top: 0;
+}
+
+
+/* Lists */
+.wiki-prose ul,
+.wiki-prose ol {
+  padding-left: 24px;
+}
+.wiki-prose ul {
+  list-style: disc;
+}
+.wiki-prose ul ul {
+  list-style: circle;
+}
+.wiki-prose ol {
+  list-style: decimal;
+}
+.wiki-prose li > p + * {
+  margin-top: var(--space-1);
+}
+.wiki-prose ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0;
+}
+.wiki-prose ul[data-type='taskList'] > li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.wiki-prose ul[data-type='taskList'] > li > label {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 24px;
+  user-select: none;
+}
+.wiki-prose ul[data-type='taskList'] > li > label input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent);
+}
+.wiki-prose ul[data-type='taskList'] > li > div {
+  flex: 1;
+  min-width: 0;
+}
+.wiki-prose ul[data-type='taskList'] > li[data-checked='true'] > div {
+  color: var(--color-muted);
+  text-decoration: line-through;
+}
+
+/* Phone: the check box is a 44 px target (docs/08), the row keeps its height through negative margins. */
+@media (max-width: 768px) {
+  :root.web .wiki-prose ul[data-type='taskList'] > li > label {
+    width: 44px;
+    height: 44px;
+    margin: -10px -14px -10px -14px;
+    justify-content: center;
+  }
+}
+
+/* Quote, rule */
+.wiki-prose blockquote {
+  border-left: 3px solid var(--color-separator);
+  padding-left: var(--space-3);
+  color: var(--color-label-secondary);
+}
+.wiki-prose hr {
+  border: none;
+  border-top: 1px solid var(--color-separator);
+  margin: var(--space-4) 0;
+}
+.wiki-prose hr.ProseMirror-selectednode {
+  border-top-color: var(--color-accent);
+}
+
+/* Inline marks */
+.wiki-prose code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.9em;
+  background: var(--color-code);
+  border-radius: 4px;
+  padding: 1px 4px;
+  /* A wrapped inline code is one plate cut across two lines, not two separate pills. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.wiki-prose a.wiki-link,
+.wiki-prose a[href] {
+  color: var(--color-accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+
+.wiki-mention {
+  color: var(--color-accent-text);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border-radius: 4px;
+  padding: 0 2px;
+  white-space: nowrap;
+}
+
+/* Images */
+.wiki-image {
+  display: flex;
+  justify-content: center;
+  border-radius: var(--radius-card);
+}
+.wiki-image-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-card);
+  background: var(--color-fill);
+}
+
+/* Compact (task description, docs/08 «Доски»): body text 14/20 like the read view, tighter blocks,
+   pictures left-aligned and capped like the description's own (420 px); no keyboard-bar room. */
+.wiki-editor[data-compact] .wiki-prose {
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  padding-bottom: 0;
+}
+.wiki-editor[data-compact] .wiki-prose p {
+  min-height: var(--text-body--line-height);
+}
+.wiki-editor[data-compact] .wiki-prose > * + * {
+  margin-top: var(--space-1);
+}
+.wiki-editor[data-compact] .wiki-prose h1,
+.wiki-editor[data-compact] .wiki-prose h2,
+.wiki-editor[data-compact] .wiki-prose h3 {
+  margin-top: var(--space-3);
+}
+.wiki-editor[data-compact] .wiki-prose > :first-child {
+  margin-top: 0;
+}
+.wiki-editor[data-compact] .wiki-prose ul[data-type='taskList'] > li > label {
+  height: var(--text-body--line-height);
+}
+.wiki-editor[data-compact] .wiki-image {
+  justify-content: flex-start;
+}
+.wiki-editor[data-compact] .wiki-image-img {
+  max-height: 420px;
+  width: auto;
+  object-fit: contain;
+}

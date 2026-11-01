@@ -23,6 +23,7 @@ Permissions are checked per room, exactly as for a person:
 |---|---|---|
 | `GET` | `/api/rooms/{id}/messages` | Room history, newest first: `?before=&after=&limit=` (`limit ≤ 100`); `?q=` runs a full-text search in the room (`VIEW_ROOM`) |
 | `GET` | `/api/rooms/{id}/messages/{messageId}` | One message — a bare `Message`, no wrapper (`VIEW_ROOM`) |
+| `GET` | `/api/rooms/{id}/messages/{messageId}/readers` | Which people saw **your** message and when → `{readers: [{userId, readAt}]}`; someone else's — `403` |
 | `POST` | `/api/rooms/{id}/messages` | Send a message → `201 {message}` (`SEND_MESSAGES`) |
 | `POST` | `/api/rooms/{id}/messages/{mid}/forward` | Forward to another room `{toRoomId}` → `201 {message}` with `forward` set |
 | `PATCH` | `/api/messages/{id}` | Edit your message: text and/or inline keyboard → `{message}` |
@@ -196,6 +197,8 @@ await bot.unreact(messageId, '👍');
 `GET /api/rooms/{id}/messages` returns `{messages, hasMore}`, newest first. Page back with `before=<oldest id>`, forward with `after=`.
 
 `GET /api/rooms/{id}/messages/{messageId}` returns **`200` with a bare `Message`** — not `{message: …}`. Its fields and detail loading match a history item: `id`, `roomId`, `authorId`, `content`, `replyToId`, `attachments`, `reactions` (`me` is relative to the caller), timestamps, `kind`, `system`, `sticker`, `forward`. `command` is unset, as in every REST response.
+
+**Did a person see your call** (ADR-0140): the bot's **own** messages carry `readBy: [{userId, readAt}]` — in `GET …/messages/{messageId}` and in the `GET …/messages` history; other people's messages never have it. "Read" means the message was on the person's screen (their feed reached it), not that a notification arrived; bots and the author are never listed, messages from before the feature have no marks. The MCP `read` tool returns the same as `read_by`.
 
 ```js tab="JavaScript"
 const { messages, hasMore } = await bot.messages(roomId, { limit: 50 });

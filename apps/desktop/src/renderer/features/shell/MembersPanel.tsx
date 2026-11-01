@@ -16,7 +16,7 @@ import { BadgeOrRoleMark } from '../people/MemberBadge';
 import { MemberContextMenu } from '../people/MemberContextMenu';
 import { BirthdayMark } from '../people/Birthday';
 import { MutedByMe } from '../../components/SpeakerIdentity';
-import { MusicianIcon, VoiceStateIcons } from '../voice/VoiceStateIcons';
+import { MusicianIcon, SelfVoiceStateIcons, VoiceStateIcons } from '../voice/VoiceStateIcons';
 import { JustJoinedDot } from '../voice/JustJoinedDot';
 import { joinedAtMs } from '../../lib/justJoined';
 import { useMobile } from '../../lib/mobile';
@@ -366,6 +366,7 @@ const MemberRow = memo(function MemberRow({
   const userId = u?.id ?? '';
   const onOpenChange = useCallback((o: boolean) => onOpenProfile(u?.id ?? null, o), [onOpenProfile, u?.id]);
   const v = useVoiceStateOf(workspaceId, userId);
+  const isMe = useSession((s) => s.me?.user?.id === userId);
   const connectingRing = useConnectingRing(workspaceId, userId, v?.pending ?? false);
   const roomName = useRooms((s) => (v?.roomId ? s.byId[v.roomId]?.name : undefined));
   const look = useRoleLook(workspaceId, userId);
@@ -412,7 +413,8 @@ const MemberRow = memo(function MemberRow({
         <span className="min-w-0 truncate">{activityLabel}</span>
         {v.camera ? <Video className="size-3.5 shrink-0" aria-label={t('video.stateOn')} role="img" /> : null}
         {v.musician ? <MusicianIcon className="size-3.5" /> : null}
-        <VoiceStateIcons muted={v.muted} deafened={v.deafened} serverMuted={v.serverMuted} />
+        {/* #96: my own line draws the self panel's view, not the server copy. */}
+        {isMe ? <SelfVoiceStateIcons onPhone={v.onPhone} pttWait={false} /> : <VoiceStateIcons muted={v.muted} deafened={v.deafened} serverMuted={v.serverMuted} onPhone={v.onPhone} />}
       </>
     );
   } else if (line.activity === 'call') {

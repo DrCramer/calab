@@ -101,6 +101,11 @@ export interface CalabaApi {
     legal(): Promise<LegalTexts>;
     /** Bounce the dock / flash the taskbar when the window is not focused. */
     attention(): void;
+    /**
+     * Bring the main window to the front: restore it when minimized, show it when the close button
+     * hid it (the app lives in the tray), focus it. A system notification click (ADR-0141).
+     */
+    showWindow(): void;
     /** The app badge: mentions + unread DM messages (0 clears it). */
     setBadge(n: number): void;
     setTheme(theme: 'dark' | 'light' | 'system'): void;
@@ -222,6 +227,19 @@ export interface CalabaApi {
     /** Draw a tooltip that falls on the shown app above it (a native overlay; ADR-0053 «Поправка 1»). */
     tipShow(tip: WebAppTip): Promise<void>;
     tipHide(): Promise<void>;
+  };
+  /**
+   * The office editor's frame (ADR-0143), Electron only. `openFrame` makes main ask the server it is
+   * logged in to (GET /api/office/capabilities) for the Document Server origin and let exactly that
+   * origin's host page through the navigation guards; it resolves with that origin ('' = the editor
+   * is off or the server unreachable: nothing is framed). `closeFrame` drops it. `warm` has main
+   * download editors' files into the HTTP cache once per Document Server version (main/officeWarm.ts):
+   * `disk` with the documentTypes of the open folder's files, `ready` for the editors opened before.
+   */
+  office?: {
+    openFrame(): Promise<string>;
+    closeFrame(): Promise<void>;
+    warm(reason: 'disk' | 'ready', kinds?: ('word' | 'cell' | 'slide')[]): Promise<void>;
   };
   /**
    * The mail engine bridge (ADR-0088 §7), Electron only. Raw transport: the renderer uses the typed

@@ -296,7 +296,8 @@ func TestPushResolveCurrentSessionAccessAndExpiry(t *testing.T) {
 func TestPushMessageCutRejectsCallCapabilities(t *testing.T) {
 	server := pushServer(t)
 	u := owner(t)
-	pushHTTP(t, server, u, 422, "POST", "/api/me/push-devices", &v1.RegisterPushDeviceRequest{Provider: v1.PushProvider_PUSH_PROVIDER_FCM, AppId: "ru.calab.test", Environment: "production", InstallationId: uuid.NewString(), Token: "test", CallsEnabled: true, NotificationsEnabled: true, MentionsEnabled: proto.Bool(true)}, nil)
+	// APNs alerts never ring; FCM may carry calls on the Android token (ADR-0071, Android).
+	pushHTTP(t, server, u, 422, "POST", "/api/me/push-devices", &v1.RegisterPushDeviceRequest{Provider: v1.PushProvider_PUSH_PROVIDER_APNS, AppId: "ru.calab.test", Environment: "production", InstallationId: uuid.NewString(), Token: strings.Repeat("aa", 32), CallsEnabled: true, NotificationsEnabled: true, MentionsEnabled: proto.Bool(true)}, nil)
 	pushHTTP(t, server, u, 422, "POST", "/api/me/push-devices", &v1.RegisterPushDeviceRequest{Provider: v1.PushProvider_PUSH_PROVIDER_VOIP, AppId: "ru.calab.test", Environment: "production", InstallationId: uuid.NewString(), Token: "aa"}, nil)
 }
 

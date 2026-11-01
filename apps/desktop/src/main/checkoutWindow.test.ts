@@ -178,6 +178,9 @@ const barHost = (wc: FakeContents): string =>
 beforeEach(() => {
   h.windows.length = 0;
   h.views.length = 0;
+  // A fresh session per test: the module configures a session once, so a shared one would make the
+  // setUserAgent/handler assertions depend on which test ran first.
+  h.sessions.clear();
   h.openExternal.mockReset();
 });
 

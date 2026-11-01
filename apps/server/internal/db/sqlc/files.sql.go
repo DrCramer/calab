@@ -238,9 +238,11 @@ WHERE f.created_at < $1
   AND NOT EXISTS (SELECT 1 FROM messages mi WHERE mi.kind = 'system' AND mi.payload ? 'roomIcon'
                     AND mi.payload -> 'roomIcon' ->> 'fileId' = f.id::text AND mi.deleted_at IS NULL)
   AND NOT EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM disk_file_versions dv WHERE dv.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM wiki_page_files wf WHERE wf.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM wiki_pages wc WHERE wc.cover_file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM sip_ivr_menus im WHERE im.prompt_file_id = f.id OR im.notice_file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM sip_accounts sa WHERE sa.off_hours_notice_file_id = f.id)
 ORDER BY f.created_at
 LIMIT 500
 `
@@ -250,7 +252,8 @@ LIMIT 500
 // (ADR-0061), room picture or its live system message (ADR-0092; deleted messages are never
 // purged, so a deleted one must not keep the file), not a file of the Disk (ADR-0094; trashed
 // ones included: the trash counts in the quota until deleted forever), not a picture or cover of
-// a wiki page (ADR-0096; trashed pages included), not the prompt of a voice menu (ADR-0117),
+// a wiki page (ADR-0096; trashed pages included), not a previous version of a Disk file
+// (ADR-0143), not the prompt of a voice menu (ADR-0117),
 // older than the cutoff.
 func (q *Queries) ListOrphanFiles(ctx context.Context, createdAt time.Time) ([]File, error) {
 	rows, err := q.db.Query(ctx, listOrphanFiles, createdAt)
@@ -363,6 +366,51 @@ func (q *Queries) ReserveQuota(ctx context.Context, arg ReserveQuotaParams) (int
 	return storage_used_bytes, err
 }
 
+const setFileImage = `-- name: SetFileImage :one
+UPDATE files SET mime = $1, width = $2, height = $3,
+    thumbnail_key = coalesce($4, thumbnail_key)
+WHERE id = $5
+RETURNING id, workspace_id, uploader_id, key, thumbnail_key, name, mime, size, width, height, sha256, created_at, voice_duration_ms, voice_waveform
+`
+
+type SetFileImageParams struct {
+	Mime         string
+	Width        *int32
+	Height       *int32
+	ThumbnailKey *string
+	ID           uuid.UUID
+}
+
+// The lazy repair of an image file whose upload made no thumbnail (files.backfillThumb): the
+// sniffed type, the size from the header and the thumbnail, when there is one now.
+func (q *Queries) SetFileImage(ctx context.Context, arg SetFileImageParams) (File, error) {
+	row := q.db.QueryRow(ctx, setFileImage,
+		arg.Mime,
+		arg.Width,
+		arg.Height,
+		arg.ThumbnailKey,
+		arg.ID,
+	)
+	var i File
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.UploaderID,
+		&i.Key,
+		&i.ThumbnailKey,
+		&i.Name,
+		&i.Mime,
+		&i.Size,
+		&i.Width,
+		&i.Height,
+		&i.Sha256,
+		&i.CreatedAt,
+		&i.VoiceDurationMs,
+		&i.VoiceWaveform,
+	)
+	return i, err
+}
+
 const totalStorageBytes = `-- name: TotalStorageBytes :one
 SELECT ((SELECT coalesce(sum(storage_used_bytes), 0) FROM workspaces)
       + (SELECT coalesce(sum(size), 0) FROM files WHERE workspace_id IS NULL))::bigint
@@ -398,6 +446,7 @@ WHERE f.uploader_id = $1 AND f.workspace_id = $2
   AND NOT EXISTS (SELECT 1 FROM workspace_sounds ss WHERE ss.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM achievements ac WHERE ac.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM disk_items di WHERE di.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM disk_file_versions dv WHERE dv.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM wiki_page_files wf WHERE wf.file_id = f.id)
   AND NOT EXISTS (SELECT 1 FROM wiki_pages wc WHERE wc.cover_file_id = f.id)
 `

@@ -56,6 +56,22 @@ message RegisterRequest {
   // nothing is created: the response carries only similar_account = true. The client asks the
   // user and repeats the request without the flag to create the account anyway.
   bool check_similar_account = 7;
+  // First-touch ad attribution the web client captured from the landing link (ADR-0135);
+  // stored once with the account. Unset: none.
+  SignupAttribution attribution = 8;
+}
+
+// Campaign of a sign-up (ADR-0135): utm_* and yclid of the landing link, and the Yandex
+// Metrika ClientID the landing passes only when the visitor consented to analytics. The
+// server truncates values to 200 characters and keeps ym_client_id only when it is digits.
+message SignupAttribution {
+  string utm_source = 1;
+  string utm_medium = 2;
+  string utm_campaign = 3;
+  string utm_content = 4;
+  string utm_term = 5;
+  string yclid = 6;
+  string ym_client_id = 7;
 }
 
 message RegisterResponse {

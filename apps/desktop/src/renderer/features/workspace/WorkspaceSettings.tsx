@@ -10,14 +10,14 @@ import { CanvasSettingsTab } from '../canvas/CanvasSettings';
 import { audioTierKbps, compareScreenSharePresets, type ConcreteScreenSharePreset, CANVAS_BITS, canvasPermissions, DISK_BITS, diskPermissions, IdentityFeature, WIKI_BITS, wikiPermissions, WorkspaceRole, WorkspaceVisibility, type Invite } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Ban, DoorOpen, Bot as BotIcon, Cake, Copy, Gem, HardDrive, KeyRound, BookOpen, Shapes, AppWindow, Library, Lock, Phone, Search, Settings2, Shield, Sparkles, Trash2, TriangleAlert, Upload, UserMinus, UserPlus, Users } from 'lucide-react';
+import { AudioLines, Ban, DoorOpen, Bot as BotIcon, Cake, Copy, Gem, HardDrive, KeyRound, BookOpen, Shapes, AppWindow, Library, Lock, Search, Settings2, Shield, Sparkles, Trash2, TriangleAlert, Upload, UserMinus, UserPlus, Users } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { confirmAction } from '../../components/Confirm';
 import { slugError } from './slugError';
 import { MediaImg } from '../../components/MediaImg';
 import { SettingsWindow, type SettingsSection } from '../../components/SettingsWindow';
-import { Button, Card, Empty, IconButton, Input, Row, Segmented, Select, Spinner, Toggle } from '../../components/ui';
+import { Button, Card, Empty, IconButton, Input, Row, Segmented, Select, Spinner, Stepper, Toggle } from '../../components/ui';
 import { getLocale, t, type MessageKey } from '../../i18n';
 import { errorText, identityNotConfigured } from '../../lib/api/errors';
 import { api, thumbnailPath, uploadFile, uploadPath } from '../../lib/api/endpoints';
@@ -42,8 +42,8 @@ import { PRESETS, presetDetail, presetText } from '../voice/StreamPicker';
 import { PlanFullNote, PlanTab, useMembersCap } from './PlanTab';
 import { AudioTierHint, AudioTierOptions } from './AudioTierOptions';
 import { GptunnelTab } from './GptunnelTab';
-import { TelephonyTab } from './TelephonyTab';
 import { capMax, clampToCap, planHasIdentity, workspacePlanName } from '../../lib/plan';
+import { joinLeaveSoundMax } from '../../lib/media/joinLeaveSound';
 import { reportPlanError, workspacePlan } from '../../services/plan';
 import { fromTimeFormatPref, toTimeFormatPref } from '../../services/timeFormat';
 import { RoomGuestInviteCard } from '../people/RoomGuestInviteCard';
@@ -178,8 +178,6 @@ export function WorkspaceSettingsDialog({
     ...(entry.role !== WorkspaceRole.GUEST
       ? [{ id: 'gptunnel', label: t('gpt.tab'), icon: Sparkles, keywords: 'GPTunneL OpenAI', content: <GptunnelTab workspaceId={workspaceId} canManage={access.integrations} /> }]
       : []),
-    // «Телефония» (ADR-0046): the SIP account, the connection test and the call journal — MANAGE_WORKSPACE.
-    ...(admin ? [{ id: 'telephony', label: t('sip.tab'), icon: Phone, content: <TelephonyTab workspaceId={workspaceId} /> }] : []),
     {
       id: 'identity',
       label: t('identity.settingsTitle'),
@@ -382,6 +380,16 @@ function MediaTab({ workspaceId }: { workspaceId: string }): ReactNode {
             </option>
           ))}
         </Select>
+      </Row>
+      <Row label={t('media.joinLeaveSoundMax')} hint={t('media.joinLeaveSoundMaxHint')} htmlFor={`join-leave-${workspaceId}`}>
+        <Stepper
+          id={`join-leave-${workspaceId}`}
+          label={t('media.joinLeaveSoundMax')}
+          value={joinLeaveSoundMax(md)}
+          min={0}
+          max={99}
+          onCommit={(n) => apply({ defaultJoinLeaveSoundMax: n })}
+        />
       </Row>
     </Card>
   );

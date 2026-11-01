@@ -10,6 +10,7 @@ import { openAppInBrowser } from '../../services/webApps';
 import { useWebApps } from '../../stores/webApps';
 import { useToasts } from '../../stores/toasts';
 import { useCall } from '../../stores/call';
+import { useIsland } from '../../stores/island';
 import { useAdmissions } from '../guests/stores/admissions';
 
 /** The web app fills the content area down to the window bottom, also during calls. */
@@ -93,14 +94,17 @@ function occluderRects(): WebAppBounds[] {
 
 /**
  * A primitive that changes whenever one of those overlays appears, goes or changes its count:
- * toasts, guest knock cards (ADR-0040), the collapsed «Вызов…» strip (ADR-0034). The incoming /
+ * toasts, guest knock cards (ADR-0040), the collapsed «Вызов…» strip (ADR-0034), the open folded
+ * bottom island (ADR-0146). The incoming /
  * outgoing call cards are dialogs and hide the view through useOverlayOpen.
  */
 function useOccluderKey(): string {
   const toasts = useToasts((s) => s.items.length);
   const knocks = useAdmissions((s) => s.toasts.length);
   const strip = useCall((s) => s.phase === 'outgoing' && s.collapsed);
-  return `${toasts}:${knocks}:${strip ? 1 : 0}`;
+  // The bottom island folded into the avatar, open over the site (ADR-0146).
+  const island = useIsland((s) => s.open);
+  return `${toasts}:${knocks}:${strip ? 1 : 0}:${island ? 1 : 0}`;
 }
 
 /**

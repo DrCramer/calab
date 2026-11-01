@@ -54,6 +54,9 @@ export default defineConfig<VisualOptions>({
     // «Диск» (ADR-0094 §8, a new interface): dark 960×600; «Доступ» also light (disk.visual.spec.ts).
     { name: 'disk-dark-960', testMatch: /disk\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
     { name: 'disk-light-960', testMatch: /disk\.visual\.spec\.ts/, use: { theme: 'light', size: { width: 960, height: 600 } } },
+    // Office editor frame (ADR-0143, a new interface): dark 960×600; the open editors also light (office.visual.spec.ts).
+    { name: 'office-dark-960', testMatch: /office\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
+    { name: 'office-light-960', testMatch: /office\.visual\.spec\.ts/, use: { theme: 'light', size: { width: 960, height: 600 } } },
     // «Вики» (ADR-0096 §9, a new interface): dark 960×600; the page also light (wiki.visual.spec.ts).
     { name: 'wiki-dark-960', testMatch: /wiki\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
     { name: 'wiki-light-960', testMatch: /wiki\.visual\.spec\.ts/, use: { theme: 'light', size: { width: 960, height: 600 } } },
@@ -65,6 +68,7 @@ export default defineConfig<VisualOptions>({
     { name: 'telephony-light-960', testMatch: /telephony\.visual\.spec\.ts/, use: { theme: 'light', size: { width: 960, height: 600 } } },
     // «Почта» folders (CBF-56): the renderer on the mail mock (`pnpm e2e:visual:mail`), dark 960×600.
     { name: 'mail-dark-960', testMatch: /mail\.visual\.spec\.ts/, use: { theme: 'dark', size: { width: 960, height: 600 } } },
+    { name: 'mail-light-960', testMatch: /mail\.visual\.spec\.ts/, use: { theme: 'light', size: { width: 960, height: 600 } } },
     // Text selection in the feed (issue #13): behaviour only, no screenshots.
     { name: 'selection', testMatch: /selection\.spec\.ts/ },
     // A dialog's «×» hit at its icon centre, clear of window drag regions (docs/09 #105): behaviour only.

@@ -160,6 +160,14 @@ describe('30.09 lineup: Business naming, features by plan', () => {
     expect(planErrorNotice(e(500), Plan.ENTERPRISE)?.text).toMatch(/: 500 статей в Wiki$/);
   });
 
+  it('canvases over the plan name the plan and its limit (ADR-0126, owner 23.10)', () => {
+    const e = (n: number) =>
+      new ApiError('ERROR_CODE_CONFLICT', `the workspace plan allows ${n} canvases`, 409, undefined, { reason: 'PLAN_LIMIT', used: n, limit: n });
+    expect(planErrorNotice(e(3), Plan.FREE)?.text).toBe('Лимит тарифа Free: 3 холстов');
+    expect(planErrorNotice(e(30), Plan.TEAM)?.text).toBe('Лимит тарифа Team: 30 холстов');
+    expect(planErrorNotice(e(100), Plan.ENTERPRISE)?.text).toMatch(/: 100 холстов$/);
+  });
+
   it('planHas: a missing plan or flag allows; the disabled flags lock', () => {
     const p = (limits: MessageInitShape<typeof PlanLimitsSchema>) => create(WorkspacePlanSchema, { plan: Plan.FREE, limits: create(PlanLimitsSchema, limits) });
     expect(planHas(undefined, 'caldav')).toBe(true);

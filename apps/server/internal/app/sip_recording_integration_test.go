@@ -275,7 +275,7 @@ func TestSIPRecording(t *testing.T) {
 		t.Helper()
 		id := uuid.Must(uuid.NewV7())
 		c, err := testDB.Q.InsertSipCall(ctx, sqlc.InsertSipCallParams{ID: id, WorkspaceID: uuid.MustParse(wid), RoomID: &rid, Number: "+74957654321",
-			StartedBy: ptrUUID(uuid.MustParse(o.id)), ParticipantIdentity: "sip_" + id.String()})
+			StartedBy: ptrUUID(uuid.MustParse(o.id)), ParticipantIdentity: "sip_" + id.String(), Origin: "room", PeerE164: "+74957654321"})
 		if err != nil {
 			t.Fatal(err)
 		}

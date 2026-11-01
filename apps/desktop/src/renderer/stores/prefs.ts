@@ -140,6 +140,8 @@ export interface Prefs {
   guestsOpen: Record<string, boolean>;
   /** «Виброотклик» (phone only, lib/haptics.ts): ticks on taps, toggles, swipe thresholds, long-press menus. */
   haptics: boolean;
+  /** «Островок: сворачивать в аватар вне раздела Команда» (ADR-0146, desktop): off = the full island on every screen. */
+  islandCollapse: boolean;
   /** The four pinned tabs on the phone's bar, the rest behind «Ещё» (ADR-0095). */
   phonePinnedTabs: PhoneTab[];
   /** Order of all sections in the «Ещё» card = left-to-right order of the pinned tabs. */
@@ -207,6 +209,7 @@ const DEFAULTS: Prefs = {
   billingMarket: {},
   guestsOpen: {},
   haptics: true,
+  islandCollapse: true,
   phonePinnedTabs: [...DEFAULT_PINNED],
   phoneTabOrder: normalizeOrder(undefined, DEFAULT_PINNED),
   diskView: 'tiles',

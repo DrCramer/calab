@@ -1,6 +1,6 @@
 /** Text wrapping with a cache keyed by (text, size, width) — ADR-0126 §4. Pure given a measure function. */
 import { F_BOLD, F_ITALIC, flagsOf, listNumbers, paragraphCount, type Fmt } from './richText';
-import type { BoxRec } from './types';
+import type { TextBoxRec } from './types';
 
 export const LINE_HEIGHT = 1.3;
 export const STICKY_PAD = 14;
@@ -20,7 +20,7 @@ export const SHAPE_FONT: Readonly<Record<FontToken, number>> = { s: 12, m: SHAPE
 export const TEXT_FONT: Readonly<Record<FontToken, number>> = { s: 14, m: 20, l: 32, xl: 48 };
 
 /** The size of an object's text in world units: a sticky's or shape's exact `fontPx` when it has one, else its token's preset. */
-export function boxFontSize(o: BoxRec): number {
+export function boxFontSize(o: TextBoxRec): number {
   switch (o.kind) {
     case 'text':
       return o.size;
@@ -32,7 +32,7 @@ export function boxFontSize(o: BoxRec): number {
 }
 
 /** Kinds that carry a text size, and their token → px tables. */
-export type SizedKind = BoxRec['kind'];
+export type SizedKind = TextBoxRec['kind'];
 const FONT_TABLE: Readonly<Record<SizedKind, Readonly<Record<FontToken, number>>>> = { sticky: STICKY_FONT, shape: SHAPE_FONT, text: TEXT_FONT };
 
 /** The token of `kind` whose preset is nearest to `px`. */

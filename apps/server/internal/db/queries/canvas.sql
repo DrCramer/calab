@@ -107,6 +107,24 @@ SELECT coalesce(max(depth), 0)::int FROM down;
 -- before one (the order of the Disk's LockDiskTree and the Wiki's LockWikiTree).
 SELECT pg_advisory_xact_lock(hashtext('calaba.canvas.' || sqlc.arg('workspace_id')::uuid::text));
 
+-- name: CountLiveCanvases :one
+-- Live (not trashed) canvases of a workspace, folders not counted: the plan limit of ADR-0126
+-- (addendum 2026-10-23) counts these.
+SELECT count(*) FROM canvas_items WHERE workspace_id = $1 AND kind = 'canvas' AND trashed_at IS NULL;
+
+-- name: CountCanvasRestoreCanvases :one
+-- The canvases RestoreCanvasSubtree would bring back with trash root id (the same subtree): the
+-- plan limit is checked before the restore.
+WITH RECURSIVE root AS (
+    SELECT r.id, r.trashed_at FROM canvas_items r WHERE r.id = sqlc.arg('id')::uuid AND r.trashed_root
+), sub (id) AS (
+    SELECT root.id FROM root
+    UNION ALL
+    SELECT c.id FROM canvas_items c JOIN sub ON c.parent_id = sub.id
+    WHERE NOT c.trashed_root AND c.trashed_at = (SELECT root.trashed_at FROM root)
+)
+SELECT count(*) FROM canvas_items w JOIN sub ON w.id = sub.id WHERE w.kind = 'canvas';
+
 -- name: CreateCanvasItem :one
 -- A new item at position (under LockCanvasTree: the caller takes the slot after its last sibling).
 INSERT INTO canvas_items (workspace_id, parent_id, kind, name, owner_id, updated_by, position)

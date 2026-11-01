@@ -28,18 +28,81 @@ export function resultFromStream(lines: string): { result: string; isError: bool
   return last;
 }
 
-export function runLead(opts: { bin: string; argv: string[]; cwd: string; env: NodeJS.ProcessEnv; logFile: string; timeoutMs: number }): Promise<RunResult> {
+/** Tool calls of a stream-json run: made, answered without error, refused by permissions, failed otherwise. */
+export interface ToolStats {
+  calls: number;
+  ok: number;
+  denied: number;
+  failed: number;
+}
+
+/** Counts tool calls in a stream-json transcript fed chunk by chunk (only whole lines are parsed). */
+export class ToolCounter {
+  readonly stats: ToolStats = { calls: 0, ok: 0, denied: 0, failed: 0 };
+  private rest = '';
+
+  feed(chunk: string): void {
+    const lines = (this.rest + chunk).split('\n');
+    this.rest = lines.pop() ?? '';
+    if (this.rest.length > 4_000_000) this.rest = ''; // a giant line: give up on it
+    for (const line of lines) this.line(line);
+  }
+
+  end(): ToolStats {
+    if (this.rest) this.line(this.rest);
+    this.rest = '';
+    return this.stats;
+  }
+
+  private line(line: string): void {
+    if (!line.startsWith('{')) return;
+    let ev: { type?: string; subtype?: string; message?: { content?: unknown } };
+    try {
+      ev = JSON.parse(line) as typeof ev;
+    } catch {
+      return;
+    }
+    if (ev.type === 'system' && ev.subtype === 'permission_denied') {
+      this.stats.denied++;
+      return;
+    }
+    const content = Array.isArray(ev.message?.content) ? (ev.message.content as { type?: string; is_error?: boolean; content?: unknown }[]) : [];
+    for (const c of content) {
+      if (ev.type === 'assistant' && c.type === 'tool_use') this.stats.calls++;
+      if (ev.type === 'user' && c.type === 'tool_result') {
+        if (c.is_error !== true) this.stats.ok++;
+        else if (!/^Permission to use .* has been denied/.test(typeof c.content === 'string' ? c.content : '')) this.stats.failed++;
+      }
+    }
+  }
+}
+
+/** One line for daemon.log; loud when the run could do nothing. */
+export function toolOutcome(s: ToolStats): { line: string; allDenied: boolean } {
+  const allDenied = s.calls > 0 && s.denied >= s.calls;
+  const line = `tools: ${String(s.calls)} call(s), ${String(s.ok)} ok, ${String(s.denied)} denied, ${String(s.failed)} failed`;
+  return { line: allDenied ? `WARNING every tool call was denied — the run could do nothing (${line})` : line, allDenied };
+}
+
+export function runLead(opts: { bin: string; argv: string[]; cwd: string; env: NodeJS.ProcessEnv; logFile: string; timeoutMs: number; stdin?: string }): Promise<RunResult & { tools: ToolStats }> {
   return new Promise((resolve) => {
-    const log = createWriteStream(opts.logFile, { flags: 'a' });
-    const child = spawn(opts.bin, opts.argv, { cwd: opts.cwd, env: opts.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const log = createWriteStream(opts.logFile, { flags: 'a', mode: 0o600 });
+    const child = spawn(opts.bin, opts.argv, { cwd: opts.cwd, env: opts.env, stdio: [opts.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+    if (opts.stdin !== undefined && child.stdin) {
+      child.stdin.on('error', () => undefined);
+      child.stdin.end(opts.stdin);
+    }
     // Keep only the tail in memory: the result line is last.
     let tail = '';
     let timedOut = false;
-    child.stdout.on('data', (d: Buffer) => {
+    const counter = new ToolCounter();
+    child.stdout?.on('data', (d: Buffer) => {
       log.write(d);
-      tail = (tail + d.toString('utf8')).slice(-1_000_000);
+      const text = d.toString('utf8');
+      counter.feed(text);
+      tail = (tail + text).slice(-1_000_000);
     });
-    child.stderr.on('data', (d: Buffer) => log.write(d));
+    child.stderr?.on('data', (d: Buffer) => log.write(d));
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill('SIGTERM');
@@ -49,7 +112,7 @@ export function runLead(opts: { bin: string; argv: string[]; cwd: string; env: N
       clearTimeout(timer);
       log.end();
       const r = resultFromStream(tail);
-      resolve({ code, result: r?.result ?? '', isError: r ? r.isError : true, timedOut });
+      resolve({ code, result: r?.result ?? '', isError: r ? r.isError : true, timedOut, tools: counter.end() });
     };
     child.on('error', (err) => {
       log.write(`\n[spawn error] ${err.message}\n`);

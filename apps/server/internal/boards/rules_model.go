@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -14,6 +15,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/boards/vcs"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 )
 
@@ -31,6 +33,8 @@ const (
 	MaxRuleDueDays    = 365
 	MaxRuleTriggerDay = 30 // due_in / overdue
 	MaxRuleStaleDays  = 90
+	MaxRuleBranches   = 10  // target branches of a Git trigger
+	MaxRuleBranch     = 200 // characters of one
 	// MaxRuleDepth: rule changes trigger rules again up to this depth (ADR-0060 §2).
 	MaxRuleDepth = 3
 	// ReasonRuleLimit: the 21st rule of a board (409).
@@ -274,18 +278,85 @@ func matchTrigger(t *v1.RuleTrigger, ev ruleEvent, complete func() bool) bool {
 	case *v1.RuleTrigger_CommentCreated_:
 		return ev.kind == kindComment
 	case *v1.RuleTrigger_Git_:
-		if ev.kind != "git" || str(ev.after, "event") == "" {
+		got := str(ev.after, "event")
+		if ev.kind != "git" || got == "" {
 			return false
 		}
-		want := k.Git.GetEvent()
-		return want == v1.RuleGitEvent_RULE_GIT_EVENT_UNSPECIFIED || strings.TrimPrefix(want.String(), "RULE_GIT_EVENT_") == str(ev.after, "event")
+		if bs := k.Git.GetTargetBranches(); len(bs) > 0 && (str(ev.after, "kind") != vcs.KindPR || !vcs.BranchMatch(bs, str(ev.after, "target_branch"))) {
+			return false
+		}
+		switch want := k.Git.GetEvent(); want {
+		case v1.RuleGitEvent_RULE_GIT_EVENT_UNSPECIFIED:
+			return true
+		case v1.RuleGitEvent_RULE_GIT_EVENT_PR_OPENED:
+			// A draft marked ready is «opened for review» (Linear's flow, board task #101).
+			return got == vcs.EventPROpened || got == vcs.EventPRReady
+		default:
+			return strings.TrimPrefix(want.String(), "RULE_GIT_EVENT_") == got
+		}
+	case *v1.RuleTrigger_Release_:
+		envs := k.Release.GetEnvironments()
+		return ev.kind == kindRelease && (len(envs) == 0 || slices.Contains(envs, str(ev.after, "environment")))
 	}
 	return false // scheduled triggers never match a change
 }
 
 // ---- templates ----
 
-var tplVar = regexp.MustCompile(`\{([a-z]+)\}`)
+var tplVar = regexp.MustCompile(`\{([a-z_]+)\}`)
+
+// gitVars are the template variables of a Git trigger (board task #101), "" for other triggers
+// and for what the event lacks (a push has no pull request).
+var gitVars = []string{"pr_url", "pr_number", "pr_title", "branch", "target_branch", "git_author"}
+
+// gitTemplateVars reads gitVars from a "git" journal entry. The values come from the repository
+// host (anyone who can open a pull request writes its title), so each is one line, at most
+// vcs.MaxTitle characters, and the «@» of what would read as a mention token gets a word joiner:
+// the texts are not parsed for mentions today, and must not notify anyone if they ever are.
+func gitTemplateVars(ev ruleEvent) map[string]string {
+	v := make(map[string]string, len(gitVars))
+	for _, k := range gitVars {
+		v[k] = ""
+	}
+	if ev.kind != "git" {
+		return v
+	}
+	a := ev.after
+	v["branch"], v["git_author"] = str(a, "branch"), str(a, "author")
+	if str(a, "kind") == vcs.KindPR {
+		v["pr_url"], v["pr_number"], v["pr_title"], v["target_branch"] = str(a, "url"), str(a, "ref"), str(a, "title"), str(a, "target_branch")
+	}
+	for k, s := range v {
+		v[k] = untrustedLine(s)
+	}
+	return v
+}
+
+// releaseTemplateVars adds {release} of a "release" journal entry to v ("" for other events):
+// the name CI gave the release, under the rules of gitTemplateVars.
+func releaseTemplateVars(ev ruleEvent, v map[string]string) {
+	v["release"] = ""
+	if ev.kind == kindRelease {
+		v["release"] = untrustedLine(str(ev.after, "name"))
+	}
+}
+
+// untrustedLine makes text of an outside source safe for a template: control characters and
+// line breaks become spaces, runs of spaces one, «@» is followed by U+2060 (invisible, breaks
+// @everyone / @<id>), and the result is cut to vcs.MaxTitle characters.
+func untrustedLine(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || r == ' ' || r == ' ' {
+			return ' '
+		}
+		return r
+	}, s)
+	s = strings.Join(strings.Fields(s), " ")
+	if utf8.RuneCountInString(s) > vcs.MaxTitle {
+		s = string([]rune(s)[:vcs.MaxTitle])
+	}
+	return strings.ReplaceAll(s, "@", "@\u2060")
+}
 
 // renderTemplate replaces {name} by vars[name] (unknown names stay as written) and cuts the
 // result to MaxRuleTemplate characters.

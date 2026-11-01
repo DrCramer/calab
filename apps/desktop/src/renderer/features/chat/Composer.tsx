@@ -1,8 +1,8 @@
 import { BillingState, RoomType, type PermissionBits, type Room, type Sticker } from '@calaba/protocol';
 import * as Dropdown from '../../components/radix/dropdown-menu';
-import { ArrowUp, Camera, Check, CornerUpLeft, FileText, Image as ImageIcon, Paperclip, Pencil, Smile, X } from 'lucide-react';
+import { Camera, CornerUpLeft, FileText, Image as ImageIcon, Paperclip, Pencil, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { CLOSE_HIT, CloseButton, IconButton, Tip, cx } from '../../components/ui';
+import { CLOSE_HIT, IconButton, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { fmt } from '../../lib/format';
 import { MENTION_EVENT, takeMention, type MentionRequest } from './mentionRequest';
@@ -19,17 +19,19 @@ import { sendSticker } from '../../services/stickers';
 import type { StickerPlace } from '../../lib/stickers';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
 import { useBillingState } from '../workspace/billing/BillingPaywall';
-import { EmojiPicker } from './EmojiPicker';
 import { StickerButton } from './stickers/StickerPicker';
 import { StickerSuggest, type StickerSuggestHandle } from './stickers/StickerSuggest';
 import { singleEmoji } from '../../lib/stickerSuggest';
-import { MentionPopover, optionKey, useMentionables, type MentionOption } from './MentionPopover';
+import { useMentionables, type MentionOption } from './MentionPopover';
+import { ComposerField, ContextBar, MentionList, SendButton, insertAt, useFieldAutosize, useMentionPicker } from './ComposerField';
 import { CommandPopover } from './CommandPopover';
 import { applyCommand, commandKey, commandQuery, filterCommands, type CommandOption } from '../../lib/botCommands';
 import { loadRoomCommands } from '../../services/bots';
 import { useBots } from '../../stores/bots';
 import { previewPartsOf } from './mentionText';
 import { enterInsertsNewline, trimMessage } from './composerText';
+import { ExpandedEditor, type Sel } from './ExpandedEditor';
+import { isExpandHotkey, offersExpand } from './editorLogic';
 import { shouldFocusOnAttach } from './attachFocus';
 import { PreviewRuns } from './PreviewRuns';
 import { roomLabel } from './roomLabel';
@@ -48,10 +50,6 @@ function rankOutsidersLast(list: MentionCandidate[], outsiders: ReadonlyMap<stri
 }
 
 const NO_MENTIONS: ReadonlyMap<string, string> = new Map();
-/** Field grows up to 6 lines (15 px text on a 20 px line — integer line boxes keep layout pixel-exact). */
-const MAX_FIELD_H = 6 * 20 + 16;
-/** Phone: the field is taller than this (one 44 px line + slack) → the multiline layout. */
-const MULTILINE_PX = 52;
 
 export function toOutgoing(f: File): OutgoingFile {
   const name = f.name || `image-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
@@ -85,7 +83,6 @@ export function Composer({
   const imageInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const mobile = useMobile();
-  const [multi, setMulti] = useState(false);
   const pendingCaret = useRef<number | null>(null);
   // docs/09 #149: a file staged from outside the field (drag-and-drop above all) leaves it
   // unfocused — Enter then does nothing until a click. `files` only grows on staging, never on
@@ -131,29 +128,16 @@ export function Composer({
   }, [me, room.id, text, mentions, draftBeforeEdit]);
 
   // ---- mention autocomplete (docs/05, «Упоминания»)
-  const listId = useId();
   const [caret, setCaret] = useState(0);
-  const [dismissed, setDismissed] = useState<number | null>(null);
-  const [sel, setSel] = useState(0);
-  const mq = mentionQuery(text, caret);
   // The popover is open (an @query under the caret): the task rooms ask the server who sees the board.
-  const mentionables = useMentionables(workspaceId, room, me, mq !== null);
-  const options: MentionOption[] =
-    mq && mq.start !== dismissed
-      ? [
-          ...rankOutsidersLast(filterCandidates(mq.query, mentionables.candidates, mentionables.outsiders.size ? 100 : 8), mentionables.outsiders).map((c): MentionOption => ({ kind: 'member', c, guest: mentionables.guests.has(c.id), outsider: mentionables.outsiders.get(c.id), role: mentionables.roles.get(c.id)?.role, custom: mentionables.roles.get(c.id)?.custom })),
-          // @everyone / @here only with MENTION_EVERYONE in this room (guests never have it, ADR-0016).
-          ...(!can(perms, 'MENTION_EVERYONE') ? [] : filterSpecial(mq.query).map((v): MentionOption => ({ kind: 'special', v }))),
-        ]
-      : [];
-  const popover = options.length > 0;
-  const selIdx = Math.min(sel, Math.max(0, options.length - 1));
-  const [queryTrack, setQueryTrack] = useState<string | null>(null);
-  const queryKey = mq ? `${mq.start}:${mq.query}` : null;
-  if (queryKey !== queryTrack) {
-    setQueryTrack(queryKey);
-    setSel(0);
-  }
+  const mentionables = useMentionables(workspaceId, room, me, mentionQuery(text, caret) !== null);
+  const mention = useMentionPicker(text, caret, (q) => [
+    ...rankOutsidersLast(filterCandidates(q.query, mentionables.candidates, mentionables.outsiders.size ? 100 : 8), mentionables.outsiders).map((c): MentionOption => ({ kind: 'member', c, guest: mentionables.guests.has(c.id), outsider: mentionables.outsiders.get(c.id), role: mentionables.roles.get(c.id)?.role, custom: mentionables.roles.get(c.id)?.custom })),
+    // @everyone / @here only with MENTION_EVERYONE in this room (guests never have it, ADR-0016).
+    ...(!can(perms, 'MENTION_EVERYONE') ? [] : filterSpecial(q.query).map((v): MentionOption => ({ kind: 'special', v }))),
+  ]);
+  const mq = mention.query;
+  const popover = mention.open;
   const syncCaret = (): void => setCaret(ref.current?.selectionStart ?? 0);
 
   // ---- bot commands (ADR-0031 §6): `/` at the start hints the room's bots' commands
@@ -168,12 +152,13 @@ export function Composer({
   const cq = slash && !cmdDismissed ? commandQuery(text, caret) : null;
   const cmdOptions: CommandOption[] = cq && roomCommands ? filterCommands(cq, roomCommands) : [];
   const cmdPopover = cmdOptions.length > 0;
-  const cmdIdx = Math.min(sel, Math.max(0, cmdOptions.length - 1));
+  const [cmdSel, setCmdSel] = useState(0);
+  const cmdIdx = Math.min(cmdSel, Math.max(0, cmdOptions.length - 1));
   const [cmdTrack, setCmdTrack] = useState<string | null>(null);
   const cmdKeyNow = cq ? `${cq.name}@${cq.bot ?? ''}` : null;
   if (cmdKeyNow !== cmdTrack) {
     setCmdTrack(cmdKeyNow);
-    setSel(0);
+    setCmdSel(0);
   }
   const pickCommand = (o: CommandOption): void => {
     if (!cq) return;
@@ -259,16 +244,39 @@ export function Composer({
       el.setSelectionRange(pendingCaret.current, pendingCaret.current);
       pendingCaret.current = null;
     }
-    // Empty: exactly the one-line min-height — a native placeholder that wraps (a long room name)
-    // must not inflate the field; the visible placeholder is the one-line stand-in below.
-    el.style.height = 'auto';
-    el.style.height = text === '' ? '0px' : `${Math.min(el.scrollHeight, MAX_FIELD_H)}px`;
-    // Phone: a second line moves the text to a row of its own above the buttons. Sticky until the
-    // field is empty again: at the full width the same text may fit one line, and that must not flip back.
-    if (mobile) setMulti((was) => (text === '' ? false : was || el.scrollHeight > MULTILINE_PX));
-  }, [text, mobile, multi]);
+  }, [text]);
+  // Phone: a second line moves the text to a row of its own above the buttons.
+  const multi = useFieldAutosize(ref, text);
 
   const cancelEdit = (): void => setEditing(null);
+
+  // Expanded editor (#97): another view over the same `text`; `editorSel` is the field's selection
+  // at the moment it opened, `restoreSel` the editor's selection to put back into the field.
+  const [editorSel, setEditorSel] = useState<Sel | null>(null);
+  const restoreSel = useRef<Sel | null>(null);
+  const openEditor = (): void => {
+    const el = ref.current;
+    setEditorSel({ start: el?.selectionStart ?? text.length, end: el?.selectionEnd ?? text.length });
+  };
+  const collapseEditor = useCallback((sel: Sel): void => {
+    restoreSel.current = sel;
+    setEditorSel(null);
+  }, []);
+  const editorOpen = editorSel !== null;
+  useEffect(() => {
+    if (editorOpen) return;
+    const sel = restoreSel.current;
+    restoreSel.current = null;
+    if (!sel) return;
+    // After the dialog has given the focus back (Radix does it on unmount).
+    const id = window.setTimeout(() => {
+      const el = ref.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(sel.start, sel.end);
+    }, 30);
+    return () => window.clearTimeout(id);
+  }, [editorOpen]);
 
   // Voice messages (docs/09 #43): recorded, then sent at once as a message of its own.
   const sendVoice = (r: VoiceResult): void => {
@@ -312,16 +320,16 @@ export function Composer({
   }, []);
   const onSuggestDismiss = useCallback(() => setSuggestOff(latest.current.text), []);
 
-  const send = (): void => {
+  const send = (): boolean => {
     const content = wire(trimMessage(text));
-    if (content.length > MAX_CONTENT) return;
+    if (content.length > MAX_CONTENT) return false;
     if (editMsg) {
-      if (!content && editMsg.attachments.length === 0) return;
+      if (!content && editMsg.attachments.length === 0) return false;
       if (content !== editMsg.content) void editMessage(editMsg.id, content);
       cancelEdit();
-      return;
+      return true;
     }
-    if (!content && files.length === 0) return;
+    if (!content && files.length === 0) return false;
     // Viewing older history: go back to the present so the new message is visible.
     if (useMessages.getState().rooms[room.id]?.hasMoreAfter) void loadPresent(room.id);
     void sendMessage(workspaceId, room.id, content, files, replyTo);
@@ -329,15 +337,35 @@ export function Composer({
     setMentions(NO_MENTIONS);
     setFiles([]);
     setReply(room.id, undefined);
+    return true;
+  };
+
+  /** Sends from the editor: on success it closes (the draft is gone), otherwise it stays with the text. */
+  const sendFromEditor = (): void => {
+    if (send()) setEditorSel(null);
+  };
+
+  const deleteDraft = (): void => {
+    setText('');
+    setMentions(NO_MENTIONS);
+    if (!editMsg) setFiles([]);
+    setEditorSel(null);
+    // The field, now empty, takes the focus back.
+    window.setTimeout(() => ref.current?.focus(), 30);
   };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (isExpandHotkey(e.nativeEvent)) {
+      e.preventDefault();
+      openEditor();
+      return;
+    }
     if (suggestEmoji && suggestRef.current?.onKey(e)) return;
     if (cmdPopover && !e.nativeEvent.isComposing) {
       const o = cmdOptions[cmdIdx];
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
-        setSel((cmdIdx + (e.key === 'ArrowDown' ? 1 : cmdOptions.length - 1)) % cmdOptions.length);
+        setCmdSel((cmdIdx + (e.key === 'ArrowDown' ? 1 : cmdOptions.length - 1)) % cmdOptions.length);
         return;
       }
       if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
@@ -351,24 +379,7 @@ export function Composer({
         return;
       }
     }
-    if (popover && !e.nativeEvent.isComposing) {
-      const o = options[selIdx];
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        setSel((selIdx + (e.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length);
-        return;
-      }
-      if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
-        e.preventDefault();
-        if (o) pick(o);
-        return;
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setDismissed(mq?.start ?? null);
-        return;
-      }
-    }
+    if (mention.onKey(e, pick)) return;
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       // Inside an unclosed ``` block Enter is a new line of code (the textarea inserts it).
       if (enterInsertsNewline(text, e.currentTarget.selectionStart)) return;
@@ -408,19 +419,15 @@ export function Composer({
 
   const insert = (s: string): void => {
     const el = ref.current;
-    if (!el) {
-      setText((v) => v + s);
-      return;
+    const next = insertAt(el, text, s);
+    setText(next.text);
+    setCaret(next.caret);
+    if (el) {
+      requestAnimationFrame(() => {
+        el.focus();
+        el.setSelectionRange(next.caret, next.caret);
+      });
     }
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    const next = text.slice(0, start) + s + text.slice(end);
-    setText(next);
-    setCaret(start + s.length);
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(start + s.length, start + s.length);
-    });
   };
 
   if (suspended) {
@@ -452,6 +459,15 @@ export function Composer({
         : room.type === RoomType.TASK
           ? t('boards.commentPlaceholder')
           : t('chat.placeholderIn', { room: roomLabel(room) });
+  const editorTitle = editMsg
+    ? t('chat.editor.titleEdit')
+    : room.type === RoomType.DM
+      ? t('chat.editor.titleDm', { name: roomLabel(room) })
+      : room.type === RoomType.NOTES
+        ? t('chat.editor.titleNotes', { name: room.name })
+        : room.type === RoomType.TASK
+          ? t('chat.editor.titleTask')
+          : t('chat.editor.titleRoom', { room: roomLabel(room) });
   const bar = editMsg ? (
     <ContextBar
       icon={<Pencil className="size-4" aria-hidden />}
@@ -470,34 +486,48 @@ export function Composer({
 
   return (
     <div className="px-4 pb-3 pt-2 mobile:px-2 mobile:pb-2 mobile:pt-3">
+      {editorSel ? (
+        <ExpandedEditor
+          title={editorTitle}
+          text={text}
+          setText={setText}
+          maxLength={MAX_CONTENT}
+          initialSel={editorSel}
+          attachments={files.length > 0 && !editMsg ? <AttachmentGrid files={files} setFiles={setFiles} /> : null}
+          canSubmit={hasContent}
+          editing={!!editMsg}
+          onSend={sendFromEditor}
+          onCollapse={collapseEditor}
+          onDelete={deleteDraft}
+        />
+      ) : null}
       {bar}
       {files.length > 0 && !editMsg ? <AttachmentGrid files={files} setFiles={setFiles} /> : null}
-      <div className="relative flex items-end gap-2">
-        {cmdPopover ? (
-          <CommandPopover id={cmdListId} options={cmdOptions} sel={cmdIdx} onPick={pickCommand} onHover={setSel} />
-        ) : popover ? (
-          <MentionPopover id={listId} options={options} sel={selIdx} onPick={pick} onHover={setSel} />
-        ) : suggestEmoji && stickerPlace ? (
-          <StickerSuggest key={suggestEmoji} ref={suggestRef} emoji={suggestEmoji} place={stickerPlace} me={me} onSend={onSuggestSend} onDismiss={onSuggestDismiss} />
-        ) : null}
-        {voice.strip}
-        <div
-          data-focus-box
-          className={cx(
-            'flex min-h-10 min-w-0 flex-1 items-end rounded-[20px] border border-line bg-elev px-1 mobile:rounded-[22px] shadow-[var(--shadow-card)] focus-within:border-focus',
-            // Phone: one grid, [attach | text | sticker emoji]; a second line puts the text on its own row above them.
-            'mobile:grid mobile:min-h-11 mobile:grid-cols-[auto_minmax(0,1fr)_auto] mobile:items-center mobile:px-0',
-            // Phone, two lines and more: a large radius that still reads as round (no corners).
-            multi && 'mobile:rounded-[26px]',
-            // mobile:hidden too: the phone's mobile:grid would otherwise win over hidden and squeeze the recorder.
-            voice.active && 'hidden mobile:hidden',
-          )}
-        >
-          {canAttach && !editMsg ? (
+      <ComposerField
+        fieldRef={ref}
+        text={text}
+        placeholder={placeholder}
+        maxLength={MAX_CONTENT}
+        multi={multi}
+        hidden={voice.active}
+        onExpand={offersExpand(text) && !voice.active ? openEditor : undefined}
+        onEmoji={insert}
+        popover={
+          cmdPopover ? (
+            <CommandPopover id={cmdListId} options={cmdOptions} sel={cmdIdx} onPick={pickCommand} onHover={setCmdSel} />
+          ) : popover ? (
+            <MentionList m={mention} onPick={pick} />
+          ) : suggestEmoji && stickerPlace ? (
+            <StickerSuggest key={suggestEmoji} ref={suggestRef} emoji={suggestEmoji} place={stickerPlace} me={me} onSend={onSuggestSend} onDismiss={onSuggestDismiss} />
+          ) : null
+        }
+        strip={voice.strip}
+        leading={(isMulti) => (
+            canAttach && !editMsg ? (
             <Dropdown.Root modal={false}>
               <Tip label={t('chat.attach')}>
                 <Dropdown.Trigger asChild>
-                  <IconButton tip={false} label={t('chat.attach')} className={cx('mb-1 rounded-full mobile:mb-0 mobile:size-11', multi && 'mobile:row-start-2')} disabled={files.length >= MAX_ATTACHMENTS}>
+                  <IconButton tip={false} label={t('chat.attach')} className={cx('mb-1 rounded-full mobile:mb-0 mobile:size-11', isMulti && 'mobile:row-start-2')} disabled={files.length >= MAX_ATTACHMENTS}>
                     <Paperclip className="size-5" />
                   </IconButton>
                 </Dropdown.Trigger>
@@ -521,7 +551,10 @@ export function Composer({
             </Dropdown.Root>
           ) : (
             <span className="w-2 mobile:hidden" />
-          )}
+          )
+        )}
+        hiddenInputs={
+          <>
           <input
             ref={fileInput}
             type="file"
@@ -557,86 +590,32 @@ export function Composer({
               e.target.value = '';
             }}
           />
-          {/* Desktop: a wrapper for the field and its placeholder (a span: the layout invariants look for the field's closest div); phone: `contents`, the grid places them. */}
-          <span className="relative flex min-w-0 flex-1 items-end mobile:contents">
-          <textarea
-            ref={ref}
-            value={text}
-            rows={1}
-            maxLength={MAX_CONTENT}
-            // The visible placeholder is drawn below (a native one wraps and inflates the field); this one
-            // stays for assistive tech and tests, transparent.
-            placeholder={placeholder}
-            onChange={(e) => {
-              setText(e.target.value);
-              setCaret(e.target.selectionStart);
-              if (e.target.value && !editMsg) notifyTyping(room.id);
-            }}
-            onSelect={syncCaret}
-            onBlur={() => {
-              setDismissed(mq?.start ?? null);
-              if (slash) setCmdDismissed(true);
-            }}
-            onFocus={() => {
-              setDismissed(null);
-              setCmdDismissed(false);
-            }}
-            aria-autocomplete="list"
-            aria-controls={cmdPopover ? cmdListId : popover ? listId : undefined}
-            aria-activedescendant={
-              cmdPopover && cmdOptions[cmdIdx]
-                ? `${cmdListId}-${commandKey(cmdOptions[cmdIdx])}`
-                : popover && options[selIdx]
-                  ? `${listId}-${optionKey(options[selIdx])}`
-                  : undefined
-            }
-            onKeyDown={onKey}
-            onPaste={onPaste}
-            aria-label={placeholder}
-            className={cx(
-              'selectable min-h-[38px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-[9px] text-list leading-5 placeholder:text-transparent',
-              'mobile:min-h-11 mobile:py-3 mobile:row-start-1',
-              mobile && multi ? 'mobile:col-span-3 mobile:col-start-1 mobile:px-3 mobile:pb-1' : 'mobile:col-start-2',
-            )}
-            style={{ maxHeight: MAX_FIELD_H }}
-          />
-          {!text ? (
-            // The placeholder of a textarea wraps (a long room name made it four lines): a one-line,
-            // ellipsised stand-in over the field (phone: in the same grid cell), transparent to touches.
-            <span aria-hidden className="pointer-events-none absolute inset-x-0 top-[9px] min-w-0 truncate px-1.5 text-list leading-5 text-faint mobile:static mobile:col-start-2 mobile:row-start-1">
-              {placeholder}
-            </span>
-          ) : null}
-          </span>
-          <div className={cx('contents mobile:col-start-3 mobile:flex mobile:items-center', multi ? 'mobile:row-start-2' : 'mobile:row-start-1')}>
-            {stickers ? <StickerButton place={stickers.place} onSend={stickers.onSend} /> : null}
-            <EmojiPicker onPick={insert} label={t('chat.emoji')}>
-              <IconButton tip={false} label={t('chat.emoji')} className="mb-1 rounded-full mobile:mb-0 mobile:size-11">
-                <Smile className="size-5" />
-              </IconButton>
-            </EmojiPicker>
-          </div>
-        </div>
-        {showMic ? (
-          voice.button
-        ) : hasContent ? (
-          <Tip label={editMsg ? t('common.save') : t('chat.send')} shortcut="↵">
-            <button
-              type="button"
-              onClick={send}
-              aria-label={editMsg ? t('common.save') : t('chat.send')}
-              className="anim-pop mb-0.5 grid size-9 shrink-0 mobile:mb-0 mobile:size-11 place-items-center rounded-full bg-accent-strong text-accent-fg shadow-[var(--shadow-card)] hover:brightness-110 active:brightness-95"
-            >
-              {editMsg ? <Check className="size-5" strokeWidth={2.25} /> : <ArrowUp className="size-5" strokeWidth={2.25} />}
-            </button>
-          </Tip>
-        ) : null}
-      </div>
-      {text.length > MAX_CONTENT - 200 ? (
-        <div className="mt-1 text-right text-micro text-warn">
-          {text.length}/{MAX_CONTENT}
-        </div>
-      ) : null}
+          </>
+        }
+        extra={stickers ? <StickerButton place={stickers.place} onSend={stickers.onSend} /> : null}
+        field={{
+          onChange: (e) => {
+            setText(e.target.value);
+            setCaret(e.target.selectionStart);
+            if (e.target.value && !editMsg) notifyTyping(room.id);
+          },
+          onSelect: syncCaret,
+          onBlur: () => {
+            mention.dismiss();
+            if (slash) setCmdDismissed(true);
+          },
+          onFocus: () => {
+            mention.undismiss();
+            setCmdDismissed(false);
+          },
+          'aria-autocomplete': 'list',
+          'aria-controls': cmdPopover ? cmdListId : popover ? mention.listId : undefined,
+          'aria-activedescendant': cmdPopover && cmdOptions[cmdIdx] ? `${cmdListId}-${commandKey(cmdOptions[cmdIdx])}` : mention.activeId,
+          onKeyDown: onKey,
+          onPaste,
+        }}
+        action={showMic ? voice.button : hasContent ? <SendButton editing={!!editMsg} onClick={send} /> : null}
+      />
     </div>
   );
 }
@@ -644,20 +623,6 @@ export function Composer({
 function snippet(workspaceId: string, content: string, empty = ''): ReactNode {
   const parts = previewPartsOf(workspaceId, content, 160);
   return parts.length ? <PreviewRuns parts={parts} /> : empty;
-}
-
-/** Reply / edit strip above the field (accent bar, title, snippet, ×). */
-function ContextBar({ icon, title, text, onClose }: { icon: ReactNode; title: string; text: ReactNode; onClose: () => void }): ReactNode {
-  return (
-    <div className="mb-2 flex items-center gap-3 pl-2" data-testid="composer-context">
-      <span className="text-accent-text">{icon}</span>
-      <div className="min-w-0 flex-1 border-l-2 border-accent pl-2">
-        <div className="truncate text-body font-semibold text-accent-text">{title}</div>
-        <div className="truncate text-body text-muted">{text}</div>
-      </div>
-      <CloseButton label={t('common.cancel')} shortcut="" className="rounded-full" onClick={onClose} />
-    </div>
-  );
 }
 
 function AttachmentGrid({ files, setFiles }: { files: OutgoingFile[]; setFiles: (f: OutgoingFile[]) => void }): ReactNode {

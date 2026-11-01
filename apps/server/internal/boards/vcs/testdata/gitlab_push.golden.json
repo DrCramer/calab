@@ -6,19 +6,22 @@
     "Author": "jsmith",
     "Push": true,
     "Branch": "FNG-5-search",
+    "DefaultBranch": "",
     "BranchCreated": true,
     "Commits": [
       {
         "SHA": "b6568db1bc1dcd7f8b4d5a946b0b91f9dacd7327",
         "Message": "Update Catalan translation to e38cb41.\n\nFNG-5",
         "URL": "https://gitlab.example.com/mike/diaspora/-/commit/b6568db1bc1dcd7f8b4d5a946b0b91f9dacd7327",
-        "Author": "Jordi Mallach"
+        "Author": "Jordi Mallach",
+        "Old": false
       },
       {
         "SHA": "da1560886d4f094c3e6c9ef40349f7d38b5d27d7",
         "Message": "fixed readme",
         "URL": "https://gitlab.example.com/mike/diaspora/-/commit/da1560886d4f094c3e6c9ef40349f7d38b5d27d7",
-        "Author": "GitLab dev user"
+        "Author": "GitLab dev user",
+        "Old": false
       }
     ],
     "PR": null
@@ -32,7 +35,16 @@
       "URL": "https://gitlab.example.com/mike/diaspora/-/tree/FNG-5-search",
       "State": "",
       "Author": "jsmith",
-      "Event": "BRANCH_CREATED"
+      "Event": "BRANCH_CREATED",
+      "Mention": false,
+      "Draft": false,
+      "Branch": "FNG-5-search",
+      "Target": "",
+      "Actor": "jsmith",
+      "Users": null,
+      "Once": null,
+      "Forget": null,
+      "SHAs": null
     },
     {
       "Number": 5,
@@ -42,7 +54,16 @@
       "URL": "https://gitlab.example.com/mike/diaspora/-/commit/b6568db1bc1dcd7f8b4d5a946b0b91f9dacd7327",
       "State": "",
       "Author": "Jordi Mallach",
-      "Event": "COMMIT_PUSHED"
+      "Event": "COMMIT_PUSHED",
+      "Mention": false,
+      "Draft": false,
+      "Branch": "FNG-5-search",
+      "Target": "",
+      "Actor": "jsmith",
+      "Users": null,
+      "Once": null,
+      "Forget": null,
+      "SHAs": null
     }
   ]
 }

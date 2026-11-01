@@ -1,15 +1,13 @@
-# Production-like stack on a single host. Secrets live in infra/docker/.env (see .env.example).
-# Deploy with ./deploy.sh (renders livekit/livekit.gen.yaml, then `docker compose up`).
-# caddy, livekit and api use host network: WebRTC/TURN need direct ports, and the API
-# talks to everything over 127.0.0.1. postgres/valkey publish only on 127.0.0.1.
+# Production-like stack on a single host behind the existing Nginx Proxy Manager (NPM).
+# Web Caddy is reachable only on NPM's existing Docker network and never binds host ports 80/443.
+# LiveKit media/TURN and API signal endpoints use host networking. Secrets stay in infra/docker/.env.
 # Files: local volume files_data via the API's fs driver (ADR-0011), no S3 service.
 # Meeting recording (ADR-0025): egress writes MP4s to recordings_data, the API uploads them to
 # GPTunneL and deletes them; LiveKit and egress talk over Valkey (DB 1).
 
-# Baseline for every service we run (security review L6): no new privileges, no capabilities
-# unless listed, read-only root filesystem with tmpfs for scratch space.
+# Least privilege and read-only root filesystems. no-new-privileges is omitted for compatibility
+# with this Docker host's runtime, which rejects execve when the option is set.
 x-hardening: &hardening
-  security_opt: ["no-new-privileges:true"]
   cap_drop: [ALL]
   read_only: true
 
@@ -25,35 +23,25 @@ name: calaba
 
 services:
   caddy:
-    build: ./caddy
-    network_mode: host
+    image: caddy:2.11.7
+    container_name: calaba-web
     restart: unless-stopped
-    <<: *hardening
-    cap_add: [NET_BIND_SERVICE]    # 80/443 as root without other capabilities
-    tmpfs: [/tmp]
+    networks: [npm]
     deploy:
       resources:
         limits: { memory: 512m }
-    command: caddy run --config /etc/caddy/Caddyfile
+    command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
     environment:
-      # docs/10-branding.md: rtc./turn.<DOMAIN>; the app on APP_HOST (default DOMAIN); optional landing
-      - DOMAIN=${DOMAIN}
-      - APP_HOST=${APP_HOST:-}
-      - LANDING_HOST=${LANDING_HOST:-}
-      - DOMAIN_ALT=${DOMAIN_ALT:-}          # extra app host (alias), optional
-      - DOMAIN_LEGACY=${DOMAIN_LEGACY:-}    # extra app host (transitional), optional
-      - DOMAIN_ALIASES=${DOMAIN_ALIASES:-}  # extra zones: rtc./turn.<zone> served too (docs/06 «Домены»)
-      - LANDING_HOST_ALIASES=${LANDING_HOST_ALIASES:-}    # 301 → LANDING_HOST
-      - RELEASES_HOST_ALIASES=${RELEASES_HOST_ALIASES:-}  # the same feed (old builds have it baked in)
-      # desktop release feed: unset → releases.<DOMAIN>; set to empty → none (/download/ served locally)
-      - RELEASES_HOST=${RELEASES_HOST-releases.${DOMAIN}}
-      - S3_PUBLIC_URL=${S3_PUBLIC_URL:-}   # public base URL of the release bucket; empty → /srv/releases
+      NPM_HOST_IP: ${NPM_HOST_IP:-172.26.0.1}
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     volumes:
-      - caddy_data:/data
-      - caddy_config:/config
-      - ../../web:/srv/web:ro              # <repo root on host>/web = web client static (sync.sh: apps/desktop/dist-web or placeholder)
-      - ../../releases:/srv/releases:ro    # <repo root on host>/releases = /download/* (sync.sh: apps/desktop/dist-release)
-      - ../../landing:/srv/landing:ro      # <repo root on host>/landing = LANDING_HOST static (sync.sh: apps/landing/out)
+      - ./caddy/Caddyfile.npm:/etc/caddy/Caddyfile:ro
+      - ./caddy/log.caddy:/etc/caddy/log.caddy:ro
+      - ../../web:/srv/web:ro
     logging: *logging
 
   livekit:
@@ -63,6 +51,7 @@ services:
     command: --config /etc/livekit.yaml
     volumes:
       - ./livekit/livekit.gen.yaml:/etc/livekit.yaml:ro   # rendered by deploy.sh
+      - ${NPM_LETSENCRYPT_DIR:-/home/drcramer/NPM/letsencrypt}:/etc/letsencrypt:ro
     environment:
       - "LIVEKIT_KEYS=${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
       # Valkey password for the redis: section of the config (livekit-server reads REDIS_PASSWORD),
@@ -85,16 +74,15 @@ services:
     image: livekit/egress:v1.15.0@sha256:ac244a40268ce1dd1510fbff6eb529609ec68aceff1602343f79be8ca08c355b   # works with livekit-server 1.13
     network_mode: host
     restart: unless-stopped
-    security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     environment:
       EGRESS_CONFIG_BODY: |
         api_key: "${LIVEKIT_API_KEY}"
         api_secret: "${LIVEKIT_API_SECRET}"
-        ws_url: ws://127.0.0.1:7880
+        ws_url: ws://127.0.0.1:17880
         insecure: true
         redis:
-          address: 127.0.0.1:6379
+          address: 127.0.0.1:16379
           password: "${REDIS_PASSWORD}"
           db: 1
         template_port: 7980
@@ -155,7 +143,7 @@ services:
     environment:
       - API_URL=${IVR_API_URL:-https://${APP_HOST:-${DOMAIN}}}
       - IVR_AGENT_TOKEN=${IVR_AGENT_TOKEN:-}
-      - LIVEKIT_URL=ws://127.0.0.1:7880
+      - LIVEKIT_URL=ws://127.0.0.1:17880
     deploy:
       resources:
         limits: { cpus: "1", memory: 256m }
@@ -201,7 +189,6 @@ services:
     network_mode: none
     restart: "no"
     user: "0:0"
-    security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     cap_add: [CHOWN, FOWNER]
     entrypoint: ["sh", "-c", "chmod 0755 /out && chown 65532:65532 /out"]
@@ -221,15 +208,15 @@ services:
     network_mode: host
     restart: unless-stopped
     environment:
-      - HTTP_ADDR=127.0.0.1:3000
+      - HTTP_ADDR=${NPM_HOST_IP:-172.26.0.1}:13000
       - PUBLIC_APP_URL=https://${APP_HOST:-${DOMAIN}}
       - PUBLIC_APP_URL_ALT=${DOMAIN_ALT:+https://${DOMAIN_ALT}}   # empty when no alias host
       # every browser origin of the web client (server: PUBLIC_APP_URLS, comma-separated); empty parts skipped
       - PUBLIC_APP_URLS=https://${APP_HOST:-${DOMAIN}}${DOMAIN_ALT:+,https://${DOMAIN_ALT}}${DOMAIN_LEGACY:+,https://${DOMAIN_LEGACY}}
       # landing origin: may read GET /api/billing/public/offers cross-origin (no credentials); empty = none
       - PUBLIC_LANDING_URLS=${LANDING_HOST:+https://${LANDING_HOST}}
-      - DATABASE_URL=postgres://calaba:${POSTGRES_PASSWORD}@127.0.0.1:5432/calaba
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@127.0.0.1:6379
+      - DATABASE_URL=postgres://calaba:${POSTGRES_PASSWORD}@127.0.0.1:15432/calaba
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@127.0.0.1:16379
       - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-}   # key/channel namespace for a shared Valkey (docs/06); empty = none
       - JWT_SECRET=${JWT_SECRET}
       # ADR-0054 / release-2.0-identity §13: empty dependencies preserve legacy startup;
@@ -249,12 +236,12 @@ services:
       # the rtc. host clients get; after a domain move keep the old one while older desktop builds are in use
       # (their CSP allows only the old family — docs/06 «Домены»)
       - LIVEKIT_URL=wss://${RTC_PUBLIC_HOST:-rtc.${DOMAIN}}
-      - LIVEKIT_INTERNAL_URL=http://127.0.0.1:7880
+      - LIVEKIT_INTERNAL_URL=http://${NPM_HOST_IP:-172.26.0.1}:17880
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
       - STORAGE_DRIVER=fs
       - STORAGE_PATH=/data/files
-      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-2048}
       - STORAGE_MAX_TOTAL_BYTES=${STORAGE_MAX_TOTAL_BYTES:-53687091200}   # 50 GiB for all uploads (shared host disk)
       - REGISTRATION_MODE=${REGISTRATION_MODE:-invite}
       - EMAIL_VERIFICATION=${EMAIL_VERIFICATION:-required}   # required | optional (ADR-0065)
@@ -321,7 +308,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=calaba
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:15432:5432"
     volumes:
       - pg_data:/var/lib/postgresql   # PG 18 images keep PGDATA in a versioned subdir here
     healthcheck:
@@ -356,7 +343,7 @@ services:
         printf 'requirepass "%s"\n' "$$pw" > /tmp/auth.conf
         exec valkey-server /tmp/auth.conf --save 60 1 --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:16379:6379"
     volumes:
       # New volume: Valkey does not read Redis 7.4 persistence files (RDB 12). Only transient
       # state lives here (revocation markers, limits, voice, presence, gateway buffers).
@@ -372,9 +359,12 @@ services:
     logging: *logging
 
 volumes:
-  caddy_data:
-  caddy_config:
   pg_data:
   valkey_data:
   files_data:   # uploaded files (API fs driver); back up offsite, see docs/06
   recordings_data:   # meeting recordings until GPTunneL has them (≤ 7 days); not backed up
+
+networks:
+  npm:
+    external: true
+    name: ${NPM_NETWORK:-evilcorp}

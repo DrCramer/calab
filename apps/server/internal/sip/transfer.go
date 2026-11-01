@@ -102,7 +102,16 @@ func (c *InCall) Transfer(e Env, to TransferTo, fx *Effects) error {
 	hops := c.Hops
 	c.Hops += d.Hops + 1
 	c.step("transfer:" + label)
+	ev := Event{Kind: EvTransfer, User: &from}
+	if to.User != nil {
+		peer := *to.User
+		ev.Peer, ev.TargetKind, ev.TargetID = &peer, TkUser, &peer
+	} else {
+		ev = withTarget(e.PBX, to.Target, ev)
+	}
+	c.log(e, ev, fx)
 	c.Xfer = &Xfer{From: from, Hops: hops}
+	c.ViaFallback = false
 	c.Phase, c.Ring, c.Sequential, c.Group, c.Pos, c.Rang = PhaseRing, ring, d.Sequential, d.Group, 0, nil
 	c.OnFail, c.Declined = Target{Kind: RouteHangup}, nil
 	if d.Group != nil {
@@ -124,6 +133,7 @@ func (c *InCall) Transfer(e Env, to TransferTo, fx *Effects) error {
 		c.Ringing = append(c.Ringing, r.User)
 		fx.Rings = append(fx.Rings, r.User)
 		c.addRang(r)
+		c.logRing(e, r, fx)
 		c.Deadline = c.until(e, time.Duration(r.Sec)*time.Second)
 	}
 	return nil
@@ -140,9 +150,10 @@ func (c *InCall) CancelTransfer(e Env, fx *Effects) error {
 
 // transferBack ends a transfer that nobody took (reason: why — no_answer, declined, cancelled…):
 // the call is the member's again, as before the transfer.
-func (c *InCall) transferBack(_ Env, reason string, fx *Effects) {
-	c.stopRinging(fx)
+func (c *InCall) transferBack(e Env, reason string, fx *Effects) {
+	c.stopRinging(e, reason, fx)
 	c.step("transfer:" + reason)
+	c.log(e, Event{Kind: EvTransferEnd, Reason: reason}, fx)
 	from := c.Xfer.From
 	c.Hops = c.Xfer.Hops
 	c.Xfer = nil
@@ -153,11 +164,12 @@ func (c *InCall) transferBack(_ Env, reason string, fx *Effects) {
 	fx.Play, fx.Changed, fx.Xfer = nil, true, true
 }
 
-// transferTaken: the target answered — the member who handed the call over is released.
-func (c *InCall) transferTaken(fx *Effects) {
+// transferTaken: the target (user) answered — the member who handed the call over is released.
+func (c *InCall) transferTaken(e Env, user uuid.UUID, fx *Effects) {
 	from := c.Xfer.From
 	c.Xfer = nil
 	c.step("transfer:answered")
+	c.log(e, Event{Kind: EvTransferEnd, User: &user, Reason: "answered"}, fx)
 	fx.Released = &from
 	fx.Xfer = true
 }

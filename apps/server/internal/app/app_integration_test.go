@@ -194,6 +194,8 @@ func run(m *testing.M) int {
 		MailHostAdminURL:   mailHostFakeSrv.url(),
 		MailHostAdminToken: "it-hosting-token",
 		MailHostDomains:    []string{"example.com"},
+		// Server-side Metrika conversions (ADR-0135): the stub collector of signup_attribution_integration_test.
+		MetrikaMPToken: metrikaFakeMS, MetrikaCounterID: 1, MetrikaMPURL: metrikaFake.URL,
 	}
 	cfg.TrustedProxies = mustPrefixes("127.0.0.1/32", "::1/128")
 	if err := cfg.Validate(); err != nil {

@@ -13,3 +13,9 @@ dist/
 *.p8
 *.mobileprovision
 credentials.json
+dist-ios/
+# Firebase client config (ADR-0070 Android): per deployment, never committed.
+google-services.json
+# Gradle outputs of local Expo modules (expo prebuild / gradlew).
+modules/**/android/build/
+modules/**/android/.cxx/

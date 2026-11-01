@@ -20,13 +20,28 @@ vi.stubGlobal('localStorage', {
 vi.stubGlobal('document', { hasFocus: () => true });
 // No Web Locks: a single tab, sounds fire synchronously (the cross-tab claim: lib/crossTab.test.ts).
 vi.stubGlobal('navigator', {});
-vi.stubGlobal('Notification', class { onclick: (() => void) | null = null; });
+// System notifications shown (title, options, the click handler); held ones need addEventListener.
+const shown = vi.hoisted((): Array<{ title: string; opts: NotificationOptions; n: { onclick: (() => void) | null } }> => []);
+vi.stubGlobal(
+  'Notification',
+  class {
+    onclick: (() => void) | null = null;
+    constructor(title: string, opts: NotificationOptions = {}) {
+      shown.push({ title, opts, n: this });
+    }
+    addEventListener(): void {}
+  },
+);
+const showWindow = vi.hoisted(() => vi.fn());
 
 const played = vi.hoisted((): Array<[string, unknown]> => []);
 vi.mock('../lib/sounds', () => ({ playSound: (name: string, opts: unknown) => void played.push([name, opts]) }));
-vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined, attention: () => undefined } } }));
+vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined, attention: () => undefined, showWindow } } }));
 
-const { onIncomingMessage, shouldNotify } = await import('./notify');
+const { messageNoticeTitle, onIncomingMessage, shouldNotify } = await import('./notify');
+const { useUi } = await import('../stores/ui');
+const { useWorkspaces } = await import('../stores/workspaces');
+const { useChatView } = await import('../features/chat/chatView');
 const { useRooms } = await import('../stores/rooms');
 const { useSession } = await import('../stores/session');
 const { useInbox } = await import('../stores/inbox');
@@ -144,5 +159,35 @@ describe('new message sound (docs/09 P1 #13, item 22)', () => {
     played.length = 0;
     onIncomingMessage(msg(3), 'ws', true);
     expect(played).toHaveLength(0);
+  });
+});
+
+describe('system notification of a message (ADR-0141, #99)', () => {
+  it('the title starts with the source: room, then author; a DM is its author', () => {
+    expect(messageNoticeTitle('Борис', { name: 'общий', type: RoomType.TEXT }, false)).toBe('#общий · Борис');
+    expect(messageNoticeTitle('Борис', { name: 'Планёрка', type: RoomType.VOICE }, false)).toBe('«Планёрка» · Борис');
+    expect(messageNoticeTitle('Борис', { name: 'общий', type: RoomType.TEXT }, false, 'Команда')).toBe('#общий (Команда) · Борис');
+    expect(messageNoticeTitle('Борис', { name: '', type: RoomType.DM }, true)).toBe('Борис');
+    expect(messageNoticeTitle('Борис', undefined, false)).toBe('Борис');
+  });
+
+  it('a mention elsewhere notifies with the room in the title; a click shows the window, opens the room in its workspace and jumps to the message', () => {
+    const s = useRooms.getState();
+    s.upsert(create(RoomSchema, { id: 'a', workspaceId: 'ws2', type: RoomType.TEXT, name: 'общий' }));
+    useWorkspaces.setState({ byId: { ws1: { ws: { name: 'Один' }, members: {}, roles: [] }, ws2: { ws: { name: 'Два' }, members: {}, roles: [] } } } as never);
+    const openRoom = vi.fn();
+    useUi.setState({ openRoom } as never);
+    shown.length = 0;
+    showWindow.mockClear();
+    const m = msg(700, `hi @${ME}`);
+    onIncomingMessage(m, 'ws2', false);
+    expect(shown).toHaveLength(1);
+    expect(shown[0]?.title).toMatch(/^#общий \(Два\) · /);
+    expect(shown[0]?.opts.tag).toBe('a');
+    shown[0]?.n.onclick?.();
+    expect(showWindow).toHaveBeenCalledTimes(1);
+    expect(openRoom).toHaveBeenCalledWith('ws2', 'a');
+    expect(useChatView.getState().jump).toMatchObject({ roomId: 'a', messageId: m.id });
+    expect(showWindow.mock.invocationCallOrder[0]).toBeLessThan(openRoom.mock.invocationCallOrder[0] ?? 0);
   });
 });

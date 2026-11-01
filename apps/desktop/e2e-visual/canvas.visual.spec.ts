@@ -1,9 +1,9 @@
 import { create } from '@bufbuild/protobuf';
-import { CANVAS_BITS, CanvasPermissionEntrySchema, PermissionTargetType } from '@calaba/protocol';
+import { CANVAS_BITS, CanvasPermissionEntrySchema, PermissionTargetType, Plan } from '@calaba/protocol';
 import type { Page } from '@playwright/test';
 import { IDS } from '../e2e-support/fixtures';
 import { expect, test } from './app';
-import { checkpoint } from './harness';
+import { checkpoint, joinVoice } from './harness';
 
 /**
  * «Холст» on the desktop (ADR-0126 §5, docs/08 «Холст»): one test, one `checkpoint` per state —
@@ -69,6 +69,24 @@ test('canvas-screen', async ({ open, win, mock, shot, theme }) => {
   await expect(win.getByTestId('canvas-toolbar')).toBeVisible();
   await checkpoint(shot, 'canvas-tree');
 
+  // 2a. The open canvas's row is filled; the pointer on its neighbour fills the same box (dark and light).
+  await win.getByTestId('canvas-node').filter({ hasText: 'Ретро-доска' }).hover();
+  await win.waitForTimeout(150);
+  await checkpoint(shot, 'canvas-tree-hover');
+  await win.mouse.move(700, 300);
+
+  // 2b. The folded list: «show» at the left of the header, the canvas takes the width (dark and light).
+  await win.getByTestId('canvas-tree-toggle').click();
+  await expect(win.getByTestId('canvas-column')).toHaveCount(0);
+  await expect(win.getByTestId('canvas-tree-toggle')).toBeVisible();
+  // ADR-0146: outside «Команда» the island is folded into my avatar on the rail, the tree folded or not.
+  await expect(win.getByTestId('bottom-island')).toBeHidden();
+  await expect(win.getByTestId('island-avatar')).toBeVisible();
+  await win.waitForTimeout(150);
+  await checkpoint(shot, 'canvas-tree-collapsed');
+  await win.getByTestId('canvas-tree-toggle').click();
+  await expect(win.getByTestId('canvas-column')).toBeVisible();
+
   // 3. A selected sticky and its properties panel (dark and light).
   const p = await atWorld(win, 300, 80);
   await win.mouse.click(p.x, p.y);
@@ -128,6 +146,64 @@ test('canvas-screen', async ({ open, win, mock, shot, theme }) => {
     await checkpoint(shot, 'canvas-versions');
   }
 
+  // 5a. The palette: a sticky in every colour and a shape in every hue (dark and light).
+  await open();
+  const swatches = [
+    'yellow', 'amber', 'orange', 'coral', 'red', 'crimson', 'pink', 'magenta', 'violet', 'purple', 'lavender', 'indigo', 'cobalt',
+    'blue', 'sky', 'cyan', 'teal', 'mint', 'green', 'emerald', 'lime', 'brown', 'gray', 'slate', 'black',
+  ];
+  const hues = ['red', 'orange', 'yellow', 'lime', 'green', 'teal', 'cyan', 'blue', 'indigo', 'purple', 'magenta', 'pink', 'brown', 'gray'];
+  mock.canvas.put({ workspaceId: IDS.workspaces.main, name: 'Палитра', ownerId: IDS.users.anna }, (d) => {
+    swatches.forEach((color, i) => d.create({ kind: 'sticky', x: (i % 9) * 150, y: Math.floor(i / 9) * 150, color, text: color }));
+    hues.forEach((hue, i) => d.create({ kind: 'shape', shape: 'rounded', x: (i % 7) * 190, y: 470 + Math.floor(i / 7) * 120, w: 160, h: 90, fill: 'none', stroke: hue, text: hue }));
+  });
+  await win.getByTestId('section-canvas').click();
+  await win.getByTestId('canvas-node').filter({ hasText: 'Палитра' }).getByTestId('canvas-node-open').click();
+  await expect(win.getByTestId('canvas-title')).toHaveText('Палитра');
+  await expect(win.getByTestId('canvas-connecting')).toHaveCount(0);
+  await win.getByTestId('canvas-tree-toggle').click();
+  await win.getByTestId('canvas-fit-all').click();
+  await win.waitForTimeout(900);
+  await checkpoint(shot, 'canvas-palette');
+
+  // 5b. Connector routes: straight, elbow and curved between pairs of shapes, with arrows and labels (dark and light).
+  await open();
+  const routes = ['straight', 'elbow', 'curve'] as const;
+  const routeText = { straight: 'прямой', elbow: 'ломаный', curve: 'плавный' } as const;
+  mock.canvas.put({ workspaceId: IDS.workspaces.main, name: 'Связи', ownerId: IDS.users.anna }, (d) => {
+    routes.forEach((route, i) => {
+      const a = d.create({ kind: 'shape', shape: 'rounded', x: 0, y: i * 170, w: 140, h: 80, fill: 'blue', text: `A${i + 1}` });
+      const b = d.create({ kind: 'shape', shape: 'rounded', x: 460, y: i * 170 + 70, w: 140, h: 80, fill: 'green', text: `B${i + 1}` });
+      d.create({ kind: 'connector', from: { id: a ?? '', side: 'right' }, to: { id: b ?? '', side: 'left' }, route, arrow: 'end', label: routeText[route] });
+    });
+  });
+  await win.getByTestId('section-canvas').click();
+  await win.getByTestId('canvas-node').filter({ hasText: 'Связи' }).getByTestId('canvas-node-open').click();
+  await expect(win.getByTestId('canvas-title')).toHaveText('Связи');
+  await expect(win.getByTestId('canvas-connecting')).toHaveCount(0);
+  await win.getByTestId('canvas-fit-all').click();
+  await win.waitForTimeout(900);
+  await checkpoint(shot, 'canvas-connectors');
+
+  if (theme === 'dark') {
+    // 5c. The connector tool's route menu: three routes with their icons.
+    await win.getByTestId('canvas-tool-connector').locator('..').getByRole('button', { name: 'Выбрать вариант' }).click();
+    await expect(win.getByTestId('canvas-route-menu')).toBeVisible();
+    await checkpoint(shot, 'canvas-route-menu');
+    await win.keyboard.press('Escape');
+
+    // 5d. A sticker from the workspace's pack placed on the board (the chat's sticker panel, K), selected.
+    await win.getByTestId('canvas-tool-sticker').click();
+    const panel = win.getByTestId('canvas-sticker-panel');
+    await expect(panel.getByRole('button', { name: 'Стикер 💎' })).toBeVisible();
+    await checkpoint(shot, 'canvas-sticker-panel');
+    await panel.getByRole('button', { name: 'Стикер 💎' }).click();
+    await expect(panel).toHaveCount(0);
+    await expect(win.getByTestId('canvas-announce')).toHaveText('Стикер-картинка');
+    await win.waitForTimeout(600);
+    await checkpoint(shot, 'canvas-sticker');
+  }
+
   // 6. «Доступ» (dark and light).
   await open();
   await win.getByTestId('section-canvas').click();
@@ -141,6 +217,23 @@ test('canvas-screen', async ({ open, win, mock, shot, theme }) => {
   // A private canvas has no link: the switch is off and says why.
   await win.getByTestId('canvas-share-tabs').getByRole('radio', { name: 'Ссылка' }).click();
   await expect(dialog.getByTestId('canvas-link-private')).toBeVisible();
+
+  // 6b. «Отправить в чат» (owner 23.10): from the «⋯» menu, the share dialog gives way to the chat picker;
+  // the card of the sent link in the feed (dark and light), and the card of a canvas that is not mine to see.
+  await win.getByTestId('canvas-share-send').click();
+  await expect(win.getByTestId('forward-dialog')).toBeVisible();
+  await checkpoint(shot, 'canvas-send');
+  await win.keyboard.press('Escape');
+  const board = [...mock.canvas.items.values()].find((i) => i.name === 'Дорожная карта Q1');
+  expect(board).toBeTruthy();
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.vera, content: `Посмотрите доску ${mock.url}/canvas/${board?.id ?? ''}` });
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.users.boris, content: `А эта удалена ${mock.url}/canvas/00000000-0000-4000-8000-00000000dead` });
+  await win.getByTestId('section-chats').click();
+  await win.locator('aside').getByRole('button', { name: /общий/ }).first().click();
+  await expect(win.getByTestId('canvas-link-card').first()).toHaveAttribute('data-state', 'page');
+  await expect(win.getByTestId('canvas-link-card').last()).toHaveAttribute('data-state', 'unavailable');
+  await win.mouse.move(0, 0);
+  await checkpoint(shot, 'canvas-chat-card');
 
   if (theme === 'dark') {
     // 6a. «Ссылка» of a canvas that can have one: turned on, the address, the term and the views.
@@ -163,5 +256,71 @@ test('canvas-screen', async ({ open, win, mock, shot, theme }) => {
     await win.getByTestId('canvas-trash-row').first().getByRole('button').first().click();
     await expect(win.getByTestId('canvas-trashed')).toBeVisible();
     await checkpoint(shot, 'canvas-trash');
+
+    // 7a. The plan's canvas cap (ADR-0126 addendum, owner 23.10): on Free (3) the fixture's four live
+    // canvases are already over it — «+ Новый холст» answers with the plan toast, as the Wiki.
+    await open();
+    mock.setPlanKind(IDS.workspaces.main, Plan.FREE);
+    await win.getByTestId('section-canvas').click();
+    await expect(win.getByTestId('canvas-node').first()).toBeVisible();
+    await win.getByTestId('canvas-create').click();
+    await win.getByTestId('canvas-new-canvas').click();
+    await expect(win.getByTestId('toast')).toContainText('Лимит тарифа Free: 3 холстов');
+    await checkpoint(shot, 'canvas-plan-limit');
   }
+
+  // 8. Comments like the chat (owner 23.10, dark and light): thread cards with chat rows (Борис's two
+  // grouped, my reply with a mention, Вера's answer), the reply composer of the active thread, a
+  // resolved thread; then (dark) the hover bar of my comment and a new thread's composer at the bottom.
+  await open();
+  const roadmap = [...mock.canvas.items.values()].find((i) => i.name === 'Дорожная карта Q1');
+  if (!roadmap) throw new Error('no roadmap');
+  const target = mock.canvas.objects(roadmap.id).find((o) => o.text === 'Раздел «Холст»');
+  const { anna, boris, vera } = IDS.users;
+  const root = mock.canvas.seedComment(roadmap.id, boris, 'Давайте добавим сюда **макет** панели комментариев', { objectId: target?.id ?? '', x: 150, y: 20 });
+  mock.canvas.seedComment(roadmap.id, boris, 'И ссылку на ADR-0127', { parentId: root.id });
+  mock.canvas.seedComment(roadmap.id, anna, `@${vera} посмотришь сегодня?`, { parentId: root.id });
+  mock.canvas.seedComment(roadmap.id, vera, 'Да, вечером 👍', { parentId: root.id });
+  mock.canvas.seedComment(roadmap.id, vera, 'Цвета стикеров согласованы', { x: 40, y: 300, resolved: true });
+  mock.canvas.seedComment(roadmap.id, anna, 'Проверить контраст в светлой теме', { x: 520, y: 320 });
+  await openRoadmap(win);
+  await win.getByTestId('canvas-comments-toggle').click();
+  const panel = win.getByTestId('canvas-comments-panel');
+  await expect(panel.getByTestId('canvas-comment-thread')).toHaveCount(3);
+  await panel.getByTestId('canvas-comment-thread').first().getByTestId('canvas-comment').first().click();
+  await expect(panel.getByTestId('canvas-comment-input')).toHaveCount(1);
+  if (theme === 'dark') {
+    await panel.getByTestId('canvas-comment-thread').first().getByTestId('canvas-comment').nth(2).getByTestId('comment-bubble').hover();
+    await expect(panel.getByTestId('comment-actions')).toBeVisible();
+    await checkpoint(shot, 'canvas-comments-hover', { keepPointer: true });
+  }
+  // The reply composer at the bottom of the active thread, the resolved and my threads below it.
+  await win.mouse.move(10, 10);
+  await panel.getByTestId('canvas-comment-input').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await win.waitForTimeout(300);
+  await checkpoint(shot, 'canvas-comments');
+
+  if (theme === 'dark') {
+    await win.getByTestId('canvas-tool-comment').click();
+    const at = await atWorld(win, 60, 260);
+    await win.mouse.click(at.x, at.y);
+    await expect(panel.getByTestId('canvas-comment-draft')).toBeVisible();
+    await win.keyboard.type('Новая ветка про @');
+    await expect(win.getByRole('option')).not.toHaveCount(0);
+    await win.waitForTimeout(200);
+    await checkpoint(shot, 'canvas-comments-draft');
+  }
+
+  // In a call: the island folded into my avatar with the call mark (ADR-0146).
+  await open();
+  await joinVoice(win);
+  await openRoadmap(win);
+  await checkpoint(shot, 'canvas-voice');
+  // A folded tree: the left controls sit at the canvas edge.
+  await win.getByTestId('canvas-tree-toggle').click();
+  await expect(win.getByTestId('canvas-column')).toHaveCount(0);
+  // ADR-0146: outside «Команда» the island is folded into my avatar on the rail, the tree folded or not.
+  await expect(win.getByTestId('bottom-island')).toBeHidden();
+  await expect(win.getByTestId('island-avatar')).toBeVisible();
+  await checkpoint(shot, 'canvas-voice-collapsed');
 });

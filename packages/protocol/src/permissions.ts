@@ -766,6 +766,19 @@ export function taskRoomPermissions(board: PermissionBits, archived = false, com
   return p;
 }
 
+/** No bots of the viewer's own (isTaskAuthor's default). */
+const NO_BOTS: ReadonlySet<string> = new Set();
+
+/**
+ * Whether the viewer counts as the task's author (Go: perm.TaskAuthor, ADR-0151): they created it,
+ * or one of their own bots did (`myBots`: READY.my_bot_ids). Every author rule goes through it —
+ * the create-only visibility (taskPermissions) and editing / archiving one's own task with
+ * CREATE_TASKS. Rights only: «Мои задачи → Созданные» keeps `createdBy`.
+ */
+export function isTaskAuthor(task: Pick<Task, 'createdBy'>, me: string, myBots: ReadonlySet<string> = NO_BOTS): boolean {
+  return me !== '' && task.createdBy !== '' && (task.createdBy === me || myBots.has(task.createdBy));
+}
+
 /**
  * The viewer's bits on one task (Go: perm.TaskBits, ADR-0059 §2, ADR-0076 §3). A viewer of the
  * board keeps `board.permissions`; on a task-scoped board (`board.taskScoped`, permissions 0) an
@@ -773,17 +786,19 @@ export function taskRoomPermissions(board: PermissionBits, archived = false, com
  * assigned task; never creates tasks — that takes the board's bits), an approver or a watcher
  * VIEW_BOARD (view, comment, subscribe; an approver also votes); anything else 0. A create-only
  * viewer (ADR-0115: `taskScoped` with permissions = CREATE_TASKS) also gets VIEW_BOARD |
- * CREATE_TASKS on the tasks they authored (`createdBy`). Feed the result to taskRoomPermissions
- * for the task's comment room. Shared case table: proto/testdata/task_bits.json.
+ * CREATE_TASKS on the tasks they authored (isTaskAuthor: `createdBy`, or one of `myBots`, ADR-0151).
+ * Feed the result to taskRoomPermissions for the task's comment room. Shared case table:
+ * proto/testdata/task_bits.json.
  */
 export function taskPermissions(
   board: Pick<Board, 'permissions' | 'taskScoped'>,
   task: Pick<Task, 'assignees' | 'approvers' | 'watcherIds' | 'archivedAt' | 'createdBy'>,
   me: string,
+  myBots: ReadonlySet<string> = NO_BOTS,
 ): PermissionBits {
   if (board.permissions & VIEW_BOARD) return board.permissions;
   if (!board.taskScoped || task.archivedAt) return 0n; // invitations count on live tasks only
-  const author = board.permissions === CREATE_TASKS && me !== '' && task.createdBy === me;
+  const author = board.permissions === CREATE_TASKS && isTaskAuthor(task, me, myBots);
   if (author || task.assignees.some((a) => a.userId === me)) return VIEW_BOARD | CREATE_TASKS;
   if (task.approvers.some((a) => a.userId === me) || task.watcherIds.includes(me)) return VIEW_BOARD;
   return 0n;

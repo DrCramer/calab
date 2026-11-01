@@ -23,7 +23,17 @@ import { remoteAudio } from '../voiceLogic';
  * (WebKit gates it behind a setting) have no such method — the OS picks the output there.
  */
 export type AudioOutElement = Pick<HTMLMediaElement, 'muted' | 'volume' | 'addEventListener' | 'removeEventListener'> &
-  Partial<Pick<HTMLMediaElement, 'setSinkId'>>;
+  Partial<Pick<HTMLMediaElement, 'setSinkId' | 'paused' | 'play' | 'srcObject'>>;
+
+/** What one pass of `replayPaused` did. */
+export interface ReplayResult {
+  /** Paused elements that play again. */
+  resumed: number;
+  /** play() refused without a user gesture (NotAllowedError): the caller offers a tap. */
+  blocked: number;
+  /** play() failed otherwise (no source, aborted): left for the next event. */
+  failed: number;
+}
 
 /** Everything the playback of one element depends on (voice store + prefs). */
 export interface AudioOutState {
@@ -42,6 +52,11 @@ interface Entry<E extends AudioOutElement> {
   /** A screen share's system audio (not the voice). */
   stream: boolean;
   guard: () => void;
+  /**
+   * The element's sink ops (setSink, rebind) run one after another: a setSinkId still in flight
+   * when a re-bind (or another switch) starts could land last with an older id.
+   */
+  ops: Promise<void>;
 }
 
 /** `volume` values closer than this are equal (the element stores a double as given). */
@@ -72,12 +87,12 @@ export class RemoteAudioOut<E extends AudioOutElement = HTMLMediaElement> {
    */
   add(sid: string, el: E, userId: string, stream: boolean): void {
     if (this.els.has(sid)) return;
-    const entry: Entry<E> = { sid, el, userId, stream, guard: () => this.apply(entry, false) };
+    const entry: Entry<E> = { sid, el, userId, stream, guard: () => this.apply(entry, false), ops: Promise.resolve() };
     this.els.set(sid, entry);
     // Someone else (LiveKit) wrote muted / volume: put ours back (a no-op when it already matches).
     el.addEventListener('volumechange', entry.guard);
     this.apply(entry, false);
-    if (this.sinkId) void this.sink(entry, this.sinkId);
+    if (this.sinkId) void this.sink(entry);
   }
 
   /** The track went away: forget its element (the caller removes it from the DOM). */
@@ -94,6 +109,62 @@ export class RemoteAudioOut<E extends AudioOutElement = HTMLMediaElement> {
     return [...this.els.keys()].map((sid) => this.remove(sid)).filter((el): el is E => el !== undefined);
   }
 
+  /**
+   * The OS switched the audio output (headphones in or out, AirPods, a dock): only people who
+   * joined after the switch were heard, the others stayed silent until the room was re-entered
+   * (#255). `setSinkId` with an unchanged id ('' = the system default) is a no-op and a WebRTC
+   * renderer opened before the switch can stay on the old route; re-assigning the element's own
+   * stream makes the engine open a renderer on the current output. The element stays the same
+   * (echo rule 2); sink, playback state and play() are pushed again. One pass, no retry.
+   */
+  async rebind(): Promise<{ rebound: number; blocked: number }> {
+    const out = { rebound: 0, blocked: 0 };
+    await Promise.all(
+      [...this.els.values()].map((entry) =>
+        this.queue(entry, async () => {
+          const { el } = entry;
+          const src = el.srcObject;
+          if (!src) return;
+          el.srcObject = null;
+          el.srcObject = src;
+          out.rebound++;
+          await this.setSinkNow(entry);
+          if (typeof el.play !== 'function') return;
+          try {
+            await el.play();
+          } catch (e) {
+            if ((e as { name?: unknown } | null)?.name === 'NotAllowedError') out.blocked++;
+          }
+        }),
+      ),
+    );
+    return out;
+  }
+
+  /**
+   * Plays again every element the system paused behind our back — an audio interruption (another
+   * app's music, a video note), the page frozen in the background, a back/forward-cache restore.
+   * One play() per paused element and pass, no retry loop: the caller runs a pass on events
+   * (page visible, pageshow, Reconnected, a rejoin, an interruption's end). Muted / volume are not
+   * touched (deafen stays: a muted element plays silence).
+   */
+  async replayPaused(): Promise<ReplayResult> {
+    const out: ReplayResult = { resumed: 0, blocked: 0, failed: 0 };
+    await Promise.all(
+      [...this.els.values()].map(async ({ el }) => {
+        if (el.paused !== true || typeof el.play !== 'function') return;
+        try {
+          await el.play();
+          out.resumed++;
+        } catch (e) {
+          if ((e as { name?: unknown } | null)?.name === 'NotAllowedError') out.blocked++;
+          else out.failed++;
+        }
+      }),
+    );
+    return out;
+  }
+
   /** Deafen / volumes / mutes changed: re-apply to every element. */
   applyAll(): void {
     for (const entry of this.els.values()) this.apply(entry, false);
@@ -106,13 +177,26 @@ export class RemoteAudioOut<E extends AudioOutElement = HTMLMediaElement> {
    */
   async setSink(id: string): Promise<void> {
     this.sinkId = id;
-    await Promise.all([...this.els.values()].map((entry) => this.sink(entry, id)));
+    await Promise.all([...this.els.values()].map((entry) => this.sink(entry)));
   }
 
-  private async sink(entry: Entry<E>, id: string): Promise<void> {
+  /** Runs `op` after the element's earlier sink ops; a failure does not stop the next one. */
+  private queue(entry: Entry<E>, op: () => Promise<void>): Promise<void> {
+    const run = entry.ops.then(op);
+    entry.ops = run.catch(() => undefined);
+    return entry.ops;
+  }
+
+  /** The current sink (read when the op runs, so a queued older switch never lands last). */
+  private sink(entry: Entry<E>): Promise<void> {
+    return this.queue(entry, () => this.setSinkNow(entry));
+  }
+
+  private async setSinkNow(entry: Entry<E>): Promise<void> {
     // No setSinkId: the element keeps the OS-selected output; the playback state is still re-asserted.
-    // A gone device rejects: the element stays on what it plays to now (Chromium falls back to the default).
-    if (typeof entry.el.setSinkId === 'function') await entry.el.setSinkId(id).catch(() => undefined);
+    // A gone device rejects: the element stays where it is (the caller routes a gone choice to
+    // the default itself, lib/media/outputRoute).
+    if (typeof entry.el.setSinkId === 'function') await entry.el.setSinkId(this.sinkId).catch(() => undefined);
     if (this.els.get(entry.sid) === entry) this.apply(entry, true);
   }
 

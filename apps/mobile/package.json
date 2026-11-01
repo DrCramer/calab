@@ -13,10 +13,12 @@
     "lint": "eslint .",
     "test": "vitest run && node --test plugins/*.test.js",
     "config:check": "expo config --type public --json",
-    "export:check": "expo export --output-dir dist --platform ios --platform android"
+    "export:check": "expo export --output-dir dist --platform ios --platform android",
+    "check:sdk": "EXPO_NO_DOTENV=1 EXPO_OFFLINE=1 expo install --check",
+    "export:check:ios": "EXPO_NO_DOTENV=1 EXPO_PUBLIC_CALAB_URL=https://calab.example.com expo export --output-dir dist-ios --platform ios"
   },
   "dependencies": {
-    "expo": "57.0.26",
+    "expo": "57.0.31",
     "expo-build-properties": "57.0.22",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -26,13 +28,13 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.20.4",
-    "@types/react": "^19.2.0",
+    "@types/react": "~19.2.4",
     "eslint": "^10.11.0",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^17.12.0",
-    "typescript": "^5.9.0",
+    "globals": "^17.13.0",
+    "typescript": "~6.0.3",
     "typescript-eslint": "^8.70.1",
-    "vitest": "^3.0.0"
+    "vitest": "^5.0.4"
   },
   "license": "BUSL-1.1"
 }

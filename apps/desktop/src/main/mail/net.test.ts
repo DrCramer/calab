@@ -12,6 +12,9 @@ function silentServer(): Promise<{ server: Server; port: number; open: () => num
     sockets.add(s);
     s.on('close', () => sockets.delete(s));
     s.on('error', () => undefined);
+    // Drain incoming handshake bytes without replying, so EOF is observed on this side.
+    // A paused readable can retain buffered data and hide the client's timely close.
+    s.resume();
   });
   return new Promise((resolve) => {
     server.listen(0, '127.0.0.1', () => {

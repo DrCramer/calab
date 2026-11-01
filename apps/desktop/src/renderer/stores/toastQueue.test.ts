@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TOAST_MAX, asSentence, isSticky, pushToast, stackInteraction, type Toast } from './toastQueue';
+import { TOAST_MAX, asSentence, isSticky, newestFirst, pushToast, stackInteraction, type Toast } from './toastQueue';
 
 const info = (id: number, text = `t${id}`): Toast => ({ id, kind: 'info', text });
 const sticky = (id: number): Toast => ({ id, kind: 'error', text: `e${id}`, action: { label: 'Повторить', run: () => undefined } });
@@ -70,5 +70,13 @@ describe('stackInteraction (#45)', () => {
     s = stackInteraction(s, { type: 'enter' });
     expect(s.hover).toBe(true);
     expect(stackInteraction({ hover: false, focus: false }, { type: 'items', focusInside: true }).focus).toBe(true);
+  });
+});
+
+describe('newestFirst', () => {
+  it('draws the newest toast on top without touching the store order', () => {
+    const items = [info(1), info(2), info(3)];
+    expect(newestFirst(items).map((x) => x.id)).toEqual([3, 2, 1]);
+    expect(items.map((x) => x.id)).toEqual([1, 2, 3]);
   });
 });

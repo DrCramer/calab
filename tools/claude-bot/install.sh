@@ -23,7 +23,8 @@ ASSIST=${CLAUDE_BOT_ASSIST_REPO:-$HOME/.calab-claude-bot/repo}
 
 (cd "$HERE" && "$NODE" scripts/build.mjs) # needs `pnpm install` at the repo root
 mkdir -p "$APP" "$HOME/Library/Logs/calab-claude-bot" "$HOME/Library/LaunchAgents"
-cp "$HERE/dist/daemon.mjs" "$HERE/lead-prompt.md" "$HERE/assistant-prompt.md" "$APP/"
+cp "$HERE/dist/daemon.mjs" "$HERE/dist/mcp.mjs" "$HERE/dist/inbox.mjs" "$HERE/lead-prompt.md" "$HERE/assistant-prompt.md" "$HERE/wake-prompt.md" "$APP/"
+rm -f "$APP/handoff.mjs" # replaced by mcp.mjs: the runs have no shell
 
 # The assistant's read-only-ish checkout: a detached worktree of main (no .env, no owner files).
 if [ ! -e "$ASSIST/.git" ]; then

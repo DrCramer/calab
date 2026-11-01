@@ -36,6 +36,9 @@ enum EventRepeat {
   EVENT_REPEAT_WEEKLY = 2;
   EVENT_REPEAT_BIWEEKLY = 3;
   EVENT_REPEAT_MONTHLY = 4; // the same day of the month; months without that day are skipped
+  // Working days (ADR-0136): Mon–Fri in the series' zone; with holiday_calendar "ru" the Russian
+  // production calendar instead (holidays out, transferred working Saturdays / Sundays in).
+  EVENT_REPEAT_WORKDAYS = 5;
 }
 
 // One attendee: a member of the workspace (user_id) or an external address (email,
@@ -104,6 +107,9 @@ message CalendarEvent {
   // 1 h before the start on behalf of the organizer; with room_id set that room is the
   // meeting's own (its end follows the meeting: end + 1 h). One-off meetings only.
   bool temp_room = 26;
+  // EVENT_REPEAT_WORKDAYS only: the holiday calendar the series follows, fixed by the server
+  // when the repeat was chosen (ADR-0136): "ru" = the Russian production calendar, "" = Mon–Fri.
+  string holiday_calendar = 27;
 }
 
 // Attendee as sent by the client: a member (user_id) or an external address (email).
@@ -117,6 +123,9 @@ message CalendarEventAttendeeInput {
 // [from, to) that the caller may see, earliest first. The window is at most 62 days; guests → 403.
 message ListCalendarEventsResponse {
   repeated CalendarEvent events = 1;
+  // The holiday calendar a new EVENT_REPEAT_WORKDAYS series of this workspace would follow
+  // (ADR-0136): "ru" | "" (Mon–Fri). The event dialog shows it as a hint.
+  string holiday_calendar = 2;
 }
 
 // POST /api/workspaces/{id}/events → 201 CalendarEventResponse. A member, not a guest.
@@ -236,6 +245,7 @@ message EventRsvpTokenResponse {
   EventRepeat repeat = 21;
   google.protobuf.Timestamp repeat_until = 22;
   string organizer_email = 23; // only a confirmed address, else empty
+  string holiday_calendar = 24; // as CalendarEvent.holiday_calendar
 }
 
 // ---- free / busy and finding a time (ADR-0041) ----
@@ -573,4 +583,48 @@ message CalendarEventCommentDelete {
   string room_id = 5;
   string organizer_id = 6;
   repeated string attendee_ids = 7;
+}
+
+// Native personal calendar capability, never accepted as a normal API access token (ADR-0145).
+// Personal read-only subscription. Empty URLs mean disabled. URLs contain a private
+// capability and must never be logged or sent to a third-party QR service.
+message CalendarSubscription {
+  string feed_url = 1;
+  string connect_url = 2;
+  string webcal_url = 3;
+}
+
+message CalendarWidgetGrant {
+  string token = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// Minimized occurrence for native widgets. All-day dates are inclusive/exclusive calendar dates.
+message CalendarWidgetEvent {
+  string key = 1;
+  string event_id = 2;
+  string external_uid = 3;
+  string workspace_id = 4;
+  string title = 5;
+  google.protobuf.Timestamp starts_at = 6;
+  google.protobuf.Timestamp ends_at = 7;
+  bool all_day = 8;
+  string start_date = 9;
+  string end_date = 10;
+  string color = 11;
+  string source = 12;
+  // Original occurrence instant for details, before all-day projection to the device zone.
+  google.protobuf.Timestamp occurrence_at = 13;
+}
+
+message CalendarWidgetAgenda {
+  uint32 version = 1;
+  google.protobuf.Timestamp generated_at = 2;
+  google.protobuf.Timestamp valid_until = 3;
+  google.protobuf.Timestamp from = 4;
+  google.protobuf.Timestamp to = 5;
+  string timezone = 6;
+  repeated CalendarWidgetEvent events = 7;
+  // Earlier than to when the bounded response omits later events. Do not show those days as empty.
+  google.protobuf.Timestamp complete_until = 8;
 }

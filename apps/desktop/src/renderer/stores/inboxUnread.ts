@@ -1,4 +1,4 @@
-import type { Room } from '@calaba/protocol';
+import type { Message, Room, TaskNoticeEntry } from '@calaba/protocol';
 import { isDm } from './dms';
 import { idAfter } from './rooms';
 
@@ -48,4 +48,27 @@ export function inboxBadgeCount(
     total += covered ? fromItems : Math.max(fromItems, mentions[id] ?? 0);
   }
   return total;
+}
+
+/** A row of the inbox (ADR-0141): a chat mention or a task notice; `latest`: the newest notice of its task. */
+export interface InboxRow {
+  id: string;
+  m?: Message;
+  e?: TaskNoticeEntry;
+  latest: boolean;
+}
+
+/**
+ * Mentions and task notices in one list, newest first: both ids are uuidv7, so they interleave by
+ * id. Each task's newest notice is `latest` (only it shows the task's unread mark).
+ */
+export function inboxRows(mentions: ReadonlyArray<Message>, notices: ReadonlyArray<TaskNoticeEntry>): InboxRow[] {
+  const seen = new Set<string>();
+  const rows: InboxRow[] = mentions.map((m) => ({ id: m.id, m, latest: false }));
+  // Notices come newest first: the first one of a task is its newest.
+  for (const e of notices) {
+    rows.push({ id: e.id, e, latest: !seen.has(e.taskId) });
+    seen.add(e.taskId);
+  }
+  return rows.sort((x, y) => (x.id < y.id ? 1 : x.id > y.id ? -1 : 0));
 }

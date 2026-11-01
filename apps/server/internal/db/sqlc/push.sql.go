@@ -670,6 +670,55 @@ func (q *Queries) ListPushMessageTargets(ctx context.Context, arg ListPushMessag
 	return items, nil
 }
 
+const listPushRingCancels = `-- name: ListPushRingCancels :many
+SELECT p.id AS event_id, d.id AS device_id, d.token, d.app_id, d.environment
+FROM push_deliveries p JOIN push_devices d ON d.id = p.device_id AND d.version = p.device_version
+WHERE d.user_id = $1 AND p.kind = 2 AND p.reference_id = $2 AND p.delivered_at IS NOT NULL
+AND p.expires_at > now() AND d.provider = 3 AND d.calls_enabled AND d.expires_at > now()
+`
+
+type ListPushRingCancelsParams struct {
+	UserID      uuid.UUID
+	ReferenceID uuid.UUID
+}
+
+type ListPushRingCancelsRow struct {
+	EventID     uuid.UUID
+	DeviceID    uuid.UUID
+	Token       string
+	AppID       string
+	Environment string
+}
+
+// ADR-0071 (Android): the FCM endpoints a delivered ring of this call reached on the current
+// endpoint version. A ring that ends early gets a best-effort cancel so the phone stops ringing;
+// after the ring's own expiry the device has already dropped it, so nothing is sent.
+func (q *Queries) ListPushRingCancels(ctx context.Context, arg ListPushRingCancelsParams) ([]ListPushRingCancelsRow, error) {
+	rows, err := q.db.Query(ctx, listPushRingCancels, arg.UserID, arg.ReferenceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPushRingCancelsRow{}
+	for rows.Next() {
+		var i ListPushRingCancelsRow
+		if err := rows.Scan(
+			&i.EventID,
+			&i.DeviceID,
+			&i.Token,
+			&i.AppID,
+			&i.Environment,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockPushDeliverySession = `-- name: LockPushDeliverySession :one
 SELECT s.id, s.user_id, s.refresh_token_hash, s.prev_refresh_token_hash, s.rotated_at, s.device_name, s.ip, s.user_agent, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at, s.refresh_gen, s.refresh_used_at, s.replay_seal, s.revoked_reason, s.authority_kind, s.authority_workspace_id, s.authority_connection_id, s.local_authenticated_at, s.recovery_authenticated_at, s.authority_version FROM sessions s JOIN users u ON u.id=s.user_id
 WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL AND s.expires_at>now()

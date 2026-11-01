@@ -1,0 +1,18 @@
+{
+  "action": "opened",
+  "number": 43,
+  "pull_request": {
+    "number": 43,
+    "title": "FNG-14 Profile page",
+    "body": "",
+    "html_url": "https://github.com/acme/app/pull/43",
+    "state": "open",
+    "merged": false,
+    "draft": true,
+    "user": {"login": "octocat"},
+    "head": {"ref": "feature/fng-14-profile"},
+    "base": {"ref": "main"}
+  },
+  "repository": {"full_name": "acme/app", "html_url": "https://github.com/acme/app"},
+  "sender": {"login": "octocat"}
+}

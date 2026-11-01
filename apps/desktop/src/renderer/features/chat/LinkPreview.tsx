@@ -5,7 +5,7 @@ import { MediaImg } from '../../components/MediaImg';
 import { Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { isSafeHref } from '../../lib/markdown/parse';
-import { platform } from '../../platform';
+import { openContentLink } from '../../services/contentLink';
 import { unfurl } from '../../services/chat';
 import { ownBoardLink } from '../../lib/ownBoardLink';
 import { useSession } from '../../stores/session';
@@ -49,10 +49,10 @@ export function LinkPreview({ url, onHide }: { url: string; onHide?: (() => void
   const href = card.url && isSafeHref(card.url) ? card.url : url;
   const image = card.imageUrl && isProxied(card.imageUrl) ? card.imageUrl : '';
   const site = card.siteName || hostOf(href);
-  // Same path as links in message text: only safe schemes, opened by the OS browser.
+  // Same path as links in message text: our in-app routes open in the app, other safe links in the browser.
   const open = (e: MouseEvent): void => {
     e.preventDefault();
-    if (isSafeHref(href)) void platform.app.openExternal(href);
+    if (isSafeHref(href)) openContentLink(href);
   };
   const link = 'rounded-[4px] outline-offset-0 hover:underline';
   return (

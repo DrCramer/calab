@@ -29,4 +29,11 @@ describe('voice state icons (docs/09 #15, Discord)', () => {
     expect(html.match(/size-4/g)).toHaveLength(2);
     expect(renderToStaticMarkup(createElement(VoiceStateIcons, { muted: true, deafened: false, serverMuted: true }))).toContain('text-danger');
   });
+
+  it('on a phone call (ADR-0133) only the handset: the parked mic state says nothing', () => {
+    expect(voiceStateIcons(true, true, true, false, true)).toEqual(['on-phone']);
+    const html = renderToStaticMarkup(createElement(VoiceStateIcons, { muted: false, deafened: false, onPhone: true }));
+    expect(html).toContain('data-voice-icon="on-phone"');
+    expect(html).not.toContain('data-voice-icon="muted"');
+  });
 });

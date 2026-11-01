@@ -9,22 +9,45 @@ import { SipCallDirection, SipCallStatus, type JoinVoiceResponse, type SipCall }
  */
 
 export const PHONE_ROOM_PREFIX = 'sipin:';
+/**
+ * The voice session of a personal call from «Телефония» (ADR-0137 §3): `sipout:<call id>`, a phone
+ * room too (no voice list, the room I am in is parked, ADR-0133); its token comes with the POST
+ * that places the call (services/sipOutbound.ts) — there is no /join to ask for a fresh one.
+ */
+export const PERSONAL_ROOM_PREFIX = 'sipout:';
 
 /** The voice session of inbound call `callId`. */
 export function phoneRoomId(callId: string): string {
   return PHONE_ROOM_PREFIX + callId;
 }
 
+/** The voice session of personal call `callId`. */
+export function personalRoomId(callId: string): string {
+  return PERSONAL_ROOM_PREFIX + callId;
+}
+
+/** An inbound or a personal phone call's voice session. */
 export function isPhoneRoom(roomId: string | null | undefined): roomId is string {
-  return !!roomId && roomId.startsWith(PHONE_ROOM_PREFIX);
+  return !!roomId && (roomId.startsWith(PHONE_ROOM_PREFIX) || roomId.startsWith(PERSONAL_ROOM_PREFIX));
+}
+
+/** A personal call's voice session. */
+export function isPersonalRoom(roomId: string | null | undefined): roomId is string {
+  return !!roomId && roomId.startsWith(PERSONAL_ROOM_PREFIX);
 }
 
 /** The call of a phone room ('' for any other room). */
 export function phoneCallId(roomId: string): string {
-  return isPhoneRoom(roomId) ? roomId.slice(PHONE_ROOM_PREFIX.length) : '';
+  if (roomId.startsWith(PHONE_ROOM_PREFIX)) return roomId.slice(PHONE_ROOM_PREFIX.length);
+  if (roomId.startsWith(PERSONAL_ROOM_PREFIX)) return roomId.slice(PERSONAL_ROOM_PREFIX.length);
+  return '';
 }
 
-/** The join answer of an accept, used once by the voice engine's first /join of that room. */
+/**
+ * The join answer of an accept, used once by the voice engine's first /join of that room. A
+ * personal call's token is kept for the call's life (a reconnect has nowhere else to get one;
+ * it lives 10 minutes, LiveKit refreshes it in a connected room) until `dropPhoneJoin`.
+ */
 const pendingJoins = new Map<string, JoinVoiceResponse>();
 
 export function setPhoneJoin(roomId: string, join: JoinVoiceResponse): void {
@@ -33,8 +56,12 @@ export function setPhoneJoin(roomId: string, join: JoinVoiceResponse): void {
 
 export function takePhoneJoin(roomId: string): JoinVoiceResponse | undefined {
   const j = pendingJoins.get(roomId);
-  pendingJoins.delete(roomId);
+  if (!isPersonalRoom(roomId)) pendingJoins.delete(roomId);
   return j;
+}
+
+export function dropPhoneJoin(roomId: string): void {
+  pendingJoins.delete(roomId);
 }
 
 export interface InboundState {

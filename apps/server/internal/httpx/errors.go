@@ -25,7 +25,10 @@ type Error struct {
 	Used, Limit uint64
 	// PlanViolations: ApiError.plan_violations of PLAN_LIMITS_EXCEEDED (ADR-0086).
 	PlanViolations []*v1.PlanLimitViolation
-	base           *Error // the error WithDetails copied (errors.Is matches it)
+	// ConflictID, ConflictName: ApiError.conflict_id / conflict_name — what already holds what
+	// the request asked for (SIP_CONTACT_NUMBER_TAKEN: the contact).
+	ConflictID, ConflictName string
+	base                     *Error // the error WithDetails copied (errors.Is matches it)
 }
 
 // ReasonPlanLimit marks errors caused by a limit of the workspace plan (ADR-0024).
@@ -80,6 +83,9 @@ func (e *Error) Proto() *v1.ApiError {
 	}
 	if len(e.PlanViolations) > 0 {
 		p.PlanLimitsExceeded = &v1.PlanLimitViolations{Violations: e.PlanViolations}
+	}
+	if e.ConflictID != "" {
+		p.ConflictId, p.ConflictName = &e.ConflictID, &e.ConflictName
 	}
 	return p
 }

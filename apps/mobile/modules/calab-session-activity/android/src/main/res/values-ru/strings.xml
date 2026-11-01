@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="calab_push_new_notification">Новое сообщение</string>
+  <string name="calab_push_channel_messages">Сообщения</string>
+  <string name="calab_push_channel_calls">Звонки</string>
+  <string name="calab_push_incoming_call">Входящий звонок</string>
+  <string name="calab_push_answer">Ответить</string>
+  <string name="calab_push_decline">Отклонить</string>
+</resources>

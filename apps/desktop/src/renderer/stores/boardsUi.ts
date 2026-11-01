@@ -13,7 +13,7 @@ import { isCompletion, migrateCompletion, type Completion } from '../lib/boards/
  * hidden columns. Leaving the mode (icon, Esc) keeps all of it: coming back restores the board.
  */
 export type ViewKind = 'kanban' | 'list' | 'timeline';
-export type GroupBy = 'status' | 'assignee' | 'priority' | 'label' | 'milestone' | 'none';
+export type GroupBy = 'status' | 'assignee' | 'priority' | 'label' | 'milestone' | 'release' | 'none';
 export type SortBy = 'manual' | 'updated' | 'due' | 'priority' | 'key';
 
 export interface BoardPrefs {
@@ -54,6 +54,8 @@ interface BoardsUiState {
   boardOf: Record<string, string>;
   /** The open task: full screen over the board on the desktop (owner 14.10, Linear), a pushed screen on the phone. */
   taskId: string | null;
+  /** The «Все задачи» query the open task was opened from (#89): the crumbs start with it; '' = not from a search. */
+  searchFrom: string;
   /** The board whose task archive is shown in place of the board (not persisted). */
   archiveOf: string | null;
   setArchiveOf: (boardId: string | null) => void;
@@ -101,7 +103,8 @@ interface BoardsUiState {
   setActive: (on: boolean) => void;
   toggle: () => void;
   openBoard: (workspaceId: string, boardId: string) => void;
-  openTask: (taskId: string | null) => void;
+  /** `from`: the search query the task is opened from; stepping to another task keeps it, closing clears it. */
+  openTask: (taskId: string | null, from?: string) => void;
   setPrefs: (boardId: string, patch: Partial<BoardPrefs>) => void;
   setFocused: (id: string | null) => void;
   setSelected: (sel: Readonly<Record<string, true>>) => void;
@@ -132,6 +135,7 @@ export const useBoardsUi = create<BoardsUiState>()(
       active: false,
       boardOf: {},
       taskId: null,
+      searchFrom: '',
       archiveOf: null,
       setArchiveOf: (archiveOf) => set((s) => (s.archiveOf === archiveOf ? {} : { archiveOf, selected: {}, filterOpen: false })),
       prefs: {},
@@ -172,8 +176,12 @@ export const useBoardsUi = create<BoardsUiState>()(
       setActive: (active) => set(active ? { active } : { active, filterOpen: false, helpOpen: false, menu: null }),
       toggle: () => set((s) => (s.active ? { active: false, filterOpen: false, helpOpen: false, menu: null } : { active: true })),
       openBoard: (wsId, boardId) =>
-        set((s) => (s.boardOf[wsId] === boardId && s.active ? {} : { active: true, boardOf: { ...s.boardOf, [wsId]: boardId }, taskId: null, archiveOf: s.archiveOf === boardId ? s.archiveOf : null, selected: {}, focused: null, filterOpen: false })),
-      openTask: (taskId) => set((s) => (s.taskId === taskId ? {} : { taskId })),
+        set((s) => (s.boardOf[wsId] === boardId && s.active ? {} : { active: true, boardOf: { ...s.boardOf, [wsId]: boardId }, taskId: null, searchFrom: '', archiveOf: s.archiveOf === boardId ? s.archiveOf : null, selected: {}, focused: null, filterOpen: false })),
+      openTask: (taskId, from) =>
+        set((s) => {
+          const searchFrom = taskId === null ? '' : (from ?? (s.taskId ? s.searchFrom : ''));
+          return s.taskId === taskId && s.searchFrom === searchFrom ? {} : { taskId, searchFrom };
+        }),
       setPrefs: (boardId, patch) => set((s) => ({ prefs: { ...s.prefs, [boardId]: { ...DEFAULT_PREFS, ...s.prefs[boardId], ...patch } } })),
       setFocused: (focused) => set((s) => (s.focused === focused ? {} : { focused })),
       setSelected: (selected) => set({ selected }),

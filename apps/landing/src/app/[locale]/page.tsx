@@ -1,22 +1,21 @@
 import { notFound } from 'next/navigation';
+import { AiSection } from '@/components/ai-section';
+import { ConferenceStrip } from '@/components/conference-strip';
+import { ControlInfographic } from '@/components/control-infographic';
+import { DayStory } from '@/components/day-story';
 import { Downloads } from '@/components/downloads';
 import { Faq } from '@/components/faq';
-import { StoryMotion } from '@/components/story-motion';
-import { FeatureCatalog } from '@/components/feature-catalog';
-import { MobileSoon } from '@/components/mobile-soon';
-import { Notifications } from '@/components/notifications';
-import { McpSection } from '@/components/mcp-section';
-import { TelephonySection } from '@/components/telephony-section';
-import { ControlInfographic } from '@/components/control-infographic';
-import { Container } from '@/components/ui';
-import { StickerFinale } from '@/components/sticker-finale';
 import { Footer } from '@/components/footer';
 import { Header } from '@/components/header';
-import { ConferenceStrip } from '@/components/conference-strip';
-import { MailLinkCard } from '@/components/mail-link-card';
 import { Hero } from '@/components/hero';
+import { MailLinkCard } from '@/components/mail-link-card';
+import { PhoneSection } from '@/components/phone-section';
 import { Pricing } from '@/components/pricing';
-import { getStory } from '@/i18n/story';
+import { ReplaceStrip } from '@/components/replace-strip';
+import { StickerFinale } from '@/components/sticker-finale';
+import { StoryMotion } from '@/components/story-motion';
+import { TelephonySection } from '@/components/telephony-section';
+import { Container } from '@/components/ui';
 import { getDict, isLocale, LOCALE_INFO, localePath } from '@/i18n';
 import { APP_URL, DOWNLOADS, REPO_URL, SITE_URL } from '@/lib/site';
 
@@ -43,6 +42,7 @@ function jsonLd(locale: Parameters<typeof getDict>[0]): string {
   }).replace(/</g, '\\u003c');
 }
 
+/** Home page v6 (docs/plans/landing-v6.md §4): product → connections → special blocks → trust → price → download → FAQ. */
 export default async function Home({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
@@ -53,20 +53,22 @@ export default async function Home({ params }: { params: Promise<{ locale: strin
       <StoryMotion />
       <MailLinkCard t={t.mailLink} />
       <Header t={t.header} locale={locale} />
-      <main id="main">
-        <Hero t={t.hero} locale={locale} />
-        <FeatureCatalog locale={locale} />
-        <Notifications locale={locale} />
+      <main id="main" className="site">
+        <Hero locale={locale} />
+        <ReplaceStrip locale={locale} />
+        <DayStory locale={locale} />
         <TelephonySection locale={locale} />
-        <McpSection locale={locale} />
-        <MobileSoon locale={locale} />
+        <AiSection locale={locale} />
+        <PhoneSection locale={locale} />
         <ConferenceStrip locale={locale} />
-        <section id="control" className="story-section control-section" aria-labelledby="control-title">
-          <Container><ControlInfographic locale={locale} title={getStory(locale).control} /></Container>
+        <section id="control" className="section control-section" aria-labelledby="control-title">
+          <Container>
+            <ControlInfographic locale={locale} />
+          </Container>
         </section>
         <Pricing locale={locale} t={t.pricing} />
         <Downloads t={t.downloads} />
-        <Faq t={t.faq} />
+        <Faq t={t.faq} locale={locale} />
         <StickerFinale locale={locale} />
       </main>
       <Footer t={t.footer} locale={locale} />

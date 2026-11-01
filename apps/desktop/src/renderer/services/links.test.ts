@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const session = vi.hoisted(() => ({ status: 'anon', settings: null as { serverUrl: string } | null }));
+const session = vi.hoisted(() => ({ status: 'anon', serverUrl: '', settings: null as { serverUrl: string } | null, appInfo: null as { appOrigins?: string[] } | null }));
 vi.mock('../stores/session', () => ({ useSession: { getState: () => session } }));
 const openRoom = vi.hoisted(() => vi.fn());
 vi.mock('../stores/ui', () => ({ useUi: { getState: () => ({ openDialog: () => undefined, openRoom }) } }));
@@ -14,7 +14,7 @@ vi.mock('./wiki', () => ({ openWikiLink }));
 const openDiskLink = vi.hoisted(() => vi.fn());
 vi.mock('./diskLink', () => ({ openDiskLink }));
 
-const { INVITE_EXAMPLE_CODE, diskItemUrl, handleDeepLink, inviteUrl, joinPlaceholder, openOwnLink, ownDiskItemId, ownWikiPageId, parseBoardLink, parseDiskLink, parseDmLink, parseEventLink, parseInviteCode, parseMessageLink, parseRoomInviteCode, parseWikiLink, roomInviteUrl, wikiPageUrl } = await import('./links');
+const { INVITE_EXAMPLE_CODE, diskItemUrl, handleDeepLink, inviteUrl, joinPlaceholder, openOwnLink, ownDiskItemId, ownWikiPageId, parseBoardLink, parseCanvasLink, parseDiskLink, parseDmLink, parseEventLink, parseInviteCode, parseMessageLink, parseRoomInviteCode, parseWikiLink, roomInviteUrl, wikiPageUrl } = await import('./links');
 
 describe('DM links (ADR-0020)', () => {
   const ID = '00000000-0000-7000-8003-000000000021';
@@ -84,6 +84,13 @@ describe('shared links are https only (docs/09 #53)', () => {
     session.settings = { serverUrl: 'https://app.calab.io/' };
     expect(inviteUrl('', 'abcd1234')).toBe('https://app.calab.io/join/abcd1234');
     expect(roomInviteUrl('', 'abcd1234')).toBe('https://app.calab.io/r/abcd1234');
+  });
+  it.each(['https://App.Calab.IO', 'https://app.calab.io:443/', 'HTTPS://APP.CALAB.IO/'])('matches canonical content links against configured %s', (serverUrl) => {
+    session.settings = { serverUrl };
+    const id = '00000000-0000-7000-8003-000000000021';
+    expect(inviteUrl('', 'abcd1234')).toBe('https://app.calab.io/join/abcd1234');
+    expect(openOwnLink(`https://app.calab.io/dm/${id}`)).toBe(true);
+    expect(openOwnLink(`https://app.calab.io.evil.test/dm/${id}`)).toBe(false);
   });
   it('prefers the session server over settings', () => {
     session.settings = { serverUrl: 'https://old.example.org' };
@@ -177,6 +184,11 @@ describe('wiki page links (owner 14.10)', () => {
     expect(parseWikiLink(`https://app.calab.io/wiki/${P}`)).toBe(P);
     expect(parseWikiLink(`calab://wiki/${P.toUpperCase()}/`)).toBe(P);
     expect(parseWikiLink(`/wiki/${P}`)).toBeNull();
+    expect(parseCanvasLink(`https://app.calab.io/canvas/${P}`)).toBe(P);
+    expect(parseCanvasLink(`calab://canvas/${P.toUpperCase()}/`)).toBe(P);
+    expect(parseCanvasLink('https://app.calab.io/c/mockCanvasCode')).toBeNull();
+    expect(parseCanvasLink(`/canvas/${P}`)).toBeNull();
+    expect(parseWikiLink(`https://app.calab.io/canvas/${P}`)).toBeNull();
     expect(parseWikiLink(`https://app.calab.io/w/${P}`)).toBeNull();
     expect(parseWikiLink('https://app.calab.io/wiki/abc')).toBeNull();
   });
@@ -232,5 +244,45 @@ describe('own-host links open in the app (CBF-63)', () => {
     expect(openOwnLink('https://app.calab.io/download/')).toBe(false);
     expect(openOwnLink(`https://app.calab.io/e/${ID}/rsvp?t=x`)).toBe(false);
     expect(openOwnLink('https://other.test/t/CBF-63')).toBe(false);
+  });
+});
+
+describe('links to another origin of our deployment open in the app', () => {
+  const CLOUD = ['https://app.calab.io', 'https://app.calab.ru', 'https://meet.gptunnel.ru'];
+  afterEach(() => {
+    session.settings = null;
+    session.serverUrl = '';
+    session.appInfo = null;
+  });
+  it('claims the alias of the signed-in server (app.calab.ru ↔ app.calab.io)', () => {
+    session.appInfo = { appOrigins: CLOUD };
+    session.serverUrl = 'https://app.calab.ru';
+    session.settings = { serverUrl: 'https://app.calab.ru' };
+    expect(openOwnLink('https://app.calab.io/t/DEV-123')).toBe(true);
+    session.serverUrl = 'https://app.calab.io';
+    session.settings = { serverUrl: 'https://app.calab.io' };
+    expect(openOwnLink('https://app.calab.ru/r/AbCd1234')).toBe(true);
+    expect(openOwnLink('https://meet.gptunnel.ru/t/DEV-1000022')).toBe(true);
+  });
+  it('trusts the live session server, not only the configured one', () => {
+    // A restored pre-2.0 session on app.calab.ru while settings hold the 2.0 default.
+    session.serverUrl = 'https://app.calab.ru';
+    session.settings = { serverUrl: 'https://app.calab.io' };
+    expect(openOwnLink('https://app.calab.ru/t/DEV-123')).toBe(true);
+  });
+  it('never claims the cloud on a self-hosted server, or a foreign host', () => {
+    session.appInfo = { appOrigins: CLOUD };
+    session.serverUrl = 'https://calab.example.com';
+    session.settings = { serverUrl: 'https://calab.example.com' };
+    expect(openOwnLink('https://app.calab.io/t/DEV-123')).toBe(false);
+    expect(openOwnLink('https://calab.example.com/t/DEV-123')).toBe(true);
+    expect(openOwnLink('https://user@calab.example.com/t/DEV-123')).toBe(false);
+  });
+  it('recognises cards (wiki, Disk) on the alias too', () => {
+    const P = '0190a0b0-0000-7000-80c1-0000000000d1';
+    session.appInfo = { appOrigins: CLOUD };
+    session.serverUrl = 'https://app.calab.io';
+    expect(ownWikiPageId(`https://app.calab.ru/wiki/${P}`)).toBe(P);
+    expect(ownDiskItemId(`https://app.calab.ru/disk/${P}`)).toBe(P);
   });
 });

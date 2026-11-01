@@ -8,6 +8,7 @@ import { isAppSession, isCheckoutSession } from './appSessions';
 import { RendererCrashBudget } from './crashRecovery';
 import { log } from './logging';
 import { windowIconPath } from './icons';
+import { officeFrameAllowed } from './officeFrame';
 import { isPdfViewerFrame } from './pdfFrame';
 import { openLink } from './ownLink';
 import { mainStrings } from './strings';
@@ -19,6 +20,8 @@ const RENDERER_HTML = join(here, '../renderer/index.html');
 const WINDOW_BG = { dark: '#171719', light: '#e8e8ec' } as const;
 const windowBg = (): string => (nativeTheme.shouldUseDarkColors ? WINDOW_BG.dark : WINDOW_BG.light);
 const VISUAL_TEST = process.env['CALABA_VISUAL_TEST'] === '1';
+/** Marketing shots (e2e-marketing): the real window material in a test run. */
+const VISUAL_VIBRANCY = process.env['CALABA_VISUAL_VIBRANCY'] === '1';
 /** Fully clear: the NSVisualEffectView behind the page shows wherever the page doesn't paint. */
 const CLEAR_BG = '#00000000';
 
@@ -32,7 +35,7 @@ function vibrancyOn(): boolean {
   return vibrancyWanted({
     platform: process.platform,
     reducedTransparency: nativeTheme.prefersReducedTransparency,
-    visualTest: VISUAL_TEST,
+    visualTest: VISUAL_TEST && !VISUAL_VIBRANCY,
   });
 }
 
@@ -153,6 +156,8 @@ export function createMainWindow(): BrowserWindow {
     show: false,
     ...chrome(),
     ...windowIcon(),
+    // Test runs size the window to a fixed content size (the landing's 1440×900 shots) that may not fit a small display.
+    ...(VISUAL_TEST ? { enableLargerThanScreen: true } : {}),
     webPreferences: { ...webPreferences },
   });
   if (state?.maximized) win.maximize();
@@ -280,10 +285,12 @@ export function guardWebContents(wc: WebContents): void {
   });
   wc.on('will-frame-navigate', (e) => {
     // The PDF viewer (ADR-0103): our page's blob: frame and Chromium's viewer extension inside it.
-    if (!e.isMainFrame && !isOwnPage(e.url) && !isPdfViewerFrame(e.url, process.env['ELECTRON_RENDERER_URL'])) e.preventDefault();
+    // The office editor (ADR-0143): its host page on the announced Document Server origin only.
+    if (!e.isMainFrame && !isOwnPage(e.url) && !isPdfViewerFrame(e.url, process.env['ELECTRON_RENDERER_URL']) && !officeFrameAllowed(wc, e)) e.preventDefault();
   });
   wc.on('will-redirect', (e, url) => {
-    if (!isOwnPage(url)) e.preventDefault();
+    // A redirect of the editor's sub-frame stays on the same origin (checked like a navigation).
+    if (!isOwnPage(url) && !(!e.isMainFrame && officeFrameAllowed(wc, { url, frame: e.frame }))) e.preventDefault();
   });
   wc.on('will-attach-webview', (e) => e.preventDefault());
   wc.setWindowOpenHandler(({ url }) => {

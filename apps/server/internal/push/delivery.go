@@ -18,6 +18,16 @@ func (s *Service) Observe(ctx context.Context, userID uuid.UUID, event *v1.Dispa
 	if len(s.providers) == 0 || event == nil {
 		return
 	}
+	if state := event.GetCallState().GetCall(); state != nil && state.State != v1.CallState_CALL_STATE_RINGING && userID != uuid.Nil {
+		if _, ok := s.providers[v1.PushProvider_PUSH_PROVIDER_FCM]; ok {
+			if call, err := uuid.Parse(state.Id); err == nil {
+				// Detached and bounded: a cancel is best effort (the ring expiry is the fallback)
+				// and must not hold the publishing request.
+				go s.cancelRing(context.WithoutCancel(ctx), userID, call)
+			}
+		}
+		return
+	}
 	job, ok := eventJob(event)
 	if !ok || (userID == uuid.Nil && (job.Kind != messageKind || job.RoomID == nil)) {
 		return
@@ -139,7 +149,7 @@ func (s *Service) queueUser(ctx context.Context, userID uuid.UUID, job sqlc.Push
 }
 func deviceEnabled(provider int16, notifications, calls bool, kind int16) bool {
 	if kind == callKind {
-		return calls && provider == int16(v1.PushProvider_PUSH_PROVIDER_VOIP)
+		return calls && (provider == int16(v1.PushProvider_PUSH_PROVIDER_VOIP) || provider == int16(v1.PushProvider_PUSH_PROVIDER_FCM))
 	}
 	return notifications && provider != int16(v1.PushProvider_PUSH_PROVIDER_VOIP)
 }
@@ -263,4 +273,30 @@ func (s *Service) dispatch(ctx context.Context, job sqlc.PushDelivery) error {
 		retainMessage = result.Accepted && !result.Retry && !result.Invalid
 		return complete()
 	})
+}
+
+// cancelRing stops an Android ring that ended early — answered on another device, declined,
+// cancelled by the caller or missed (ADR-0071, Android). Only FCM endpoints that a ring of this
+// call reached get a data message `kind=call-cancel` with that ring's opaque event ID; it carries
+// no authority and the device only removes its own notification. VoIP/CallKit has its own path.
+func (s *Service) cancelRing(ctx context.Context, userID, call uuid.UUID) {
+	provider, ok := s.providers[v1.PushProvider_PUSH_PROVIDER_FCM]
+	if !ok {
+		return
+	}
+	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	rings, err := db.GuardValue(bounded, s.db, func(q *sqlc.Queries) ([]sqlc.ListPushRingCancelsRow, error) {
+		return q.ListPushRingCancels(bounded, sqlc.ListPushRingCancelsParams{UserID: userID, ReferenceID: call})
+	})
+	if err != nil {
+		return
+	}
+	for _, ring := range rings {
+		if ring.AppID != provider.AppID || ring.Environment != provider.Environment {
+			continue
+		}
+		payload := Payload{Version: 1, Binding: ring.DeviceID.String(), EventID: ring.EventID.String(), Kind: callCancelKind, ReferenceID: call.String(), ExpiresAt: time.Now().Add(time.Minute).UnixMilli()}
+		provider.Sender.Send(bounded, Endpoint{Provider: v1.PushProvider_PUSH_PROVIDER_FCM, Token: ring.Token, AppID: ring.AppID, Environment: ring.Environment}, payload)
+	}
 }

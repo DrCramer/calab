@@ -47,9 +47,11 @@ import (
 	"github.com/calaba/calaba/server/internal/mailbox"
 	"github.com/calaba/calaba/server/internal/mcp"
 	"github.com/calaba/calaba/server/internal/messages"
+	"github.com/calaba/calaba/server/internal/metrika"
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/notes"
 	"github.com/calaba/calaba/server/internal/oauthprovider"
+	"github.com/calaba/calaba/server/internal/office"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/push"
@@ -161,6 +163,8 @@ type App struct {
 	Rooms *rooms.Handlers
 	// Disk: the workspace Disk (ADR-0094) with the hourly trash sweeper.
 	Disk *disk.Service
+	// Office: editing in ONLYOFFICE Docs (ADR-0143) with the access sweep of open sessions.
+	Office *office.Service
 	// Wiki: the workspace Wiki (ADR-0096) with its sync socket and the hourly trash sweeper.
 	Wiki *wiki.Service
 	// Canvas: the workspace Canvas (ADR-0126) with its sync socket and the hourly trash sweeper.
@@ -174,6 +178,7 @@ type App struct {
 	// Mailbox: the bot-driven mailbox password recovery (ADR-0101).
 	Mailbox    *mailbox.Service
 	billing    *billingRuntime
+	metrika    *metrika.Service
 	redis      rueidis.Client
 	identityDB *db.DB
 	// dueTZ: TASKS_DUE_TZ, the zone of the due notices of tasks (ADR-0089).
@@ -193,6 +198,7 @@ func (a *App) Run(ctx context.Context) {
 	go a.Files.RunCleanup(ctx, time.Hour)
 	go a.Files.RunStagedCleanup(ctx, 10*time.Minute) // board form uploads never submitted (ADR-0064 v2)
 	go a.Disk.RunTrashSweep(ctx, disk.SweepInterval)
+	go a.Office.RunSweep(ctx, office.SweepInterval)
 	go a.Wiki.RunTrashSweep(ctx, wiki.SweepInterval)
 	go a.Canvas.RunTrashSweep(ctx, canvas.SweepInterval)
 	go a.Files.RunStorageMetrics(ctx, time.Minute)
@@ -220,10 +226,12 @@ func (a *App) Run(ctx context.Context) {
 	go a.Boards.RunDueNotices(ctx, boards.DueNoticeInterval, a.dueTZ)  // due soon / overdue (ADR-0089)
 	go a.Rooms.RunTempRooms(ctx, a.redis)
 	go a.SIP.Run(ctx)
-	go a.SIP.RunInbound(ctx) // returns at once without LiveKit / IVR_AGENT_TOKEN
-	go a.IVR.Run(ctx)        // returns at once without IVR_AGENT_TOKEN
-	go a.SIPReg.Run(ctx)     // returns at once without SIPREG_AGENT_TOKEN
-	go a.billing.Run(ctx)    // returns at once while BILLING_ENABLED=false
+	go a.SIP.RunInbound(ctx)   // returns at once without LiveKit / IVR_AGENT_TOKEN
+	go a.SIP.RunRetention(ctx) // ADR-0137: the call journal's retention, hourly
+	go a.IVR.Run(ctx)          // returns at once without IVR_AGENT_TOKEN
+	go a.SIPReg.Run(ctx)       // returns at once without SIPREG_AGENT_TOKEN
+	go a.billing.Run(ctx)      // returns at once while BILLING_ENABLED=false
+	go a.metrika.Run(ctx)      // returns at once without YM_MP_TOKEN
 	if a.OAuth != nil {
 		go a.OAuth.Run(ctx, a.redis, oauthprovider.SweepInterval) // provider retention
 	}
@@ -314,7 +322,11 @@ func New(d Deps) *App {
 		PerHour: d.Config.MailPerHour, Secret: []byte(d.Config.JWTSecret),
 	}, d.DB, d.Redis, sender)
 
-	billingRT := newBilling(d, planSvc, pub, mailSvc) // ADR-0080 v5: billingwiring.go
+	// Server-side Metrika conversions (ADR-0135): disabled without YM_MP_TOKEN.
+	metrikaSvc := metrika.New(d.DB, metrika.Config{
+		Token: d.Config.MetrikaMPToken, CounterID: d.Config.MetrikaCounterID, Endpoint: d.Config.MetrikaMPURL, PageURL: d.Config.PublicAppURL,
+	})
+	billingRT := newBilling(d, planSvc, pub, mailSvc, metrikaSvc) // ADR-0080 v5: billingwiring.go
 	authSvc := auth.NewService(d.Config, d.DB, d.Redis, pub)
 	pushSvc.Auth = authSvc
 	pushSvc.DeviceLimit = redisx.NewRateLimiter(d.Redis, "rl:push-device:", 20, 20)   // 20 at once, 20 per minute
@@ -327,6 +339,7 @@ func New(d Deps) *App {
 		return planSvc.AdmitSeat(ctx, q, wsID, userID, userID, role)
 	}
 	authSvc.Mail = mailSvc
+	authSvc.Conversions = metrikaSvc
 	botSvc.SetAuth(authSvc)
 	botPerSec, botMsgsPerMin := d.Config.BotLimits()
 	authSvc.BotLimiter = redisx.NewRateLimiter(d.Redis, "rl:bot:req:", botPerSec, float64(botPerSec*60))
@@ -465,6 +478,7 @@ func New(d Deps) *App {
 	boardSvc.FormUploadFormLimit = redisx.NewRateLimiter(d.Redis, "rl:form-upload-f:", 60, 60) // and 60 per minute per form
 	boardSvc.CreateLimit = redisx.NewRateLimiter(d.Redis, "rl:task-create:", 60, 60)           // 60 at once, one per second
 	boardSvc.SearchLimit = redisx.NewRateLimiter(d.Redis, "rl:task-search:", 30, 60)           // ⌘K: 30 at once, one per second
+	boardSvc.ReleaseLimit = redisx.NewRateLimiter(d.Redis, "rl:board-release:", 30, 30)        // CI releases: 30 per minute per board
 	msgHandlers.TaskHook = boardSvc.TaskHook
 	msgHandlers.TaskCommentHook = boardSvc.TaskCommentHook
 	boardHooks := boardSvc.EnableWebhooks(d.Redis, []byte(d.Config.JWTSecret), whOpts) // same delivery options as bots
@@ -484,6 +498,27 @@ func New(d Deps) *App {
 	diskSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link:", 60, 60)        // public link page + thumbnail: 60 per minute per IP
 	diskSvc.LinkDownloadLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link-dl:", 30, 30) // public downloads (each Range request): 30 per minute per IP
 	diskSvc.Routes(mux, private)
+	// Office editing (ADR-0143): the routes are always registered (one route table); off = 404.
+	oc := d.Config.Office
+	officeSessions := office.ValkeySessions{C: d.Redis, TTL: oc.SessionTTL}
+	apiURL := oc.APIURL
+	if apiURL == "" {
+		apiURL = d.Config.PublicAppURL
+	}
+	officeSvc := office.New(office.Config{
+		Enabled: oc.Enabled, DocsURL: oc.DocsURL, DocsInternalURL: oc.DocsInternalURL, APIURL: apiURL,
+		Secret: []byte(oc.JWTSecret), URLKey: office.DeriveURLKey([]byte(d.Config.JWTSecret)),
+		ThemeDark: oc.ThemeDark, ThemeLight: oc.ThemeLight, FileURLTTL: oc.FileURLTTL, MaxSize: oc.MaxSizeMB << 20,
+		SessionTTL: oc.SessionTTL,
+	}, &office.DiskStore{DB: d.DB, Files: filesSvc, Disk: diskSvc, PlanActive: planSvc.CheckActive}, officeSessions)
+	officeSvc.Announce = diskSvc
+	officeSvc.ConfigLimit = redisx.NewRateLimiter(d.Redis, "rl:office-config:", 30, 30) // opens: 30 at once, 30 per minute per user
+	officeSvc.ConvertLimit = redisx.NewRateLimiter(d.Redis, "rl:office-convert:", 5, 5) // «Сохранить как»: 5 per minute per user
+	officeSvc.DocsLimit = redisx.NewRateLimiter(d.Redis, "rl:office-ds:", 120, 120)     // Document Server file + callback requests: 120 per minute per item
+	if oc.Enabled {
+		diskSvc.Editing = officeSessions // «Редактирует Имя», the delete-forever guard
+	}
+	officeSvc.Routes(mux, private)
 	wikiSvc := wiki.New(d.DB, pub, filesSvc, planSvc)
 	wikiSvc.PublicURL = d.Config.PublicAppURL
 	wikiSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:wiki-link:", 60, 60)     // public page + state: 60 per minute per IP
@@ -497,6 +532,7 @@ func New(d Deps) *App {
 	canvasSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-link:", 60, 60)    // ADR-0127 wave 5: the public name, 60 per minute per IP
 	canvasSvc.LinkSyncLimit = redisx.NewRateLimiter(d.Redis, "rl:canvas-link-ws:", 20, 10) // … the anonymous socket's connects: 20 at once, 10 per minute per IP
 	canvasSvc.Billing = planSvc
+	canvasSvc.Plans = planSvc
 	canvasSvc.EnableSync(d.Redis, authSvc, func(origin string, cookie bool) bool { return gateway.OriginAllowed(origin, cookie, allowed) }, ysync.Config{})
 	canvasSvc.Routes(mux, private)
 	stickers.NewHandlers(d.DB, pub, filesSvc, planSvc,
@@ -543,6 +579,8 @@ func New(d Deps) *App {
 	calSvc.CommentLimit = redisx.NewRateLimiter(d.Redis, "rl:event-comment:", 20, 20) // ADR-0104: 20 at once, 20 per minute
 	calSvc.Presence = hub.Statuses
 	calSvc.EmailGate = authSvc.EmailGate()
+	calSvc.CheckBillingOpen = authSvc.CheckBillingOpen
+	calSvc.SubscriptionReads = redisx.NewRateLimiter(d.Redis, "rl:calendar-feed:", 30, 30)
 	// CalDAV push and meeting mails leave Calab without a request: the workspace identity
 	// policy decides per user (ADR-0054).
 	calSvc.Identity = &identitypolicy.Delivery{Loader: identitypolicy.NewSQLLoader(d.DB.Q, d.Config.IdentityEntitlements())}
@@ -567,6 +605,9 @@ func New(d Deps) *App {
 	calSvc.ExternalReminders = cdSvc.DueReminders                                        // ADR-0045 amendment 3: one sweep, one EVENT_REMINDER
 	cdSvc.AllowsCalDAV, calSvc.AllowsCalDAV = planSvc.AllowsCalDAV, planSvc.AllowsCalDAV // Free has no CalDAV (ADR-0024)
 	cdSvc.Routes(mux, private)
+	calSvc.WidgetRoutes(mux, private, authSvc,
+		redisx.NewRateLimiter(d.Redis, "rl:calendar-widget-issue:", 10, 1),
+		redisx.NewRateLimiter(d.Redis, "rl:calendar-widget-read:", 12, 2), cdSvc.WidgetEvents)
 	// Telephony (ADR-0046): phone lines join rooms through the LiveKit SIP API.
 	var lkSIP rtc.SIP
 	var lkRooms rtc.LiveKit
@@ -585,10 +626,14 @@ func New(d Deps) *App {
 	sipSvc := sip.New(d.DB, d.Redis, lkRooms, lkSIP, pub, planSvc, []byte(d.Config.JWTSecret), sipOpts)
 	sipSvc.SetFiles(filesSvc)
 	sipSvc.Presence = hub.PresenceChanged
+	if rtcSvc != nil { // ADR-0137 §3: the personal call's room tokens
+		sipSvc.SetMedia(d.Config.LiveKitURL, d.Config.LiveKitAPIKey, d.Config.LiveKitAPISecret)
+	}
 	// Phone call recording to the Disk (ADR-0131): the meeting recorder's egress and storage.
 	recLoc, _ := time.LoadLocation(d.Config.SIPRecordingTZ) // validated by config
 	recSvc.SetPhone(recording.PhoneConfig{Location: recLoc, MaxConcurrent: d.Config.SIPRecordingMaxConcurrent, Disk: diskSvc, MaxCall: sip.MaxCallTime})
 	sipSvc.SetRecorder(recSvc)
+	recSvc.SetJournal(sipSvc) // ADR-0137: the recording's steps in the call journal
 	// Inbound calls (ADR-0117 step 2): the IVR worker's endpoint, its prompts and events.
 	ivrHub := ivr.New(d.Redis, d.Config.IVRAgentToken)
 	ivrHub.Routes(mux)
@@ -650,7 +695,7 @@ func New(d Deps) *App {
 	)
 	mcpHandler.API = h
 	return &App{SSO: rp, Directory: ds, OAuth: op, Handler: h, Auth: authSvc, Gateway: hub, Files: filesSvc, Guests: guestSvc, RTC: rtcSvc, Plans: planSvc, Mail: mailSvc,
-		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Disk: diskSvc, Wiki: wikiSvc, Canvas: canvasSvc, Rooms: roomHandlers, SIP: sipSvc, IVR: ivrHub, SIPReg: sipregHub, billing: billingRT, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
+		Recording: recSvc, Search: searchSvc, Bots: botSvc, Birthdays: bdSvc, Achievements: achSvc, Calls: callSvc, Push: pushSvc, Calendar: calSvc, CalDAV: cdSvc, Boards: boardSvc, BoardWebhooks: boardHooks, Disk: diskSvc, Office: officeSvc, Wiki: wikiSvc, Canvas: canvasSvc, Rooms: roomHandlers, SIP: sipSvc, IVR: ivrHub, SIPReg: sipregHub, billing: billingRT, metrika: metrikaSvc, redis: d.Redis, identityDB: d.DB, Routes: mux.patterns,
 		dueTZ: boards.DueZone(d.Config.TasksDueTZ), Mailbox: mailboxSvc}
 }
 

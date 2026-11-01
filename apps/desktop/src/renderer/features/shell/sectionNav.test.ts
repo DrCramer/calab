@@ -9,6 +9,7 @@ import { useSections } from '../../stores/sections';
 import { useUi } from '../../stores/ui';
 import { useWebApps } from '../../stores/webApps';
 import { useWikiUi } from '../../stores/wikiUi';
+import { useTelephonyUi } from '../../stores/telephonyUi';
 import { useWorkspaces } from '../../stores/workspaces';
 import { openSection, openWorkspace } from './sectionNav';
 
@@ -23,6 +24,7 @@ describe('desktop sections (ADR-0074)', () => {
     useDiskUi.setState({ active: false });
     useWikiUi.setState({ active: false });
     useCanvasUi.setState({ active: false });
+    useTelephonyUi.setState({ active: false });
     useMailUi.setState({ active: false });
     useWebApps.setState({ open: null });
     useWorkspaces.setState({ order: ['a', 'b', 'g'], byId: { a: entry('a'), b: entry('b'), g: entry('g', WorkspaceRole.GUEST) } });
@@ -158,6 +160,40 @@ describe('desktop sections (ADR-0074)', () => {
     openWorkspace('g');
     openSection('canvas');
     expect(useCanvasUi.getState().active).toBe(false);
+  });
+
+  it('«Телефония» is exclusive with the other sections and remembered per workspace (ADR-0137 §5)', async () => {
+    openSection('canvas');
+    openSection('telephony');
+    expect(useTelephonyUi.getState().active).toBe(true);
+    expect(useCanvasUi.getState().active).toBe(false);
+    await settle();
+    expect(useSections.getState().of).toEqual({ a: 'telephony' });
+    openSection('disk');
+    expect(useTelephonyUi.getState().active).toBe(false);
+    openSection('telephony');
+    useBoardsUi.getState().setActive(true);
+    expect(useTelephonyUi.getState().active).toBe(false);
+    openSection('telephony');
+    useWikiUi.getState().setActive(true);
+    expect(useTelephonyUi.getState().active).toBe(false);
+    openSection('telephony');
+    openSection('calendar');
+    expect(useTelephonyUi.getState().active).toBe(false);
+    openSection('telephony');
+    expect(useUi.getState().calDay).toBeNull();
+    useUi.getState().openRoom('a', 'r1');
+    expect(useTelephonyUi.getState().active).toBe(false);
+    openSection('telephony');
+    await settle();
+    openWorkspace('b');
+    expect(useTelephonyUi.getState().active).toBe(false);
+    await settle();
+    openWorkspace('a');
+    expect(useTelephonyUi.getState().active).toBe(true);
+    openWorkspace('g');
+    openSection('telephony');
+    expect(useTelephonyUi.getState().active).toBe(false);
   });
 
   it('a guest workspace opens on its rooms only', () => {

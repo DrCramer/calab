@@ -2,6 +2,7 @@ import type { MessageInitShape } from '@bufbuild/protobuf';
 import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import {
   CreateDiskFolderRequestSchema,
+  CreateOfficeFileRequestSchema,
   CreateDiskLinkRequestSchema,
   DiskActivityPageSchema,
   DiskItemResponseSchema,
@@ -25,6 +26,9 @@ import {
   WorkspaceRole,
 } from '@calaba/protocol';
 import { confirmAction } from '../components/Confirm';
+import { officeOpens } from '../features/disk/office/bridge';
+import { openOfficeFile } from '../features/disk/office/fileTabs';
+import type { CreateKind } from '../features/disk/office/caps';
 import { showMode } from '../features/shell/sectionNav';
 import { t } from '../i18n';
 import { ApiError, body, call, callEmpty, qs } from '../lib/api/client';
@@ -73,6 +77,9 @@ export const diskApi = {
     call('GET', `${W(ws)}/items${qs({ parent: p.parent || undefined, trashed: p.trashed ? 1 : undefined, cursor: p.cursor, sort: p.sort })}`, ListDiskItemsResponseSchema),
   get: (id: string) => call('GET', I(id), DiskItemResponseSchema),
   createFolder: (ws: string, parentId: string, name: string) => call('POST', `${W(ws)}/folders`, DiskItemResponseSchema, body(CreateDiskFolderRequestSchema, { parentId, name })),
+  /** «Создать → Документ / Таблица / Презентация» (ADR-0143): a blank file from the server's template. */
+  createOffice: (ws: string, parentId: string, extension: string, name: string, lang: string) =>
+    call('POST', `/api/workspaces/${ws}/office/create`, DiskItemResponseSchema, body(CreateOfficeFileRequestSchema, { parentId, extension, name, lang })),
   update: (id: string, init: MessageInitShape<typeof UpdateDiskItemRequestSchema>) => call('PATCH', I(id), DiskItemResponseSchema, body(UpdateDiskItemRequestSchema, init)),
   trash: (id: string) => call('POST', `${I(id)}/trash`, DiskItemResponseSchema),
   restore: (id: string) => call('POST', `${I(id)}/restore`, DiskItemResponseSchema),
@@ -175,8 +182,11 @@ export function refreshDisk(ws: string, parents: readonly string[] = []): void {
   });
 }
 
-/** The disk of `ws` is on screen (the section open in that workspace). */
-const onScreen = (ws: string): boolean => useDiskUi.getState().active && useUi.getState().activeWorkspaceId === ws;
+/** The disk of `ws` is on screen: the section open in that workspace, or the phone's «Диск» tab (it never turns the section on). */
+const onScreen = (ws: string): boolean => {
+  const ui = useUi.getState();
+  return (useDiskUi.getState().active || (ui.phone.on && ui.phone.tab === 'disk')) && ui.activeWorkspaceId === ws;
+};
 
 /** Workspace → mounted storage meters (the disk footer, «Место», «Тариф»). */
 const meters = new Map<string, number>();
@@ -245,6 +255,26 @@ export async function createFolder(ws: string, parentId: string): Promise<void> 
     useDiskUi.getState().setRenaming(r.item.id);
   } catch (e) {
     fail(e, t('disk.err.create'));
+  }
+}
+
+const NEW_NAME: Record<CreateKind, 'disk.new.docxName' | 'disk.new.xlsxName' | 'disk.new.pptxName'> = { docx: 'disk.new.docxName', xlsx: 'disk.new.xlsxName', pptx: 'disk.new.pptxName' };
+
+/**
+ * «Создать → Документ / Таблица / Презентация» (ADR-0143): a blank file from the server's template
+ * in this folder («Новый документ.docx», a taken name gets « (2)»), opened at once in the editor.
+ * The phone only views office files: the new file stays selected in the Disk with a note.
+ */
+export async function createOfficeFile(ws: string, parentId: string, ext: CreateKind): Promise<void> {
+  try {
+    const r = await diskApi.createOffice(ws, parentId, ext, t(NEW_NAME[ext]), getLocale());
+    if (!r.item) return;
+    useDisk.getState().upsert(r.item);
+    useDiskUi.getState().select(r.item.id);
+    if (useUi.getState().phone.on) toast.info(t('disk.new.phone', { name: r.item.name }));
+    else openOfficeFile({ itemId: r.item.id }, r.item.name, r.item.workspaceId);
+  } catch (e) {
+    fail(e, t('disk.new.failed'));
   }
 }
 
@@ -462,6 +492,11 @@ export function openItem(item: DiskItem, siblings: readonly string[] = []): void
     useDiskUi.getState().openDialog({ kind: 'preview', itemId: item.id });
     return;
   }
+  // Office files in ONLYOFFICE Docs (ADR-0143; off unless the feature is on).
+  if (officeOpens(item.name)) {
+    openOfficeFile({ itemId: item.id }, item.name, item.workspaceId);
+    return;
+  }
   // A PDF opens in the PDF viewer (ADR-0103), like a task attachment.
   if (item.file && filePreview(item.file, useUi.getState().phone.on) === 'pdf') {
     useUi.getState().openDialog({ kind: 'pdf', file: { id: item.file.id, name: item.name, size: item.file.size }, diskItemId: item.id });
@@ -514,7 +549,7 @@ export function openPhoneDisk(screen: Extract<PhoneScreen, { kind: 'disk' }>): v
 
 /** The viewer of a file that has one in the app: a picture, a video, a PDF (as «Открыть»). */
 function hasViewer(item: DiskItem): boolean {
-  return previewKind(item.file, useUi.getState().phone.on) !== 'card';
+  return previewKind(item.file, useUi.getState().phone.on) !== 'card' || officeOpens(item.name);
 }
 
 /**
@@ -523,7 +558,9 @@ function hasViewer(item: DiskItem): boolean {
  */
 export function quickLook(item: DiskItem, siblings: readonly string[] = []): void {
   if (isFolder(item) || item.trashedAt) return;
-  openItem(item, siblings);
+  // Space is a glance: an editor (a whole Document Server session) is «Открыть», not a preview.
+  if (officeOpens(item.name)) openFileCard(item.id);
+  else openItem(item, siblings);
 }
 
 /**

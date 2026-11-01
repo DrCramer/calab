@@ -1,0 +1,20 @@
+{
+  "action": "reviewed",
+  "number": 4,
+  "pull_request": {
+    "id": 10,
+    "number": 4,
+    "user": {"id": 1, "login": "alice", "username": "alice"},
+    "title": "FNG-22 Menu",
+    "body": "",
+    "state": "open",
+    "html_url": "https://gitea.example.com/team/site/pulls/4",
+    "merged": false,
+    "draft": false,
+    "head": {"ref": "fng-22-menu"},
+    "base": {"ref": "main"}
+  },
+  "review": {"type": "pull_request_review_approved", "content": "fine"},
+  "repository": {"id": 2, "full_name": "team/site", "html_url": "https://gitea.example.com/team/site"},
+  "sender": {"id": 3, "login": "bob", "username": "bob"}
+}

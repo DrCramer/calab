@@ -30,10 +30,13 @@ import { SoundChip, SoundboardButton } from '../voice/Soundboard';
 import { MyStreamAnnot } from '../voice/Annotations';
 import { useBackgroundList, useMemberName, useWorkspaces } from '../../stores/workspaces';
 import { dmPeer } from '../../stores/dms';
-import { usePhoneCallNumber } from '../../stores/sipInbound';
 import { phoneCallId } from '../../lib/sipInbound';
 import { PhoneTransferRow } from '../call/PhoneTransfer';
-import { formatPhone } from '../../lib/sip';
+import { usePhoneCallLabel } from '../call/phoneCall';
+import { DtmfRow } from '../call/DtmfKeypad';
+import { RoomLineKeypad } from '../voice/Sip';
+import { usePersonalDialing } from '../../stores/sipOutbound';
+import { ParkedRoomLine } from '../call/ParkedRoom';
 import { openDm } from '../../services/dms';
 import { NoiseButton } from './NoisePopover';
 import { menuBox, menuItem, menuLabel, menuSeparator, popoverBox } from './menu';
@@ -565,6 +568,8 @@ declare global {
     __calabaSpeaking?: (userIds: string[]) => void;
     /** Visual tests only: back-date my room join (docs/09 #10 — the invite row's 30 s window). */
     __calabaJoinedAt?: (ms: number) => void;
+    /** Visual tests only: my mic intent not applied for the others yet (ADR-0134, the amber dot). */
+    __calabaMicSyncLag?: (on: boolean) => void;
     /** e2e tests (docs/09 #71): the LiveKit connection as it really is (voice.linkTruth). */
     __calabaVoiceLink?: () => { state: string | null; room: string | null; identity: string | null };
     /** e2e tests: an unexpected LiveKit loss (the reconnect cycle starts). */
@@ -581,6 +586,7 @@ export function VoiceBar(): ReactNode {
     window.__calabaCameras = () => useVoice.getState().cameras.length;
     window.__calabaSpeaking = (ids) => setVoice({ speaking: Object.fromEntries(ids.map((id) => [id, true])) });
     window.__calabaJoinedAt = (ms) => setVoice({ joinedAt: ms });
+    window.__calabaMicSyncLag = (on) => setVoice({ micSyncLag: on });
     window.__calabaVoiceLink = () => voice.linkTruth();
     window.__calabaVoiceDrop = () => voice.simulateLinkLoss();
     return () => {
@@ -590,6 +596,7 @@ export function VoiceBar(): ReactNode {
       delete window.__calabaVoicePhase;
       delete window.__calabaCameras;
       delete window.__calabaJoinedAt;
+      delete window.__calabaMicSyncLag;
     };
   }, [visualTest]);
   const roomId = useVoice((s) => s.roomId);
@@ -601,14 +608,17 @@ export function VoiceBar(): ReactNode {
   const canStream = useVoice((s) => s.canStream);
   const micError = useVoice((s) => s.micError);
   const micAction = useVoice((s) => s.micErrorAction);
+  const micTrouble = useVoice((s) => s.micTrouble);
   const serverMuted = useVoice((s) => s.serverMuted);
   const room = useRooms((s) => (roomId ? s.byId[roomId] : undefined));
   const wsName = useWorkspaces((s) => (wsId ? s.byId[wsId]?.ws.name : undefined));
   // A one-to-one call (ADR-0034): «Звонок · <имя>» instead of «Комната / Пространство».
   const call = useVoice((s) => s.call);
   const peerName = useMemberName(null, call && roomId ? dmPeer(roomId) : '');
-  // An inbound phone call (ADR-0117): «Звонок · +7 916 …».
-  const phone = usePhoneCallNumber(roomId);
+  // A phone call (ADR-0117 inbound, ADR-0137 §3 personal): «Звонок · Анна Петрова (ООО Ромашка)»;
+  // a personal call not answered yet says «Набираем…».
+  const phone = usePhoneCallLabel(roomId);
+  const dialing = usePersonalDialing(roomId);
   const devStats = usePrefs((s) => s.devStats);
   const saveTraffic = usePrefs((s) => s.saveTraffic);
   const musician = usePrefs((s) => s.musicianMode);
@@ -623,13 +633,25 @@ export function VoiceBar(): ReactNode {
   const openRoom = useUi((s) => s.openRoom);
   const open = useUi((s) => s.openDialog);
   if (!roomId) return null;
+  // The mic muted by the system: its state takes «Голос подключён»'s place, as on the phone strip.
+  const trouble = phase === 'connected' && !dialing ? micTrouble : null;
   const phaseText =
-    phase === 'connected' ? t('voice.connected') : phase === 'reconnecting' ? t('voice.reconnecting') : phase === 'blocked' ? t('voice.blocked') : t('voice.connecting');
+    dialing && (phase === 'connected' || phase === 'connecting')
+      ? t('telc.call.dialing')
+      : trouble
+        ? t(trouble === 'recovering' ? 'voice.micRecovering' : 'voice.micUnheard')
+        : phase === 'connected'
+          ? t('voice.connected')
+          : phase === 'reconnecting'
+            ? t('voice.reconnecting')
+            : phase === 'blocked'
+              ? t('voice.blocked')
+              : t('voice.connecting');
   const retry = offerRetry(phase, link.attempts);
   const host = link.blockedHost ?? link.rtcHost ?? '';
   const full =
     phone !== null
-      ? t('call.sipPanel', { number: phone ? formatPhone(phone) : t('call.sipUnknown') })
+      ? t('call.sipPanel', { number: phone || t('call.sipUnknown') })
       : call
         ? t('call.panel', { name: peerName })
         : t('shell.voiceIn', { room: room?.name ?? '', ws: wsName ?? '' });
@@ -649,7 +671,9 @@ export function VoiceBar(): ReactNode {
       <div className="flex items-center gap-2">
         <QualityButton phase={phase} />
         <div className="min-w-0 flex-1" aria-live="polite">
-          <div className={cx('truncate text-[14px] font-semibold leading-[18px]', phase === 'connected' ? 'text-ok' : 'text-warn')}>{phaseText}</div>
+          <div className={cx('truncate text-[14px] font-semibold leading-[18px]', trouble === 'unheard' ? 'text-danger-text' : phase === 'connected' && !dialing && !trouble ? 'text-ok' : 'text-warn')} data-testid="voice-phase">
+            {phaseText}
+          </div>
           <button type="button" className="block max-w-full truncate text-left text-[13px] leading-[18px] text-muted hover:text-fg hover:underline" onClick={goRoom} title={full}>
             {full}
           </button>
@@ -677,6 +701,12 @@ export function VoiceBar(): ReactNode {
       {call ? null : <SoundChip className="mt-1 pl-11" />}
       {/* An inbound phone call (ADR-0132): «Перевести» → whom; while it rings, «Переводим: Имя». */}
       {phone !== null ? <PhoneTransferRow callId={phoneCallId(roomId)} className="mt-2" /> : null}
+      {/* A personal call answered (ADR-0137 §3.7): «Клавиатура» → the tone keypad. */}
+      {phone !== null ? <DtmfRow roomId={roomId} className="mt-2" /> : null}
+      {/* A voice room's phone line answered (ADR-0046 addendum): «Клавиатура · +7 …» → the keypad. */}
+      {phone === null && !call && wsId ? <RoomLineKeypad workspaceId={wsId} roomId={roomId} className="mt-2" /> : null}
+      {/* The room the phone call parked (ADR-0133): «Комната: Lobby — на паузе» · «Выйти». */}
+      {phone !== null ? <ParkedRoomLine className="mt-2" /> : null}
 
       {phase === 'reconnecting' || phase === 'blocked' ? (
         // Connection lost (docs/09 #15): yellow notice inside the panel; LiveKit / rejoin brings it

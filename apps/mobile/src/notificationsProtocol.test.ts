@@ -40,3 +40,23 @@ describe('message notifications share the native-verified document boundary', ()
   expect(parseNotificationState({ permission: 'unsupported' })).toEqual({ permission: 'unsupported' });
  });
 });
+
+describe('Android FCM state (ADR-0070, Android)', () => {
+ const fcm = { permission: 'granted', provider: 'fcm', token: 'dXyz-123_abc:APA91b' + 'Q'.repeat(140), appId: 'com.example.calab', environment: 'production', installationId: document };
+ it('accepts an FCM token only with the fcm provider in production', () => {
+  expect(parseNotificationState(fcm)).toEqual(fcm);
+  expect(parseNotificationState({ ...fcm, provider: undefined })).toBeNull();
+  expect(parseNotificationState({ ...fcm, environment: 'development' })).toBeNull();
+  expect(parseNotificationState({ ...fcm, provider: 'apns' })).toBeNull();
+  expect(parseNotificationState({ ...fcm, token: 'has space ' + 'x'.repeat(40) })).toBeNull();
+  expect(parseNotificationState({ permission: 'default', provider: 'fcm' })).toBeNull();
+ });
+ it('carries a call button only as answer/decline on an otherwise opaque tap', () => {
+  const tap = { binding: document, eventId: document, expiresAt: Date.now() + 30_000 };
+  expect(parseNotificationState({ ...fcm, tap: { ...tap, action: 'answer' } })?.tap).toEqual({ ...tap, action: 'answer' });
+  expect(parseNotificationState({ ...fcm, tap: { ...tap, action: 'decline' } })?.tap?.action).toBe('decline');
+  expect(parseNotificationState({ ...fcm, tap: { ...tap, action: 'ring' } })).toBeNull();
+  expect(parseNotificationState({ ...fcm, tap: { ...tap, action: 'answer', url: '/r/x' } })).toBeNull();
+  expect(parsePushReference({ ...tap, action: 'answer' })).toBeNull();
+ });
+});

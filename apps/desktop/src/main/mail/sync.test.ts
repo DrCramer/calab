@@ -157,6 +157,10 @@ class FakeImap implements ImapSession {
     }
     return Promise.resolve();
   }
+  storeFlagsAll(add: string[], remove: string[]): Promise<void> {
+    this.calls.push('store all');
+    return this.storeFlags([...this.cur().msgs.keys()], add, remove);
+  }
   move(uids: number[], destination: string): Promise<Map<number, number> | null> {
     const src = this.cur();
     const map = new Map<number, number>();
@@ -489,6 +493,32 @@ describe('AccountSync against a fake server', () => {
     expect(store.localFlags(inbox.row).size).toBe(1);
     expect(events.some((e) => e.type === 'messages_removed' && e.messageIds.length === 2)).toBe(true);
     expect(events.some((e) => e.type === 'folders')).toBe(true);
+  });
+
+  it('folders.markAllRead: seen locally at once, one STORE 1:* on the server, rolled back when refused', async () => {
+    const { imap, store, sync, events } = setup();
+    imap.addFolder('INBOX');
+    const u1 = imap.deliver('INBOX');
+    const u2 = imap.deliver('INBOX');
+    sync.start();
+    await settle();
+    const inbox = store.folderByRole('inbox');
+    if (!inbox) throw new Error('no inbox');
+    expect(store.folderCounts(inbox.row).unread).toBe(2);
+    imap.failNext = Object.assign(new Error('NO [CANNOT] read-only'), { code: 'NOPE' });
+    events.length = 0;
+    sync.markFolderRead(inbox.row);
+    expect(store.folderCounts(inbox.row).unread).toBe(0); // at once
+    await settle();
+    expect(store.folderCounts(inbox.row).unread).toBe(2); // rolled back
+    imap.calls.length = 0;
+    sync.markFolderRead(inbox.row);
+    await settle();
+    expect(imap.calls.filter((c) => c === 'store all')).toHaveLength(1);
+    expect(store.folderCounts(inbox.row).unread).toBe(0);
+    expect(imap.folders.get('INBOX')?.msgs.get(u1)?.h.flags.seen).toBe(true);
+    expect(imap.folders.get('INBOX')?.msgs.get(u2)?.h.flags.seen).toBe(true);
+    expect(events.some((e) => e.type === 'messages_changed')).toBe(true);
   });
 
   it('folders.empty offline: NETWORK, nothing removed locally', async () => {

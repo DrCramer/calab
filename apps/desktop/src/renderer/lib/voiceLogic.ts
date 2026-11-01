@@ -79,6 +79,65 @@ export function micGlyph(i: { muted: boolean; deafened: boolean; ptt: boolean; t
   return i.ptt && !i.talking ? 'ptt-idle' : 'live';
 }
 
+/** My server voice state as the workspaces store keeps it (VoiceState, aggregated per user). */
+export interface SeatState {
+  roomId: string;
+  muted: boolean;
+  deafened: boolean;
+  serverMuted?: boolean;
+  ptt?: boolean;
+}
+
+/**
+ * Where a device of mine holds the voice seat by the server (docs/05 «Несколько устройств»: one
+ * device in voice): my VoiceState in any workspace with a room, else null.
+ */
+export function mySeat(byId: Readonly<Record<string, { voice: Readonly<Record<string, SeatState>> } | undefined>>, me: string): SeatState | null {
+  if (!me) return null;
+  for (const id in byId) {
+    const v = byId[id]?.voice[me];
+    if (v?.roomId) return v;
+  }
+  return null;
+}
+
+/** My mic as every indicator draws it (#96): the self panel, my participant row, the island dot. */
+export interface SelfMic {
+  /** This device holds the call: the flags are its intent (ADR-0134: the track and the server follow). */
+  here: boolean;
+  /** Another device of mine (or a session the server still keeps) holds it: the flags are the server's. */
+  elsewhere: boolean;
+  /** Crossed mic: off, deafened (deafen implies mute) or muted by a moderator. */
+  muted: boolean;
+  deafened: boolean;
+  serverMuted: boolean;
+  /** Push-to-talk mode in force (a one-to-one call is voice activation only, ADR-0034). */
+  ptt: boolean;
+}
+
+/**
+ * One source of truth for my own mic (#96). The panel used to draw this device's intent while my
+ * row drew the server's copy, so they disagreed whenever the two differed: another device of mine
+ * in the call (this one idle, the panel showing its pre-join intent), or the server echo lagging
+ * the intent (ADR-0134). Now: this device in voice → its intent everywhere; else my server state
+ * when a device of mine holds a seat; else the pre-join intent.
+ */
+export function selfMic(local: { inVoice: boolean; muted: boolean; deafened: boolean; serverMuted: boolean; ptt: boolean }, seat: SeatState | null): SelfMic {
+  if (local.inVoice || !seat) {
+    return { here: local.inVoice, elsewhere: false, muted: local.muted || local.deafened || local.serverMuted, deafened: local.deafened, serverMuted: local.serverMuted, ptt: local.ptt };
+  }
+  const serverMuted = seat.serverMuted === true;
+  return { here: false, elsewhere: true, muted: seat.muted || seat.deafened || serverMuted, deafened: seat.deafened, serverMuted, ptt: seat.ptt === true };
+}
+
+/**
+ * The glyph of my mic (CBF-71) from the one view: `talking` (the PTT key held) is known only where
+ * this device holds the call; elsewhere a PTT mode is shown waiting.
+ */
+export function selfMicGlyph(m: SelfMic, pttDown: boolean): MicGlyph {
+  return micGlyph({ muted: m.muted, deafened: m.deafened, ptt: m.ptt, talking: m.here && pttDown });
+}
+
 export interface TransmitInput extends SelfState {
   canSpeak: boolean;
   mode: 'voice' | 'ptt';

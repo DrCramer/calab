@@ -1,9 +1,12 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { create } from '@bufbuild/protobuf';
+import { TimestampSchema } from '@bufbuild/protobuf/wkt';
+import { TaskAssigneeSchema, TaskReleaseSchema } from '@calaba/protocol';
 import AxeBuilder from '@axe-core/playwright';
 import { _electron as electron, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test';
-import { startMockServer, type MockServer } from '../e2e-support/mock-server';
+import { IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
 
 /**
  * Harness for the design tests (docs/08, «Тесты дизайна»): the production renderer (out/)
@@ -240,6 +243,7 @@ export async function layoutProblems(page: Page): Promise<LayoutProblem[]> {
       }
       if (hidden) continue;
       const r = el.getBoundingClientRect();
+      if (el.scrollWidth <= el.clientWidth) continue; // not truncated: a short name is simply short
       if (r.width < Math.min(24, text.length * 6)) out.push({ kind: 'text-squeezed', detail: `${describe(el)}: ${Math.round(r.width)} px wide` });
     }
     // 3. Nothing interactive sticks out of the window.
@@ -306,6 +310,19 @@ export async function expectAccessible(page: Page, name: string): Promise<void> 
   expect.soft(bad, `axe: ${name}`).toEqual([]);
 }
 
+// ---------------------------------------------------------------- voice
+
+/**
+ * Joins the voice room «Переговорка» from the chats section (needs the dev LiveKit,
+ * `livekit-server --dev` or `pnpm infra:dev`), so a following screen is captured in a call.
+ */
+export async function joinVoice(page: Page): Promise<void> {
+  await page.getByTestId('section-chats').click();
+  await page.locator('aside').getByRole('button', { name: /Переговорка/ }).first().click();
+  await page.getByRole('region', { name: 'Переговорка' }).getByRole('button', { name: 'Войти в голос', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^Качество связи: Хорошее/ })).toBeVisible({ timeout: 30_000 });
+}
+
 // ---------------------------------------------------------------- one checkpoint
 
 export interface Shot {
@@ -323,4 +340,99 @@ export async function checkpoint(s: Shot, name: string, opts: { mask?: Locator[]
   });
   await expectLayout(s.page, `${name} (${s.theme}, ${s.viewport.width})`);
   if (opts.axe !== false) await expectAccessible(s.page, `${name} (${s.theme}, ${s.viewport.width})`);
+}
+
+// ---------------------------------------------------------------- day separators and assignee stacks (#87, #92)
+
+/** Messages over several days (NOW = 15 Jan 2026 13:30 MSK): [days back, hour MSK, text]. */
+const DAYS_THREAD: Array<[number, number, string]> = [
+  [400, 10, 'Договор подписан в прошлом году'],
+  [3, 23, 'Отправил договор на согласование'],
+  [3, 23.2, 'Жду ответа'],
+  [1, 9, 'Вчера утром юристы вернули правки'],
+  [0, 9, 'Сегодня внёс правки, смотрите'],
+  [0, 10, 'Ок, принято'],
+];
+
+/** Writes DAYS_THREAD into `roomId` with their own dates (call before the app loads the room); `onlyAuthor` keeps unread badges as they are. */
+export function seedDays(mock: MockServer, roomId: string, onlyAuthor?: string): void {
+  for (const [days, hour, text] of DAYS_THREAD) {
+    const day = new Date(NOW.getTime() - days * 86_400_000);
+    day.setUTCHours(0, 0, 0, 0);
+    const m = mock.injectMessage({ roomId, authorId: onlyAuthor ?? (days % 2 ? IDS.users.boris : IDS.users.anna), content: text });
+    m.createdAt = create(TimestampSchema, { seconds: BigInt(Math.floor((day.getTime() + (hour - 3) * 3_600_000) / 1000)) });
+  }
+}
+
+/** CAL-1 one assignee, CAL-2 two, CAL-4 five (written straight into the mock: not everyone sees the board). */
+export function seedAssigneeCounts(mock: MockServer): void {
+  const u = IDS.users;
+  const set = (key: string, ids: string[]): void => {
+    const t = mock.boards.taskByKey(key);
+    if (!t) throw new Error(`no ${key}`);
+    t.task.assignees = ids.map((userId, i) => create(TaskAssigneeSchema, { userId, isLead: i === 0, assignedAt: create(TimestampSchema, { seconds: BigInt(1_768_000_000 + i * 60) }) }));
+  };
+  set('CAL-1', [u.anna]);
+  set('CAL-2', [u.anna, u.boris]);
+  set('CAL-4', [u.anna, u.boris, u.vera, u.grigory, u.dina]);
+}
+
+/**
+ * Releases (board task #101): CAL-1 and CAL-3 went out in prod «4929cf3» (CAL-3 then in stage «1288»
+ * too), CAL-2 in prod «4a1b2c3» the day before; the rest in none. Written straight into the mock, after open().
+ */
+export function seedReleases(mock: MockServer): void {
+  const at = (h: number) => create(TimestampSchema, { seconds: BigInt(Math.floor(NOW.getTime() / 1000) - h * 3600) });
+  const rel = (id: string, name: string, environment: string, h: number) =>
+    create(TaskReleaseSchema, { releaseId: id, name, environment, url: `https://git.example.com/gptunnel/gpt/-/pipelines/${name}`, createdAt: at(h) });
+  const set = (key: string, list: ReturnType<typeof rel>[]): void => {
+    const t = mock.boards.taskByKey(key);
+    if (!t) throw new Error(`no ${key}`);
+    t.task.releases = list;
+  };
+  set('CAL-1', [rel('rel-prod-2', '4929cf3', 'prod', 2)]);
+  set('CAL-2', [rel('rel-prod-1', '4a1b2c3', 'prod', 26)]);
+  set('CAL-3', [rel('rel-stage-3', '1288', 'stage', 1), rel('rel-prod-2', '4929cf3', 'prod', 2)]);
+}
+
+/**
+ * Labels past the card width (docs/08 «Лейблы»): CAL-1 two (one row), CAL-2 five (two rows),
+ * CAL-4 all eleven (the «+N» group). Written straight into the mock, after open().
+ */
+export function seedLabelOverflow(mock: MockServer): void {
+  const one = mock.boards.taskByKey('CAL-1');
+  if (!one) throw new Error('no CAL-1');
+  const board = one.task.boardId;
+  for (const [name, color] of [['Документация', 0x30d158], ['Бэкенд', 0xff9f0a], ['Фронтенд', 0x64d2ff], ['Мобильное приложение', 0x5e5ce6], ['Безопасность', 0xff375f], ['Производительность', 0xac8e68], ['Релиз', 0xffcc00], ['API', 0x8e8e93]] as const) {
+    mock.boards.createLabel(board, IDS.users.anna, { name, color });
+  }
+  const labels = mock.boards.getBoard(board, IDS.users.anna).labels;
+  const id = (name: string): string => labels.find((l) => l.name === name)?.id ?? '';
+  const set = (key: string, names: string[]): void => {
+    const t = mock.boards.taskByKey(key);
+    if (!t) throw new Error(`no ${key}`);
+    t.task.labelIds = names.map(id);
+  };
+  set('CAL-1', ['Баг', 'Фича']);
+  set('CAL-2', ['Баг', 'Фича', 'Дизайн', 'Бэкенд', 'API']);
+  set('CAL-4', ['Баг', 'Фича', 'Дизайн', 'Документация', 'Бэкенд', 'Фронтенд', 'Мобильное приложение', 'Безопасность', 'Производительность', 'Релиз', 'API']);
+}
+
+/** The three stacks (CAL-1/2/4): one circle height, the same distance from the card's right edge, «+3» on the five. */
+export async function expectAssigneeStacks(page: Page): Promise<void> {
+  const stacks = page.locator('[data-testid=task-card], [data-testid=list-row]').filter({ hasText: /Экспорт доски|Тёмная тема|Карточки задач/ }).getByTestId('assignee-stack');
+  // The kanban mounts only the columns near the viewport: the card with five people and at least one more.
+  await expect.poll(() => stacks.count()).toBeGreaterThanOrEqual(2);
+  await expect(page.getByTestId('assignee-more')).toHaveText('+3');
+  const more = await page.getByTestId('assignee-more').boundingBox();
+  expect([Math.round(more?.width ?? 0), Math.round(more?.height ?? 0)]).toEqual([20, 20]);
+  const boxes = await stacks.evaluateAll((els) =>
+    els.map((e) => {
+      const r = e.getBoundingClientRect();
+      const c = e.closest('[data-testid=task-card],[data-testid=list-row]')?.getBoundingClientRect();
+      return { h: Math.round(r.height), right: Math.round((c?.right ?? 0) - r.right) };
+    }),
+  );
+  expect(new Set(boxes.map((b) => b.h)).size, JSON.stringify(boxes)).toBe(1);
+  expect(new Set(boxes.map((b) => b.right)).size, JSON.stringify(boxes)).toBe(1);
 }

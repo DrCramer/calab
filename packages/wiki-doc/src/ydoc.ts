@@ -13,7 +13,12 @@ import { wikiSchema } from './schema';
 
 /** The page's content as ProseMirror JSON (a `doc` node). */
 export function docToJSON(doc: Y.Doc, field = WIKI_FIELD): PmNode {
-  return yXmlFragmentToProseMirrorRootNode(doc.getXmlFragment(field), wikiSchema()).toJSON() as PmNode;
+  const schema = wikiSchema();
+  const fragment = doc.getXmlFragment(field);
+  // y-tiptap now builds the root with createChecked, which throws on an empty fragment (a page
+  // nobody has typed in yet); createAndFill gives the schema's minimal valid doc, as before.
+  if (fragment.length === 0) return schema.topNodeType.createAndFill()!.toJSON() as PmNode;
+  return yXmlFragmentToProseMirrorRootNode(fragment, schema).toJSON() as PmNode;
 }
 
 /** The page as Markdown (no title line). */

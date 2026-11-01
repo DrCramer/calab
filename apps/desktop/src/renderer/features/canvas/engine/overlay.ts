@@ -30,6 +30,8 @@ export interface SelFrame {
   rotate: boolean;
   /** A lone text sizes by width only: no top / bottom handles. */
   widthOnly?: boolean;
+  /** Only the corner handles: a picture resizes keeping its aspect ratio. */
+  cornersOnly?: boolean;
 }
 
 /** Transient, per-gesture decoration drawn over the content layer (never part of the document). */
@@ -100,7 +102,7 @@ export function drawOverlay(ctx: Ctx2D, o: OverlayState, p: CanvasPalette, scale
       ctx.stroke();
       drawHandle(ctx, knob, p, px, true, hp);
     }
-    if (g.resize) for (const h of HANDLE_IDS) if (!(g.widthOnly && (h === 'n' || h === 's'))) drawHandle(ctx, handlePoint(g.rect, h), p, px, false, hp);
+    if (g.resize) for (const h of HANDLE_IDS) if (!(g.widthOnly && (h === 'n' || h === 's')) && !(g.cornersOnly && h.length === 1)) drawHandle(ctx, handlePoint(g.rect, h), p, px, false, hp);
     ctx.restore();
   }
 

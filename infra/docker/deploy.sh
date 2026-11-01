@@ -19,11 +19,14 @@ set +a
 
 : "${DOMAIN:?DOMAIN is not set in .env}"
 : "${LIVEKIT_API_KEY:?LIVEKIT_API_KEY is not set in .env}"
+: "${NPM_HOST_IP:?NPM_HOST_IP is not set in .env}"
+: "${TURN_CERT_DIR:?TURN_CERT_DIR is not set in .env}"
+: "${RTC_INTERFACE:?RTC_INTERFACE is not set in .env}"
 
-# Substitute only these two variables; everything else in the template stays literal.
+# Substitute only the documented variables; credentials remain in compose env, not the config.
 cfg=livekit/livekit.gen.yaml
 before="$(cat "$cfg" 2>/dev/null | sha256sum)"
-envsubst '${DOMAIN} ${LIVEKIT_API_KEY}' < livekit/livekit.yaml.tpl > "$cfg"
+envsubst '${DOMAIN} ${LIVEKIT_API_KEY} ${NPM_HOST_IP} ${TURN_CERT_DIR} ${RTC_INTERFACE}' < livekit/livekit.yaml.tpl > "$cfg"
 after="$(sha256sum < "$cfg")"
 
 # Telephony (ADR-0046): the sip service runs only with SIP_ENABLED=1. Its config carries the

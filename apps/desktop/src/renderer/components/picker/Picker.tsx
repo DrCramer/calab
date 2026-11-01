@@ -213,10 +213,10 @@ export function PickerPanel<T extends PickerItem>({
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => !disabled && onSelect(row.item)}
         className={cx(
-          'flex cursor-default items-center gap-2 rounded-[var(--radius-row)] px-2 text-body',
+          'flex cursor-default items-center gap-2 rounded-[var(--radius-row)] px-2 py-1 text-body',
           on ? 'bg-accent-strong text-accent-fg' : 'text-fg',
         )}
-        style={{ height: rowPx }}
+        style={{ minHeight: rowPx }}
       >
         {renderItem(row.item, on)}
       </div>

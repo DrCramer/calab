@@ -1,6 +1,6 @@
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { CanvasItemKind, CANVAS_BITS, type CanvasVersion } from '@calaba/protocol';
-import { ChevronRight, Folder } from 'lucide-react';
+import { ChevronRight, Folder, Send } from 'lucide-react';
 import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, MOD, Modal, Segmented, Spinner, cx } from '../../components/ui';
@@ -10,6 +10,7 @@ import { canvasDocHandle, subscribeCanvasDocHandle } from '../../lib/canvas/docH
 import { ancestorsOf, childKey, isInSubtree, mergeById, TOP } from '../../lib/canvas/tree';
 import { canvasApi, loadChildren, moveItem, restoreVersion } from '../../services/canvas';
 import { toast } from '../../stores/toasts';
+import { useUi } from '../../stores/ui';
 import { useCanvas } from '../../stores/canvas';
 import { useCanvasUi, type CanvasDialog } from '../../stores/canvasUi';
 import { memberName, useWorkspaces } from '../../stores/workspaces';
@@ -83,6 +84,21 @@ function ShareDialog({ itemId, onClose }: { itemId: string; onClose: () => void 
         },
       );
   };
+  // «Отправить в чат…» (owner 23.10): the canvas' address into a chat; the share dialog gives way to the picker.
+  const sendBtn = isCanvas ? (
+    <Button
+      variant="secondary"
+      className="mr-auto"
+      onClick={() => {
+        onClose();
+        useUi.getState().openDialog({ kind: 'canvas-send', itemId });
+      }}
+      data-testid="canvas-share-send"
+    >
+      <Send className="size-4" strokeWidth={1.75} aria-hidden />
+      {t('canvas.sendToChat').replace(/…$/, '')}
+    </Button>
+  ) : null;
   return (
     <Modal
       open
@@ -93,6 +109,7 @@ function ShareDialog({ itemId, onClose }: { itemId: string; onClose: () => void 
       footer={
         tab === 'access' ? (
           <>
+            {sendBtn}
             <Button variant="secondary" onClick={onClose}>
               {t('common.cancel')}
             </Button>
@@ -101,9 +118,12 @@ function ShareDialog({ itemId, onClose }: { itemId: string; onClose: () => void 
             </Button>
           </>
         ) : (
-          <Button variant="secondary" onClick={onClose}>
-            {t('common.close')}
-          </Button>
+          <>
+            {sendBtn}
+            <Button variant="secondary" onClick={onClose}>
+              {t('common.close')}
+            </Button>
+          </>
         )
       }
     >

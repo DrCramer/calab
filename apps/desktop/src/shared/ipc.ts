@@ -60,6 +60,7 @@ export const IPC = {
   appOpenCheckout: 'app:open-checkout',
   appLegal: 'app:legal',
   appAttention: 'app:attention',
+  appShowWindow: 'app:show-window',
   /** Mentions + unread DM messages → Dock badge / badge count / tray tooltip (docs/09 item 22). */
   appSetBadge: 'app:set-badge',
   /** Renderer theme → nativeTheme.themeSource (the window background follows the app theme). */
@@ -168,6 +169,12 @@ export const IPC = {
   mailRequest: 'mail:request',
   /** main → renderer: a MailEvent. */
   mailEvent: 'mail:event',
+
+  // ---- office editor (ADR-0143) ----
+  /** renderer → main: true = the editor opens (main asks the server for the Document Server origin and returns it), false = it closed. */
+  officeFrame: 'office:frame',
+  /** renderer → main: { reason: 'disk', kinds } (a Disk folder with these editors' files is open) or { reason: 'ready' }: warm the editors' files in the HTTP cache. */
+  officeWarm: 'office:warm',
 } as const;
 
 /** ◀ ▶ ⟳ of the navigation strip. */
@@ -333,11 +340,18 @@ export interface AppInfo {
   forceRelay: boolean;
   /** Test flag CALABA_VISUAL_TEST=1: no animations (deterministic screenshots). */
   visualTest: boolean;
+  /** Test flag CALABA_VISUAL_VIBRANCY=1 (marketing shots, e2e-marketing): native vibrancy despite visualTest. */
+  visualVibrancy?: boolean;
   systemAudioLoopback: 'supported' | 'experimental' | 'unsupported';
   micAccess: string;
   screenAccess: string;
   /** OS / app UI languages, most preferred first (`app.getLocale()`, then the system list; ADR-0022). */
   locales: string[];
+  /**
+   * The app origins of this deployment (main CALABA_APP_ORIGINS / MAIN_VITE_APP_ORIGINS, web
+   * VITE_APP_ORIGINS): links to them open in the app when the server is one of them (shared/ownLink.ts).
+   */
+  appOrigins?: string[];
 }
 
 /** Strings main shows itself, translated by the renderer (ADR-0022). Main starts with the Russian ones. */

@@ -257,7 +257,10 @@ func (s *Service) Routes(mux routeMux, private func(http.Handler) http.Handler) 
 
 // Register idempotently binds or rotates a token for the current authenticated session.
 func (s *Service) Register(ctx context.Context, identity auth.Identity, request *v1.RegisterPushDeviceRequest) (*v1.RegisterPushDeviceResponse, error) {
-	if request.CallsEnabled != (request.Provider == v1.PushProvider_PUSH_PROVIDER_VOIP) || (request.Provider == v1.PushProvider_PUSH_PROVIDER_VOIP && request.NotificationsEnabled) {
+	// VoIP is a calls-only endpoint; FCM carries messages and calls on one Android token
+	// (ADR-0071, Android); APNs alerts never ring.
+	voip := request.Provider == v1.PushProvider_PUSH_PROVIDER_VOIP
+	if (voip && (!request.CallsEnabled || request.NotificationsEnabled)) || (request.CallsEnabled && !voip && request.Provider != v1.PushProvider_PUSH_PROVIDER_FCM) {
 		return nil, httpx.Validation("callsEnabled", "call push unavailable")
 	}
 	mentionsEnabled := request.MentionsEnabled == nil || request.GetMentionsEnabled()

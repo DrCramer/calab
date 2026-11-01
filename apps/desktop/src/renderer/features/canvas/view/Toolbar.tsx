@@ -1,5 +1,5 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { ChevronDown, MessageSquarePlus, MousePointer2, Redo2, Spline, StickyNote, Type, Undo2, Waypoints } from 'lucide-react';
+import { ChevronDown, MessageSquarePlus, MousePointer2, Redo2, StickyNote, Type, Undo2 } from 'lucide-react';
 import { memo, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { ALT, IconButton, MOD, Tip, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
@@ -7,7 +7,9 @@ import type { RouteKind, ShapeKind } from '../../../lib/canvas/types';
 import type { CanvasEngine, Tool } from '../engine';
 import { ACTIVE_TOOL, DIVIDER, MENU_BOX, MENU_ITEM, PANEL, keepFocus } from './chrome';
 import { useEngineValue } from './hooks';
+import { RouteIcon } from './RouteIcon';
 import { ShapeIcon } from './ShapeIcon';
+import { StickerTool } from './StickerTool';
 import { TemplatesMenu } from './Templates';
 import { TimerButton } from './Timer';
 import type { TimerStore } from './timerStore';
@@ -19,8 +21,9 @@ const ICON = 'size-[18px]';
 const shapeIcon = (kind: ShapeKind): ReactNode => <ShapeIcon kind={kind} className={ICON} />;
 
 const ROUTE_ICON: Record<RouteKind, ReactNode> = {
-  straight: <Spline className={ICON} strokeWidth={1.75} aria-hidden />,
-  elbow: <Waypoints className={ICON} strokeWidth={1.75} aria-hidden />,
+  straight: <RouteIcon route="straight" className={ICON} />,
+  elbow: <RouteIcon route="elbow" className={ICON} />,
+  curve: <RouteIcon route="curve" className={ICON} />,
 };
 
 /**
@@ -118,7 +121,7 @@ function FlyoutTrigger({ label, children }: { label: string; children: ReactNode
   );
 }
 
-export const Toolbar = memo(function Toolbar({ engine, timer, focusCanvas }: { engine: CanvasEngine; timer: TimerStore; focusCanvas: () => void }): ReactNode {
+export const Toolbar = memo(function Toolbar({ engine, timer, focusCanvas, workspaceId }: { engine: CanvasEngine; timer: TimerStore; focusCanvas: () => void; workspaceId: string }): ReactNode {
   useLocale();
   const tool = useEngineValue(engine, (s) => s.tool);
   const shapeKind = useEngineValue(engine, (s) => s.shapeKind);
@@ -175,7 +178,7 @@ export const Toolbar = memo(function Toolbar({ engine, timer, focusCanvas }: { e
                       aria-label={t(d.label)}
                       data-testid={`canvas-shape-${d.kind}`}
                       className={cx(
-                        'grid size-9 cursor-default place-items-center rounded-[6px] text-fg outline-none data-[highlighted]:bg-accent-strong data-[highlighted]:text-accent-fg',
+                        'grid size-9 cursor-default place-items-center rounded-[var(--radius-icon)] text-fg outline-none data-[highlighted]:bg-accent-strong data-[highlighted]:text-accent-fg',
                         shapeKind === d.kind && 'bg-active',
                       )}
                       onSelect={() => {
@@ -222,6 +225,7 @@ export const Toolbar = memo(function Toolbar({ engine, timer, focusCanvas }: { e
         }
       />
       <ToolButton {...common} tool="comment" icon={<MessageSquarePlus className={ICON} strokeWidth={1.75} aria-hidden />} active={tool === 'comment'} pinned={false} />
+      <StickerTool engine={engine} workspaceId={workspaceId} focusCanvas={focusCanvas} />
       <div className="mx-1 my-0.5 h-px bg-line" aria-hidden />
       <TemplatesMenu engine={engine} focusCanvas={focusCanvas} />
       <VoteButton engine={engine} focusCanvas={focusCanvas} />

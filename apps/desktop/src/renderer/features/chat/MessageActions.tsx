@@ -19,8 +19,17 @@ export function hasMessageActions(c: ChatMessage): boolean {
   return c.status === 'sent';
 }
 
-const btn =
+export const actionBtn =
   'grid size-6 shrink-0 cursor-default place-items-center rounded-[5px] text-muted outline-offset-0 hover:bg-hover hover:text-fg';
+
+/** The hover bar's box (an opaque popover, 28 px). */
+export const ACTION_BAR = 'mat-popover anim-in pointer-events-auto flex h-7 shrink-0 select-none items-center gap-0.5 rounded-[var(--radius-card)] px-0.5';
+
+/** «Ещё…»: a synthetic right click on the bubble opens its Radix context menu under the button. */
+export function openMenuFrom(e: MouseEvent<HTMLButtonElement>): void {
+  const r = e.currentTarget.getBoundingClientRect();
+  e.currentTarget.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: r.left, clientY: r.bottom + 4 }));
+}
 
 /**
  * Hover action bar of a message (docs/09 #47): quick reactions + picker, reply, «Ещё…» — the
@@ -50,13 +59,7 @@ export function MessageActions({
     useChatView.getState().pushRecent(emoji);
     void toggleReaction(roomId, m, emoji);
   };
-  // «Ещё…»: a synthetic right click on the bubble opens its Radix context menu under the button.
-  const more = (e: MouseEvent<HTMLButtonElement>): void => {
-    const r = e.currentTarget.getBoundingClientRect();
-    e.currentTarget.dispatchEvent(
-      new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: r.left, clientY: r.bottom + 4 }),
-    );
-  };
+  const more = openMenuFrom;
 
   // Drag by the grip (docs/05 «Заметки»): onto a notes shelf or a chat row → forwarded there. The
   // bar stays up for the drag (its source must stay mounted for dragend), like with the picker.
@@ -81,10 +84,10 @@ export function MessageActions({
       role="group"
       aria-label={t('chat.actions')}
       data-testid="message-actions"
-      className="mat-popover anim-in pointer-events-auto flex h-7 shrink-0 select-none items-center gap-0.5 rounded-[var(--radius-card)] px-0.5"
+      className={ACTION_BAR}
     >
       <Tip label={t('notes.drag')}>
-        <span draggable onDragStart={dragStart} onDragEnd={dragEnd} aria-hidden data-testid="message-drag" className={cx(btn, 'cursor-grab active:cursor-grabbing')}>
+        <span draggable onDragStart={dragStart} onDragEnd={dragEnd} aria-hidden data-testid="message-drag" className={cx(actionBtn, 'cursor-grab active:cursor-grabbing')}>
           <GripVertical className="size-4" />
         </span>
       </Tip>
@@ -102,7 +105,7 @@ export function MessageActions({
                 aria-disabled={blocked || undefined}
                 onClick={() => (blocked ? void toggleReaction(roomId, m, e) : react(e))}
                 className={cx(
-                  btn,
+                  actionBtn,
                   'text-headline leading-none',
                   mine && 'bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)]',
                   blocked && 'opacity-40 hover:bg-transparent',
@@ -127,20 +130,20 @@ export function MessageActions({
             canPick={(e) => canToggleReaction(m.reactions, e)}
             hint={limitHint}
           >
-            <button type="button" aria-label={t('chat.addReaction')} className={btn}>
+            <button type="button" aria-label={t('chat.addReaction')} className={actionBtn}>
               <SmilePlus className="size-4" aria-hidden />
             </button>
           </EmojiPicker>
           <span className="mx-0.5 h-4 w-px bg-line" aria-hidden />
           <Tip label={t('chat.reply')}>
-            <button type="button" aria-label={t('chat.reply')} onClick={() => useUi.getState().setReply(roomId, m.id)} className={btn}>
+            <button type="button" aria-label={t('chat.reply')} onClick={() => useUi.getState().setReply(roomId, m.id)} className={actionBtn}>
               <CornerUpLeft className="size-4" aria-hidden />
             </button>
           </Tip>
         </>
       ) : null}
       <Tip label={t('chat.more')}>
-        <button type="button" aria-label={t('chat.more')} aria-haspopup="menu" onClick={more} className={btn}>
+        <button type="button" aria-label={t('chat.more')} aria-haspopup="menu" onClick={more} className={actionBtn}>
           <Ellipsis className="size-4" aria-hidden />
         </button>
       </Tip>

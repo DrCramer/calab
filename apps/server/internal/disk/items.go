@@ -202,6 +202,7 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) error {
 	if out.Items, err = decorated(ctx, q, c, seen, func(it sqlc.DiskItem) perm.Bits { return ch.Bits(c.m, &it.ID) }); err != nil {
 		return err
 	}
+	s.editorsOf(ctx, out.Items)
 	if len(rows) == limit {
 		last := rows[len(rows)-1]
 		out.NextCursor = cursor{Rank: rankOf(last.item), Name: last.lname, Size: last.size,
@@ -314,36 +315,9 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) error {
 	var it sqlc.DiskItem
 	var chain []perm.DiskNode
 	f, err := s.files.UploadWith(w, r, ws, func(q *sqlc.Queries, f sqlc.File) error {
-		if err := writable(ctx, q, ws); err != nil {
-			return err
-		}
-		if err := q.LockDiskTree(ctx, ws); err != nil { // after the quota's workspaces row lock
-			return err
-		}
-		ch, err := addable(r, q, ws, c, parent)
-		if err != nil {
-			return err
-		}
-		name, err := cleanName(f.Name)
-		if err != nil {
-			name = "file"
-		}
-		if name, err = freeName(ctx, q, ws, parent, name, "file", nil); err != nil {
-			return err
-		}
-		if it, err = q.CreateDiskItem(ctx, sqlc.CreateDiskItemParams{WorkspaceID: ws, ParentID: parent, Kind: "file", Name: name, FileID: &f.ID, OwnerID: &c.uid}); err != nil {
-			return err
-		}
-		if err := ch.AddChildren(ctx, q, parent, []sqlc.DiskItem{it}); err != nil {
-			return err
-		}
-		chain = ch.Nodes(it.ID)
-		pl, err := place(ctx, q, parent)
-		if err != nil {
-			return err
-		}
-		pl["name"], pl["size"], pl["mime"] = it.Name, float64(f.Size), f.Mime
-		return s.journal(ctx, q, it, &c.uid, "upload", nil, pl)
+		var err error
+		it, chain, err = s.attachFile(r, q, ws, c, parent, f)
+		return err
 	})
 	if err != nil {
 		return err
@@ -362,6 +336,7 @@ func (s *Service) get(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	s.editorsOf(r.Context(), []*v1.DiskItem{item})
 	if a.item.Kind == "folder" {
 		if item.FolderFiles, item.FolderFolders, err = s.folderCounts(r.Context(), a); err != nil {
 			return err
@@ -873,6 +848,10 @@ func (s *Service) deleteForever(w http.ResponseWriter, r *http.Request) error {
 		}
 		if cur.TrashedAt == nil {
 			return httpx.Conflict("move the item to the trash first")
+		}
+		// Somebody has it open in the office editor (ADR-0143): their edits would be lost.
+		if err := s.editing(ctx, cur); err != nil {
+			return err
 		}
 		d, err = s.deleteTree(ctx, q, cur, a.nodes(), &a.c.uid, sees(a.c.m), &a.c.m, nil)
 		return err

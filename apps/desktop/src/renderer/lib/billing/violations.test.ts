@@ -36,6 +36,8 @@ describe('plan violations (ADR-0086)', () => {
     expect(fixPlace(v(PlanLimitKind.MEMBERS, 1n, 1n))).toEqual({ kind: 'settings', tab: 'members' });
     expect(fixPlace(v(PlanLimitKind.AUTOMATIONS, 1n, 0n))).toEqual({ kind: 'boards' });
     expect(fixPlace(v(PlanLimitKind.STORAGE_MB, 1n, 1n))).toBeNull();
+    // ADR-0137 §5: the telephony settings live in their section, not in the settings window.
+    expect(fixPlace(v(PlanLimitKind.TELEPHONY, 1n, 0n))).toEqual({ kind: 'telephony' });
   });
 });
 

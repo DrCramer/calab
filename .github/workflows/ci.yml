@@ -317,6 +317,9 @@ jobs:
           sudo apt-get install -y -qq libx11-dev libxtst-dev libxt-dev libxext-dev libxinerama-dev libx11-xcb-dev \
             libxkbcommon-dev libxkbcommon-x11-dev libxkbfile-dev libxrandr-dev
       - run: pnpm install --frozen-lockfile
+      # Native packages are an SDK set; dependency bots must not drift the phone runtime.
+      - run: pnpm -F @calaba/mobile check:sdk
+      - run: pnpm -F @calaba/mobile export:check:ios
       - run: pnpm -r typecheck
       - run: pnpm -r test
       # Bot SDK (ADR-0031): lint and the node bundle the examples run from

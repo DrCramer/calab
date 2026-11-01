@@ -47,6 +47,12 @@ function nth(startMs: number, repeat: EventRepeat, n: number): number | null {
       return startMs + n * 7 * DAY;
     case EventRepeat.BIWEEKLY:
       return startMs + n * 14 * DAY;
+    case EventRepeat.WORKDAYS: {
+      // Mon–Fri in UTC; the mock keeps no production calendar (ADR-0136).
+      const s = startMs + n * DAY;
+      const wd = new Date(s).getUTCDay();
+      return wd === 0 || wd === 6 ? null : s;
+    }
     case EventRepeat.MONTHLY: {
       const d = new Date(startMs);
       const day = d.getUTCDate();

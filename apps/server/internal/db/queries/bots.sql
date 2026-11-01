@@ -90,6 +90,10 @@ SELECT sqlc.arg('bot_user_id')::uuid, unnest(sqlc.arg('names')::text[]), unnest(
 SELECT * FROM bot_commands WHERE bot_user_id = ANY(sqlc.arg('bot_ids')::uuid[])
 ORDER BY bot_user_id, position;
 
+-- name: ListOwnedBotIDs :many
+-- The bots a user owns (READY.my_bot_ids, ADR-0151: the client's author rights on their tasks).
+SELECT user_id FROM bots WHERE owner_user_id = $1 ORDER BY user_id;
+
 -- name: ListWorkspaceBotIDs :many
 -- Live bots (with a token) that are members of a workspace.
 SELECT b.user_id, b.username FROM workspace_members m JOIN bots b ON b.user_id = m.user_id

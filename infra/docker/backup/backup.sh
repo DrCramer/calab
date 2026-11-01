@@ -2,7 +2,7 @@
 # Daily backup of the stand (run by calaba-backup.timer; see docs/06-deployment.md "Резервные копии").
 #   - Postgres: pg_dump -Fc                 -> $BACKUP_DIR/pg/calaba-<ts>.dump
 #   - files volume (uploads): tar.zst       -> $BACKUP_DIR/files/files-<ts>.tar.zst
-#   - caddy_data (ACME account + certs)     -> $BACKUP_DIR/caddy/caddy-<ts>.tar.zst
+#   - NPM owns TLS certificates and has its own backup/lifecycle
 #   - infra/docker/.env + .env.accounts     -> $BACKUP_DIR/config/env-<ts>.tar.zst (secrets: a restore
 #     without JWT/DB/LiveKit secrets is not the same stand; offsite MUST be an rclone *crypt* remote)
 #   - retention: RETENTION_DAYS (default 14)
@@ -18,18 +18,16 @@ if [[ -f "$ENV_FILE" ]]; then
   # Only the variables we need; never echo them.
   OFFSITE_RCLONE_REMOTE="${OFFSITE_RCLONE_REMOTE:-$(grep -E '^OFFSITE_RCLONE_REMOTE=' "$ENV_FILE" | cut -d= -f2- || true)}"
 fi
-BACKUP_DIR="${BACKUP_DIR:-/opt/calaba/backups}"
+BACKUP_DIR="${BACKUP_DIR:-$(cd "$HERE/../../.." && pwd)/backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-14}"
 PROJECT="${COMPOSE_PROJECT:-calaba}"
 PG_CONTAINER="${PROJECT}-postgres-1"
-VOL_ROOT="$(docker volume inspect -f '{{.Mountpoint}}' "${PROJECT}_files_data")"
-CADDY_ROOT="$(docker volume inspect -f '{{.Mountpoint}}' "${PROJECT}_caddy_data")"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 
 log() { echo "calaba-backup: $*"; }
 
 umask 077
-mkdir -p "$BACKUP_DIR/pg" "$BACKUP_DIR/files" "$BACKUP_DIR/caddy" "$BACKUP_DIR/config"
+mkdir -p "$BACKUP_DIR/pg" "$BACKUP_DIR/files" "$BACKUP_DIR/config"
 chmod 700 "$BACKUP_DIR"
 
 # 1. Postgres: custom format (compressed, restorable per table), written atomically.
@@ -43,20 +41,20 @@ log "pg ok: $(du -h "$BACKUP_DIR/pg/calaba-$TS.dump" | cut -f1)"
 # 2. Uploaded files. Files are immutable once written (temp + rename), so a live tar is consistent
 #    enough; a file uploaded during the tar is simply in the next backup.
 tmp="$BACKUP_DIR/files/.files-$TS.tar.zst.part"
-tar -C "$VOL_ROOT" --warning=no-file-changed -cf - . | zstd -q -T0 -3 -o "$tmp"
+docker run --rm --network none --user 0:0 \
+  --volume "${PROJECT}_files_data:/data:ro" \
+  --entrypoint sh valkey/valkey:9-alpine -c 'tar -C /data -cf - .' \
+  | zstd -q -T0 -3 -o "$tmp"
 mv "$tmp" "$BACKUP_DIR/files/files-$TS.tar.zst"
 log "files ok: $(du -h "$BACKUP_DIR/files/files-$TS.tar.zst" | cut -f1)"
 
-# 3. Caddy data (ACME account key + certificates): avoids re-issuing (LE rate limits) after a disk loss.
-tmp="$BACKUP_DIR/caddy/.caddy-$TS.tar.zst.part"
-tar -C "$CADDY_ROOT" -cf - . | zstd -q -T0 -3 -o "$tmp"
-mv "$tmp" "$BACKUP_DIR/caddy/caddy-$TS.tar.zst"
+# 3. NPM keeps and backs up its own ACME account and TLS certificates.
 
 # 3b. Secrets/config of the stand.
 tar -C "$HERE/.." -cf - .env $( [[ -f "$HERE/../.env.accounts" ]] && echo .env.accounts ) | zstd -q -o "$BACKUP_DIR/config/env-$TS.tar.zst"
 
 # 4. Retention.
-find "$BACKUP_DIR/pg" "$BACKUP_DIR/files" "$BACKUP_DIR/caddy" "$BACKUP_DIR/config" -type f -mtime "+$RETENTION_DAYS" -print -delete | sed 's/^/calaba-backup: pruned /'
+find "$BACKUP_DIR/pg" "$BACKUP_DIR/files" "$BACKUP_DIR/config" -type f -mtime "+$RETENTION_DAYS" -print -delete | sed 's/^/calaba-backup: pruned /'
 find "$BACKUP_DIR" -name '.*.part' -mmin +120 -delete
 
 # 5. Offsite (optional until the owner picks a target).

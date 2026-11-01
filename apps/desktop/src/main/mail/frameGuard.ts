@@ -14,6 +14,7 @@ import { app, session, shell, type WebContents, type WebFrameMain } from 'electr
 import { IPC } from '../../shared/ipc';
 import { mailComposeLink } from '../../shared/mail';
 import { log } from '../logging';
+import { officeFrameAllowed } from '../officeFrame';
 import { isPdfViewerFrame } from '../pdfFrame';
 import { installMailDownloads, parseAttachmentUrl } from './attachmentProtocol';
 
@@ -62,6 +63,8 @@ export interface FrameNav {
   frameUrl: string;
   /** The navigation was started by the navigating frame itself (a link click inside it). */
   selfInitiated: boolean;
+  /** The editor's own frame (officeFrame.ts: the announced Document Server origin, its host page). */
+  office?: boolean;
 }
 
 export function decideFrameNavigation(n: FrameNav): FrameDecision {
@@ -70,6 +73,8 @@ export function decideFrameNavigation(n: FrameNav): FrameDecision {
   const inMail = n.selfInitiated && n.frameUrl === 'about:srcdoc';
   // The PDF viewer's frames (ADR-0103: our page's blob:, Chromium's viewer extension) are left to
   // the general guard (windows.ts); never when a mail body itself navigates to them.
+  // The office editor's frames (ADR-0143) are left to the general guard; never when a mail body navigates.
+  if (!inMail && n.office) return { action: 'ignore' };
   if (!inMail && isPdfViewerFrame(n.url, process.env['ELECTRON_RENDERER_URL'])) return { action: 'ignore' };
   // Only a link inside a mail body (an about:srcdoc document) may leave the app.
   if (!inMail) return { action: 'block' };
@@ -112,7 +117,7 @@ function guard(wc: WebContents): void {
     } catch {
       frameUrl = '';
     }
-    const d = decideFrameNavigation({ url: e.url, isMainFrame: e.isMainFrame, frameUrl, selfInitiated: sameFrame(e.initiator, e.frame) });
+    const d = decideFrameNavigation({ url: e.url, isMainFrame: e.isMainFrame, frameUrl, selfInitiated: sameFrame(e.initiator, e.frame), office: officeFrameAllowed(wc, e) });
     if (d.action === 'ignore') return;
     e.preventDefault();
     if (d.action === 'external') {

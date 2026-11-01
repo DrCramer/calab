@@ -4,6 +4,7 @@ import { log } from '../log';
 import { DUCK_GAIN, ECHO } from './echo';
 import type { MicReport } from './micReport';
 import type { DenoiseControl, DenoiseMode } from './denoiseSleep';
+import { rnnoiseSupported } from './rnnoiseSupport';
 
 /**
  * Capture pipeline (docs/02-media.md, ADR-0004):
@@ -36,6 +37,22 @@ export interface MicPipelineOptions {
   onReport: (r: MicReport) => void;
   /** The capture ended by itself (device unplugged / revoked) — not fired by `stop()`. */
   onEnded?: () => void;
+  /**
+   * The system muted / unmuted the raw capture (another app took the mic, an audio interruption,
+   * a WebKit page in the background) — the track stays live, frames are silence meanwhile.
+   */
+  onMute?: (muted: boolean) => void;
+  /** The capture AudioContext changed state ('suspended' / WebKit 'interrupted' by the system, 'running' again). */
+  onContextState?: (state: string) => void;
+}
+
+/** The capture as the voice engine's health check sees it (lib/voiceRecovery.ts micFix). */
+export interface MicHealth {
+  ctx: string;
+  ended: boolean;
+  muted: boolean;
+  /** Since the worklet's last report (performance.now() based); null = none yet. */
+  reportAgeMs: number | null;
 }
 
 /** The RNNoise worklet could not start (the caller falls back to built-in noise suppression). */
@@ -56,7 +73,38 @@ export class MicPipeline {
     private readonly owned: MediaStreamTrack[],
     /** The duck stage; null = the raw track is published (headphones mode without RNNoise). */
     private readonly gain: GainNode | null,
+    /** The getUserMedia track (its mute / end is the capture's). */
+    private readonly raw: MediaStreamTrack,
+    /** performance.now() of the worklet's last report (0 = none yet). */
+    private readonly reports: { at: number },
   ) {}
+
+  /** Capture health: the context runs, the raw track is live and unmuted, the worklet reports. */
+  health(now: number = performance.now()): MicHealth {
+    return {
+      ctx: this.ctx.state,
+      ended: this.raw.readyState === 'ended',
+      muted: this.raw.muted,
+      reportAgeMs: this.reports.at > 0 ? now - this.reports.at : null,
+    };
+  }
+
+  /**
+   * The context back to running after the system suspended / interrupted it (the reports — and so
+   * the voice gate — are frozen meanwhile). True when it runs.
+   */
+  async resumeContext(): Promise<boolean> {
+    const state = (): string => this.ctx.state;
+    if (state() === 'closed') return false;
+    if (state() !== 'running') {
+      try {
+        await this.ctx.resume();
+      } catch (e) {
+        log.info('[mic] AudioContext.resume failed', e);
+      }
+    }
+    return state() === 'running';
+  }
 
   /** The duck can act on this pipeline (a gain stage exists). */
   get duckable(): boolean {
@@ -99,7 +147,9 @@ export class MicPipeline {
    * (NotSupportedError). RNNoise needs 48 kHz, so on such devices we fall back to the
    * built-in noise suppression and analyse at the device rate (web client, ADR-0015).
    */
-  static async start(opts: MicPipelineOptions): Promise<MicPipeline> {
+  static async start(options: MicPipelineOptions): Promise<MicPipeline> {
+    // WebKit / Android keep their own NS on: RNNoise on top only distorts (lib/media/rnnoiseSupport.ts, board #114).
+    const opts = options.rnnoise && !rnnoiseSupported() ? { ...options, rnnoise: false } : options;
     try {
       return await MicPipeline.startWith(opts, 48000);
     } catch (err) {
@@ -127,6 +177,11 @@ export class MicPipeline {
     if (!raw) throw new Error('getUserMedia returned no audio track');
     const onEnded = opts.onEnded;
     if (onEnded) raw.addEventListener('ended', () => onEnded());
+    const onMute = opts.onMute;
+    if (onMute) {
+      raw.addEventListener('mute', () => onMute(true));
+      raw.addEventListener('unmute', () => onMute(false));
+    }
     // What the browser actually applied (docs/02, «Эхо: колонки» — how to verify AEC is on).
     const st = raw.getSettings();
     log.info('[mic] capture settings', { echoCancellation: st.echoCancellation, autoGainControl: st.autoGainControl, noiseSuppression: st.noiseSuppression, sampleRate: st.sampleRate, channelCount: st.channelCount, musician, device: raw.label });
@@ -134,7 +189,12 @@ export class MicPipeline {
 
     // RNNoise is trained for 48 kHz; Chromium resamples the device if needed.
     const ctx = new AudioContext({ ...(sampleRate ? { sampleRate } : {}), latencyHint: 'interactive' });
+    const onContextState = opts.onContextState;
+    if (onContextState) ctx.addEventListener('statechange', () => onContextState(ctx.state));
+    const reports = { at: 0 };
     try {
+      // The worklet's 480-sample frames are 10 ms only at 48 kHz: never run RNNoise at another rate.
+      if (opts.rnnoise && ctx.sampleRate !== 48000) throw new RnnoiseUnavailable(`AudioContext runs at ${ctx.sampleRate} Hz`);
       await ctx.audioWorklet.addModule(workletUrl);
 
       // With a graph (RNNoise or the duck) the published track is the graph's output. Without
@@ -164,8 +224,12 @@ export class MicPipeline {
         node.port.onmessage = (e: MessageEvent<MicReport>) => {
           window.clearTimeout(timer);
           resolve();
+          reports.at = performance.now();
           opts.onReport(e.data);
-          node.port.onmessage = (ev: MessageEvent<MicReport>) => opts.onReport(ev.data);
+          node.port.onmessage = (ev: MessageEvent<MicReport>) => {
+            reports.at = performance.now();
+            opts.onReport(ev.data);
+          };
         };
       });
       source.connect(node);
@@ -191,7 +255,7 @@ export class MicPipeline {
       else alive.catch(() => undefined);
 
       const owned = graph ? [raw, publishTrack] : [raw, analysisTrack];
-      return new MicPipeline(publishTrack, opts.rnnoise, raw.label, musician, captured, ctx, node, owned, gain);
+      return new MicPipeline(publishTrack, opts.rnnoise, raw.label, musician, captured, ctx, node, owned, gain, raw, reports);
     } catch (err) {
       raw.stop();
       void ctx.close();

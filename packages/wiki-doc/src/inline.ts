@@ -19,7 +19,8 @@ export type MdNode =
  */
 const MENTION_RE = /^@([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|everyone|here)(?![A-Za-z0-9_])/i;
 const MENTION_BLOCKER = /[\p{L}\p{N}_.@-]/u;
-const URL_RE = /^https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"]/;
+/** A bare http(s) address as the parser links it (anchored at the start). */
+export const URL_RE = /^https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"]/;
 const MAX_DEPTH = 8;
 
 export function isSafeHref(href: string): boolean {

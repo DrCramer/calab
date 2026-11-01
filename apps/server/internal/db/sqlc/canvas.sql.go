@@ -314,6 +314,27 @@ func (q *Queries) CanvasUpdatesSince(ctx context.Context, arg CanvasUpdatesSince
 	return i, err
 }
 
+const countCanvasRestoreCanvases = `-- name: CountCanvasRestoreCanvases :one
+WITH RECURSIVE root AS (
+    SELECT r.id, r.trashed_at FROM canvas_items r WHERE r.id = $1::uuid AND r.trashed_root
+), sub (id) AS (
+    SELECT root.id FROM root
+    UNION ALL
+    SELECT c.id FROM canvas_items c JOIN sub ON c.parent_id = sub.id
+    WHERE NOT c.trashed_root AND c.trashed_at = (SELECT root.trashed_at FROM root)
+)
+SELECT count(*) FROM canvas_items w JOIN sub ON w.id = sub.id WHERE w.kind = 'canvas'
+`
+
+// The canvases RestoreCanvasSubtree would bring back with trash root id (the same subtree): the
+// plan limit is checked before the restore.
+func (q *Queries) CountCanvasRestoreCanvases(ctx context.Context, id uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countCanvasRestoreCanvases, id)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countCanvasSubtreeDepth = `-- name: CountCanvasSubtreeDepth :one
 WITH RECURSIVE down (id, depth) AS (
     SELECT w.id, 0 FROM canvas_items w WHERE w.id = $1::uuid
@@ -330,6 +351,19 @@ func (q *Queries) CountCanvasSubtreeDepth(ctx context.Context, id uuid.UUID) (in
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const countLiveCanvases = `-- name: CountLiveCanvases :one
+SELECT count(*) FROM canvas_items WHERE workspace_id = $1 AND kind = 'canvas' AND trashed_at IS NULL
+`
+
+// Live (not trashed) canvases of a workspace, folders not counted: the plan limit of ADR-0126
+// (addendum 2026-10-23) counts these.
+func (q *Queries) CountLiveCanvases(ctx context.Context, workspaceID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countLiveCanvases, workspaceID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const createCanvasItem = `-- name: CreateCanvasItem :one

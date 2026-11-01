@@ -122,6 +122,7 @@ export function applyIdentityAccess(access: WorkspaceIdentityAccess): void {
   platform.clearProtectedMedia?.();
   pruneGatewaySubscriptions(ids);
   if (useVoice.getState().workspaceId === id) void import('./voice').then(({ voice }) => voice.leave(false));
+  if (useVoice.getState().parked?.workspaceId === id) void import('./voice').then(({ voice }) => voice.leaveParked()); // ADR-0133
   useRooms.getState().removeWorkspace(id);
   useRooms.setState((s) => ({
     readState: withoutKeys(s.readState, ids),

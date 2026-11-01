@@ -1,17 +1,17 @@
 import * as Y from 'yjs';
 import { CanvasDoc, color, endpoint, isGroupId, isKind, isShapeKind, num, type StoredFields } from './doc';
 import {
-  boundsOf, distToPolyline, normRot, pointsBounds, polylineMidpoint, rectCenter, rectContainsPoint, rectInflate,
+  boundsOf, distToPolyline, normRot, pointsBounds, rectCenter, rectContainsPoint, rectInflate,
   rotatePoint, rotatedRectHitsRect, type Point, type Rect,
 } from './geometry';
 import { isValidKey } from './fracIndex';
 import { SpatialGrid } from './grid';
-import { RouteCache, routeConnector } from './route';
+import { RouteCache, connectorMidpoint, routeConnector } from './route';
 import { pointInShape } from './shapes';
 import { fmtFromDelta, type Fmt } from './richText';
 import { SHAPE_PAD, STICKY_PAD, TEXT_PAD, TextLayouter, isFontToken, storedFontPx, type FontToken } from './textLayout';
 import {
-  DEFAULTS, MAX_SIZE, aabb, isBound, isBox, isConnector,
+  DEFAULTS, MAX_SIZE, aabb, isBound, isBox, isConnector, isImageSrc,
   type BoxRec, type ConnectorRec, type Endpoint, type ObjectRec, type RouteKind, type Arrow,
 } from './types';
 
@@ -42,7 +42,7 @@ export function visualBounds(o: ObjectRec): Rect {
   if (isConnector(o)) {
     let r = rectInflate(o, ARROW_PAD + o.strokeWidth);
     if (o.label) {
-      const m = polylineMidpoint(o.points);
+      const m = connectorMidpoint(o);
       r = {
         x: Math.min(r.x, m.x - LABEL_W / 2), y: Math.min(r.y, m.y - LABEL_H / 2),
         w: Math.max(r.x + r.w, m.x + LABEL_W / 2) - Math.min(r.x, m.x - LABEL_W / 2),
@@ -260,7 +260,7 @@ export class Scene {
     if (isConnector(o)) {
       if (distToPolyline(p, o.points) <= tol) return true;
       if (o.label) {
-        const m = polylineMidpoint(o.points);
+        const m = connectorMidpoint(o);
         return Math.abs(p.x - m.x) <= LABEL_W / 2 && Math.abs(p.y - m.y) <= LABEL_H / 2 && o.label.length > 0;
       }
       return false;
@@ -518,7 +518,7 @@ export class Scene {
       let f = r.fmt;
       if (f) {
         const old = this.recs.get(id);
-        if (old && old.kind !== 'connector' && old.fmt?.key === f.key) f = old.fmt;
+        if (old && (old.kind === 'sticky' || old.kind === 'text' || old.kind === 'shape') && old.fmt?.key === f.key) f = old.fmt;
         cell.fmt = f;
       }
       return r.text;
@@ -555,6 +555,17 @@ export class Scene {
           strokeWidth: num(m.get('strokeWidth'), DEFAULTS.strokeWidth, 0, 24), text: textOf(), ...rich(), ...fontSizeOf('shape'), ...this.extras(m, true),
         };
       }
+      case 'image': {
+        const src = m.get('src');
+        // A picture of anything but the app's own media is not read (the loader would send the token along).
+        if (!isImageSrc(src)) return null;
+        const sid = m.get('stickerId');
+        return {
+          kind, id, z, x, y,
+          w: num(m.get('w'), DEFAULTS.imageSize, DEFAULTS.minBox, MAX_SIZE), h: num(m.get('h'), DEFAULTS.imageSize, DEFAULTS.minBox, MAX_SIZE),
+          src, ...(typeof sid === 'string' && sid.length <= 64 ? { stickerId: sid } : {}), ...this.extras(m, true),
+        };
+      }
       default:
         return null;
     }
@@ -569,7 +580,7 @@ export class Scene {
     const arrowRaw = m.get('arrow');
     const routeRaw = m.get('route');
     const arrow: Arrow = arrowRaw === 'none' || arrowRaw === 'both' ? arrowRaw : 'end';
-    const route: RouteKind = routeRaw === 'elbow' ? 'elbow' : 'straight';
+    const route: RouteKind = routeRaw === 'elbow' || routeRaw === 'curve' ? routeRaw : 'straight';
     const last: { from?: Point; to?: Point } = {};
     if (old && isConnector(old) && old.points.length >= 4) {
       last.from = { x: old.points[0] ?? 0, y: old.points[1] ?? 0 };
@@ -582,7 +593,7 @@ export class Scene {
       kind: 'connector', id, z: this.zOf(m), x: b.x, y: b.y, w: b.w, h: b.h,
       from, to, arrow, route, stroke: color(m.get('stroke'), DEFAULTS.connectorStroke),
       strokeWidth: num(m.get('strokeWidth'), DEFAULTS.strokeWidth, 0, 24), label: typeof lab === 'string' ? lab : '',
-      points: routed.points, ...this.extras(m, false),
+      points: routed.points, ...(routed.curve ? { curve: routed.curve } : {}), ...this.extras(m, false),
     };
     this.store(rec);
     this.grid.update(id, visualBounds(rec));

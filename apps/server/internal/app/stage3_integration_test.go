@@ -824,6 +824,18 @@ func TestRTC(t *testing.T) {
 		s := e.GetVoiceStateUpdate().GetState()
 		return s.GetUserId() == bob.id && !s.GetMusician() && s.GetDeafened()
 	})
+	// On a phone call (ADR-0133): the parked device flags itself and clears the flag on return.
+	phone, noPhone := true, false
+	bob.must(204, "PATCH", "/api/voice/self", &v1.UpdateVoiceSelfRequest{OnPhone: &phone}, nil)
+	g.wait("on phone", func(e *v1.DispatchEvent) bool {
+		s := e.GetVoiceStateUpdate().GetState()
+		return s.GetUserId() == bob.id && s.GetOnPhone() && s.GetRoomId() == rid
+	})
+	bob.must(204, "PATCH", "/api/voice/self", &v1.UpdateVoiceSelfRequest{OnPhone: &noPhone}, nil)
+	g.wait("off the phone", func(e *v1.DispatchEvent) bool {
+		s := e.GetVoiceStateUpdate().GetState()
+		return s.GetUserId() == bob.id && !s.GetOnPhone() && s.GetDeafened()
+	})
 
 	// Stream limit: max_streams=1 → the second screen share is muted by the server.
 	one := uint32(1)

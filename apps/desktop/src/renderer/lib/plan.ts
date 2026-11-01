@@ -26,6 +26,7 @@ export const FREE_LIMITS = {
   stickers: 200,
   boards: 3,
   wikiPages: 10,
+  canvases: 3,
   tempRooms: 3,
 } as const;
 
@@ -253,6 +254,8 @@ export function planErrorNotice(err: unknown, plan: Plan): PlanNotice | null {
     // Telephony SIP — Business only (ADR-0046, owner 02.10).
     if (/telephony/i.test(msg)) return { text: t('plan.telephonyLocked'), contact: true };
     if (/\bmembers?\b/i.test(msg)) return { text: t('plan.membersFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
+    // Canvases over the plan (owner, 23.10; ADR-0126): before «boards», the word differs anyway.
+    if (/\bcanvas(es)?\b/i.test(msg)) return { text: t('plan.canvasesFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
     // Wiki pages over the plan (owner, CBF-43).
     if (/\bwiki\b/i.test(msg)) return { text: t('plan.wikiPagesFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
     if (/\bboards?\b/i.test(msg)) return { text: t('plan.boardsFull', { plan: t(PLAN_LABEL[plan]), n }), contact: true };
@@ -295,6 +298,7 @@ export interface LimitsForm {
   stickers: string;
   boards: string;
   wikiPages: string;
+  canvases: string;
   tempRooms: string;
   /** A tier (8 | 16 | 32 | 64) or 0 = no cap. */
   audioTierMaxKbps: number;
@@ -333,6 +337,7 @@ export function limitsFormFrom(plan: Plan, limits: PlanLimits | undefined): Limi
     stickers: String(src ? src.stickers : FREE_LIMITS.stickers),
     boards: String(src ? src.boards : FREE_LIMITS.boards),
     wikiPages: String(src ? src.wikiPages : FREE_LIMITS.wikiPages),
+    canvases: String(src ? src.canvases : FREE_LIMITS.canvases),
     tempRooms: String(src ? src.tempRooms : FREE_LIMITS.tempRooms),
     audioTierMaxKbps: src ? src.audioTierMaxKbps : FREE_LIMITS.audioTierMaxKbps,
     caldavDisabled: src ? src.caldavDisabled : CUSTOM_DEFAULT_FLAGS.caldavDisabled,
@@ -365,7 +370,7 @@ export const CUSTOM_DEFAULT_FLAGS = {
 
 /** Upper bounds of the numeric fields (sanity, the server validates too). */
 const MAX: Record<
-  'boardFormsPerBoard' | 'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerRoom' | 'camerasPerRoom' | 'storageMb' | 'members' | 'bots' | 'stickerPacks' | 'stickers' | 'boards' | 'wikiPages' | 'tempRooms',
+  'boardFormsPerBoard' | 'roomMembers' | 'streamMaxFps' | 'cameraMaxFps' | 'streamsPerRoom' | 'camerasPerRoom' | 'storageMb' | 'members' | 'bots' | 'stickerPacks' | 'stickers' | 'boards' | 'wikiPages' | 'canvases' | 'tempRooms',
   number
 > = {
   boardFormsPerBoard: 1_000_000,
@@ -381,6 +386,7 @@ const MAX: Record<
   stickers: 1_000_000,
   boards: 50,
   wikiPages: 1_000_000,
+  canvases: 1_000_000,
   tempRooms: 1000,
 };
 
@@ -403,6 +409,7 @@ export interface PlanLimitsInit {
   stickers: number;
   boards: number;
   wikiPages: number;
+  canvases: number;
   tempRooms: number;
   audioTierMaxKbps: number;
   caldavDisabled: boolean;
@@ -446,6 +453,7 @@ export function limitsFromForm(f: LimitsForm): { limits: PlanLimitsInit } | { er
       stickers: out.stickers ?? 0,
       boards: out.boards ?? 0,
       wikiPages: out.wikiPages ?? 0,
+      canvases: out.canvases ?? 0,
       tempRooms: out.tempRooms ?? 0,
       audioTierMaxKbps: f.audioTierMaxKbps,
       caldavDisabled: f.caldavDisabled,

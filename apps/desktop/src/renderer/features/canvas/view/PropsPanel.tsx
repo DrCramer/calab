@@ -10,6 +10,7 @@ import { IconButton, MOD, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import type { ArrangeOp } from '../../../lib/canvas/arrange';
 import { FontSizeField } from './FontSizeField';
+import { RouteIcon } from './RouteIcon';
 import { ShapeIcon } from './ShapeIcon';
 import type { Arrow, ObjectKind, ObjectPatch, RouteKind, ShapeKind } from '../../../lib/canvas/types';
 import { readableInk, resolveColor, resolveSticky, type CanvasEngine, type CanvasPalette } from '../engine';
@@ -238,13 +239,7 @@ const arrowNode: Record<Arrow, ReactNode> = {
   both: <ArrowLeftRight className={ICON} strokeWidth={1.75} aria-hidden />,
 };
 
-function routeNode(route: RouteKind): ReactNode {
-  return route === 'straight' ? (
-    <svg viewBox="0 0 16 16" className={ICON} fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden><path d="M2 13 14 3" /></svg>
-  ) : (
-    <svg viewBox="0 0 16 16" className={ICON} fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden><path d="M2 13h6V3h6" /></svg>
-  );
-}
+const routeNode = (route: RouteKind): ReactNode => <RouteIcon route={route} className={ICON} />;
 
 const shapeNode = (kind: ShapeKind): ReactNode => <ShapeIcon kind={kind} className={ICON} />;
 

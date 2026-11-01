@@ -121,12 +121,17 @@ WITH RECURSIVE sub (id) AS (
     SELECT c.id FROM disk_items c JOIN sub ON c.parent_id = sub.id
 )
 DELETE FROM files f
-USING disk_items di, sub
-WHERE di.id = sub.id AND f.id = di.file_id
+WHERE f.id IN (
+    SELECT di.file_id FROM sub JOIN disk_items di ON di.id = sub.id WHERE di.file_id IS NOT NULL
+    UNION ALL
+    -- Previous versions of the subtree's files (ADR-0143): the same bytes in the quota.
+    SELECT v.file_id FROM sub JOIN disk_file_versions v ON v.item_id = sub.id
+)
 RETURNING f.id, f.workspace_id, f.uploader_id, f.key, f.thumbnail_key, f.name, f.mime, f.size, f.width, f.height, f.sha256, f.created_at, f.voice_duration_ms, f.voice_waveform
 `
 
-// Delete forever, step 1: the files rows of an item's whole subtree (trashed or not). Their
+// Delete forever, step 1: the files rows of an item's whole subtree (trashed or not), their
+// previous versions included (disk_file_versions, ADR-0143). Their
 // disk items go with them (CASCADE); the caller releases the quota in the same transaction
 // (ReleaseQuota per workspace) and deletes the blobs after commit, like files.DeleteFile —
 // deleting only the item would leave the bytes to the orphan cleanup, which would release the
@@ -434,6 +439,32 @@ func (q *Queries) GetDiskItemByFile(ctx context.Context, fileID *uuid.UUID) (Dis
 	return i, err
 }
 
+const getDiskItemByVersionFile = `-- name: GetDiskItemByVersionFile :one
+SELECT di.id, di.workspace_id, di.parent_id, di.kind, di.name, di.file_id, di.owner_id, di.restricted, di.created_at, di.updated_at, di.trashed_at, di.trashed_by, di.trashed_root FROM disk_file_versions v JOIN disk_items di ON di.id = v.item_id WHERE v.file_id = $1
+`
+
+// The item a previous version belongs to (files.CanRead: a version is read through its item).
+func (q *Queries) GetDiskItemByVersionFile(ctx context.Context, fileID uuid.UUID) (DiskItem, error) {
+	row := q.db.QueryRow(ctx, getDiskItemByVersionFile, fileID)
+	var i DiskItem
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ParentID,
+		&i.Kind,
+		&i.Name,
+		&i.FileID,
+		&i.OwnerID,
+		&i.Restricted,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TrashedAt,
+		&i.TrashedBy,
+		&i.TrashedRoot,
+	)
+	return i, err
+}
+
 const getDiskItemForUpdate = `-- name: GetDiskItemForUpdate :one
 SELECT id, workspace_id, parent_id, kind, name, file_id, owner_id, restricted, created_at, updated_at, trashed_at, trashed_by, trashed_root FROM disk_items WHERE id = $1 FOR UPDATE
 `
@@ -561,7 +592,10 @@ CROSS JOIN LATERAL (
             EXISTS (SELECT 1 FROM task_attachments ta WHERE ta.file_id = f.id) AS in_boards,
             (EXISTS (SELECT 1 FROM wiki_page_files wf WHERE wf.file_id = f.id)
                 OR EXISTS (SELECT 1 FROM wiki_pages wp WHERE wp.cover_file_id = f.id)) AS in_wiki
-        FROM files f LEFT JOIN disk_items di ON di.file_id = f.id
+        FROM files f
+        -- A previous version (ADR-0143) counts as its item's file.
+        LEFT JOIN disk_file_versions dv ON dv.file_id = f.id
+        LEFT JOIN disk_items di ON di.file_id = f.id OR di.id = dv.item_id
         WHERE f.workspace_id = w.id
     ) x
 ) b
@@ -642,6 +676,22 @@ func (q *Queries) InsertDiskActivity(ctx context.Context, arg InsertDiskActivity
 	return i, err
 }
 
+const insertDiskFileVersion = `-- name: InsertDiskFileVersion :exec
+INSERT INTO disk_file_versions (item_id, file_id, actor_id) VALUES ($1, $2, $3)
+`
+
+type InsertDiskFileVersionParams struct {
+	ItemID  uuid.UUID
+	FileID  uuid.UUID
+	ActorID *uuid.UUID
+}
+
+// The previous file of an item becomes a version (ADR-0143); actor saved the one that replaced it.
+func (q *Queries) InsertDiskFileVersion(ctx context.Context, arg InsertDiskFileVersionParams) error {
+	_, err := q.db.Exec(ctx, insertDiskFileVersion, arg.ItemID, arg.FileID, arg.ActorID)
+	return err
+}
+
 const insertDiskPermission = `-- name: InsertDiskPermission :exec
 INSERT INTO disk_permissions (item_id, target_type, target_id, allow, deny) VALUES ($1, $2, $3, $4, $5)
 `
@@ -686,6 +736,19 @@ func (q *Queries) LastDiskActivity(ctx context.Context, itemID *uuid.UUID) (Disk
 		&i.Private,
 	)
 	return i, err
+}
+
+const lastDiskFileVersion = `-- name: LastDiskFileVersion :one
+SELECT file_id FROM disk_file_versions WHERE item_id = $1 ORDER BY id DESC LIMIT 1
+`
+
+// The file an item's current file replaced (its newest version; ADR-0143: an editor session on it
+// is the one whose forcesave produced the current file).
+func (q *Queries) LastDiskFileVersion(ctx context.Context, itemID uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lastDiskFileVersion, itemID)
+	var file_id uuid.UUID
+	err := row.Scan(&file_id)
+	return file_id, err
 }
 
 const listDiskFiles = `-- name: ListDiskFiles :many
@@ -1595,6 +1658,94 @@ type MarkDiskSubtreeActivityPrivateParams struct {
 func (q *Queries) MarkDiskSubtreeActivityPrivate(ctx context.Context, arg MarkDiskSubtreeActivityPrivateParams) error {
 	_, err := q.db.Exec(ctx, markDiskSubtreeActivityPrivate, arg.Restricted, arg.ID)
 	return err
+}
+
+const pruneDiskFileVersions = `-- name: PruneDiskFileVersions :many
+DELETE FROM files f
+WHERE f.id IN (
+    SELECT v.file_id FROM disk_file_versions v WHERE v.item_id = $1::uuid
+    ORDER BY v.id DESC OFFSET $2::int
+)
+RETURNING f.id, f.workspace_id, f.uploader_id, f.key, f.thumbnail_key, f.name, f.mime, f.size, f.width, f.height, f.sha256, f.created_at, f.voice_duration_ms, f.voice_waveform
+`
+
+type PruneDiskFileVersionsParams struct {
+	ItemID uuid.UUID
+	Keep   int32
+}
+
+// Keeps the newest keep versions of an item: deletes the files rows of the older ones (their
+// version rows go with them, CASCADE); the caller releases their quota in the same transaction
+// and deletes the blobs after commit (as DeleteDiskSubtreeFiles).
+func (q *Queries) PruneDiskFileVersions(ctx context.Context, arg PruneDiskFileVersionsParams) ([]File, error) {
+	rows, err := q.db.Query(ctx, pruneDiskFileVersions, arg.ItemID, arg.Keep)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []File{}
+	for rows.Next() {
+		var i File
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.UploaderID,
+			&i.Key,
+			&i.ThumbnailKey,
+			&i.Name,
+			&i.Mime,
+			&i.Size,
+			&i.Width,
+			&i.Height,
+			&i.Sha256,
+			&i.CreatedAt,
+			&i.VoiceDurationMs,
+			&i.VoiceWaveform,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const replaceDiskItemFile = `-- name: ReplaceDiskItemFile :one
+UPDATE disk_items SET file_id = $1::uuid, updated_at = now()
+WHERE id = $2::uuid AND kind = 'file' AND file_id = $3::uuid
+RETURNING id, workspace_id, parent_id, kind, name, file_id, owner_id, restricted, created_at, updated_at, trashed_at, trashed_by, trashed_root
+`
+
+type ReplaceDiskItemFileParams struct {
+	FileID uuid.UUID
+	ID     uuid.UUID
+	Expect uuid.UUID
+}
+
+// A saved version (ADR-0143): the item keeps its id, parent and name and points at its new file;
+// updated_at moves. Only while its current file is still expect (compare and swap: a save never
+// lands over a newer version).
+func (q *Queries) ReplaceDiskItemFile(ctx context.Context, arg ReplaceDiskItemFileParams) (DiskItem, error) {
+	row := q.db.QueryRow(ctx, replaceDiskItemFile, arg.FileID, arg.ID, arg.Expect)
+	var i DiskItem
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ParentID,
+		&i.Kind,
+		&i.Name,
+		&i.FileID,
+		&i.OwnerID,
+		&i.Restricted,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TrashedAt,
+		&i.TrashedBy,
+		&i.TrashedRoot,
+	)
+	return i, err
 }
 
 const restoreDiskSubtree = `-- name: RestoreDiskSubtree :many

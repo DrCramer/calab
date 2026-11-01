@@ -72,35 +72,80 @@ RETURNING *;
 
 -- name: AdvanceReadState :one
 -- UpsertReadState that also reports whether the marker moved (PUT /api/rooms/{id}/read:
--- read receipts are published only then; docs/09 #92). prev sees the row before the upsert.
+-- docs/09 #92). With seen (ADR-0140) the seen marker moves too; seen_advanced and prev_seen
+-- (the seen marker before) drive read receipts and read_spans. prev sees the row before the upsert.
 WITH prev AS (
-    SELECT p.last_read_message_id FROM read_states p
+    SELECT p.last_read_message_id, p.seen_message_id FROM read_states p
     WHERE p.user_id = sqlc.arg('user_id') AND p.room_id = sqlc.arg('room_id')
 )
-INSERT INTO read_states (user_id, room_id, last_read_message_id)
-VALUES (sqlc.arg('user_id'), sqlc.arg('room_id'), sqlc.arg('message_id'))
+INSERT INTO read_states (user_id, room_id, last_read_message_id, seen_message_id)
+VALUES (sqlc.arg('user_id'), sqlc.arg('room_id'), sqlc.arg('message_id'),
+        CASE WHEN sqlc.arg('seen')::boolean THEN sqlc.arg('message_id')::uuid END)
 ON CONFLICT (user_id, room_id) DO UPDATE
-    SET last_read_message_id = GREATEST(read_states.last_read_message_id, EXCLUDED.last_read_message_id)
+    SET last_read_message_id = GREATEST(read_states.last_read_message_id, EXCLUDED.last_read_message_id),
+        seen_message_id = GREATEST(read_states.seen_message_id, EXCLUDED.seen_message_id)
 RETURNING read_states.last_read_message_id,
-    (NOT EXISTS (SELECT 1 FROM prev WHERE prev.last_read_message_id >= sqlc.arg('message_id')))::boolean AS advanced;
+    (NOT EXISTS (SELECT 1 FROM prev WHERE prev.last_read_message_id >= sqlc.arg('message_id')))::boolean AS advanced,
+    (sqlc.arg('seen')::boolean AND NOT EXISTS (
+        SELECT 1 FROM prev WHERE prev.seen_message_id >= sqlc.arg('message_id')))::boolean AS seen_advanced,
+    (SELECT prev.seen_message_id FROM prev) AS prev_seen_message_id;
+
+-- name: ExtendReadSpan :execrows
+-- ADR-0140 §3: the seen marker moved on from prev within 5 minutes of the run that ended there —
+-- that run grows (a primary-key probe). 0 rows → InsertReadSpan.
+UPDATE read_spans SET upto_id = sqlc.arg('upto_id'), last_at = now()
+WHERE room_id = sqlc.arg('room_id') AND upto_id = sqlc.arg('prev_id')::uuid AND user_id = sqlc.arg('user_id')
+  AND last_at > now() - interval '5 minutes';
+
+-- name: InsertReadSpan :exec
+-- A new run of the seen marker: (after_id, upto_id] seen from now (after_id NULL — from the start).
+INSERT INTO read_spans (room_id, upto_id, user_id, after_id)
+VALUES (sqlc.arg('room_id'), sqlc.arg('upto_id'), sqlc.arg('user_id'), sqlc.narg('after_id'))
+ON CONFLICT DO NOTHING;
+
+-- name: ListReadSpansCovering :many
+-- ADR-0140 §3: the runs of the seen marker that may cover messages first_id..last_id of a room
+-- (the caller picks per message the run with after_id < M <= upto_id): per person whose seen
+-- marker reached first_id (the given author and bots left out), the runs from first_id up to the
+-- first run that reaches last_id. Two ranges of the primary key per person: the work is bounded
+-- by the room's readers, never by its history.
+SELECT s.user_id, s.after_id, s.upto_id, s.first_at, s.last_at
+FROM read_states rs
+JOIN users u ON u.id = rs.user_id AND NOT u.is_bot
+LEFT JOIN LATERAL (
+    SELECT e.upto_id FROM read_spans e
+    WHERE e.room_id = rs.room_id AND e.user_id = rs.user_id AND e.upto_id >= sqlc.arg('last_id')::uuid
+    ORDER BY e.upto_id
+    LIMIT 1
+) stop ON true
+JOIN read_spans s ON s.room_id = rs.room_id AND s.user_id = rs.user_id
+     AND s.upto_id >= sqlc.arg('first_id')::uuid AND (stop.upto_id IS NULL OR s.upto_id <= stop.upto_id)
+WHERE rs.room_id = sqlc.arg('room_id') AND rs.seen_message_id >= sqlc.arg('first_id')::uuid
+  AND rs.user_id <> sqlc.arg('author_id')::uuid
+ORDER BY s.user_id, s.upto_id;
+
+-- name: GetFeatureEpoch :one
+-- When a feature started (ADR-0140 §5: 'read_receipts').
+SELECT started_at FROM feature_epochs WHERE name = $1;
 
 -- name: TopRoomReads :many
--- The three furthest read markers of a room among people (bots' reads do not count): read
--- receipts of workspace rooms (docs/09 #92). A probe of read_states_room_id_idx over the
--- room's markers (one per member who ever read it) and a top-3 sort.
-SELECT rs.user_id, rs.last_read_message_id
+-- The three furthest seen markers of a room among people (bots' reads do not count): read
+-- receipts of workspace rooms (docs/09 #92, ADR-0140). A probe of read_states_room_id_idx over
+-- the room's markers (one per member who ever read it) and a top-3 sort.
+SELECT rs.user_id, rs.seen_message_id::uuid AS last_read_message_id
 FROM read_states rs JOIN users u ON u.id = rs.user_id
-WHERE rs.room_id = $1 AND NOT u.is_bot
-ORDER BY rs.last_read_message_id DESC
+WHERE rs.room_id = $1 AND NOT u.is_bot AND rs.seen_message_id IS NOT NULL
+ORDER BY rs.seen_message_id DESC
 LIMIT 3;
 
 -- name: ListPeerReads :many
--- READY (docs/09 #92): per given room, the furthest read marker of the other people (bots'
--- reads do not count); rooms nobody else read are absent.
-SELECT DISTINCT ON (rs.room_id) rs.room_id, rs.last_read_message_id
+-- READY (docs/09 #92, ADR-0140): per given room, the furthest seen marker of the other people
+-- (bots' reads do not count); rooms nobody else saw are absent.
+SELECT DISTINCT ON (rs.room_id) rs.room_id, rs.seen_message_id::uuid AS last_read_message_id
 FROM read_states rs JOIN users u ON u.id = rs.user_id
 WHERE rs.room_id = ANY(sqlc.arg('room_ids')::uuid[]) AND rs.user_id <> sqlc.arg('user_id')::uuid AND NOT u.is_bot
-ORDER BY rs.room_id, rs.last_read_message_id DESC;
+  AND rs.seen_message_id IS NOT NULL
+ORDER BY rs.room_id, rs.seen_message_id DESC;
 
 -- name: ListReadStates :many
 -- One row per given (visible) room: the read marker (NULL if the user never read the

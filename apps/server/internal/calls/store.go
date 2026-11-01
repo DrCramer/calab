@@ -41,6 +41,10 @@ func idOf(s string) (uuid.UUID, bool) { id, err := uuid.Parse(s); return id, err
 // reads it for Presence.on_call.
 func OnCallKey(u uuid.UUID) string { return onCallKey(u) }
 
+// PhoneBusyKey is the telephony's busy key of a user (sip: an inbound call that rings them or
+// that they took, ADR-0117; their personal call, ADR-0137 §3): a one-to-one call to them is BUSY.
+func PhoneBusyKey(u uuid.UUID) string { return redisx.Key("sipin:user:" + u.String()) }
+
 // ErrNotFound means there is no such call (it never existed or expired).
 var ErrNotFound = errors.New("calls: not found")
 
@@ -51,11 +55,13 @@ const (
 	busy    = "BUSY"
 )
 
-// startScript places a call unless the caller (IN_CALL) or the callee (BUSY) has one.
-// KEYS: call, user_call:caller, user_call:callee, ringing. ARGV: record, id, ttl s, deadline ms.
+// startScript places a call unless the caller (IN_CALL) or the callee (BUSY) has one; a callee
+// on a phone call (PhoneBusyKey: an inbound call rings or was taken, a personal call) is BUSY too.
+// KEYS: call, user_call:caller, user_call:callee, ringing, phone busy:callee. ARGV: record, id,
+// ttl s, deadline ms.
 var startScript = rueidis.NewLuaScript(`
 if redis.call('EXISTS', KEYS[2]) == 1 then return 'IN_CALL' end
-if redis.call('EXISTS', KEYS[3]) == 1 then return 'BUSY' end
+if redis.call('EXISTS', KEYS[3]) == 1 or redis.call('EXISTS', KEYS[5]) == 1 then return 'BUSY' end
 redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[3])
 redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3])
 redis.call('SET', KEYS[3], ARGV[2], 'EX', ARGV[3])
@@ -138,7 +144,7 @@ func (s Store) Start(ctx context.Context, r Record, deadline time.Time) (string,
 	if err != nil {
 		return "", err
 	}
-	return startScript.Exec(ctx, s.C, []string{recKey(r.ID), userKey(r.Caller), userKey(r.Callee), ringingKey()},
+	return startScript.Exec(ctx, s.C, []string{recKey(r.ID), userKey(r.Caller), userKey(r.Callee), ringingKey(), PhoneBusyKey(r.Callee)},
 		[]string{string(b), r.ID.String(), ttlSec(), msStr(deadline)}).ToString()
 }
 

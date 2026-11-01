@@ -36,6 +36,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/plans"
 	"github.com/calaba/calaba/server/internal/redisx"
 	"github.com/calaba/calaba/server/internal/ysync"
 )
@@ -72,6 +73,10 @@ type Service struct {
 	LinkReadLimit, LinkSyncLimit *redisx.RateLimiter
 	ViewersPerLink, ViewersPerIP int
 	Billing                      BillingGate
+
+	// Plans caps the live canvases of a workspace (KindCanvases: create and restore; ADR-0126
+	// addendum 2026-10-23); nil = no plan limit.
+	Plans *plans.Service
 
 	sync *ysync.Hub
 }

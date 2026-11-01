@@ -5,8 +5,12 @@
  *
  * The parser is deliberately simple (headings, lists incl. task lists, quotes, fences, rules,
  * GFM tables, paragraphs); inline marks come from the chat's markdown-lite (lib/markdown/parse).
+ *
+ * The `lite` target writes what the markdown-lite renderer of task descriptions shows the same way
+ * (docs/08 «Доски»): plain newlines for line breaks, no line-start escapes, escapes only where the
+ * inline parser would misread the text, bare addresses for autolinks, `*` italics.
  */
-import { isSafeHref, parseMarkdown, type MdNode } from './inline';
+import { isSafeHref, parseInline, parseMarkdown, URL_RE, type MdNode } from './inline';
 import { wikiPageHref, wikiPageIdOf } from './links';
 
 export interface PmMark {
@@ -36,6 +40,14 @@ export interface ToMarkdownOptions {
   pageUrl?: (pageId: string) => string;
   /** Link text for a wiki page link (default / unknown: the address itself — no title is guessed). */
   pageTitle?: (pageId: string) => string | undefined;
+  /**
+   * markdown-lite (task descriptions, rendered by lib/markdown/parse with `white-space: pre-wrap`):
+   * hard breaks are plain newlines, nothing is escaped that the inline parser reads as text, an
+   * address linked to itself is written bare, blocks are separated by one newline except where
+   * the parser would merge them (paragraph–paragraph, two lists of a kind, quotes, tables), no
+   * trailing newline. Mentions default to `@<user_id>`.
+   */
+  lite?: boolean;
 }
 
 const MARK_ORDER = ['link', 'bold', 'italic', 'strike', 'code'];
@@ -47,6 +59,29 @@ function escapeText(s: string): string {
 /** Escapes what would turn a line into a block marker. */
 function escapeLineStart(s: string): string {
   return s.replace(/^(\s*)(#{1,6}\s|>|[-+*]\s|\d+[.)]\s|---|```|\|)/, (_m, sp: string, mk: string) => `${sp}\\${mk}`);
+}
+
+/** Text of parsed markdown-lite as it reads (`null`: something the parser would format). */
+function readsAs(nodes: MdNode[]): string | null {
+  let out = '';
+  for (const n of nodes) {
+    if (n.t === 'text') out += n.v;
+    else if (n.t === 'br') out += '\n';
+    else if (n.t === 'mention') out += `@${n.v}`;
+    // An address the parser links by itself shows as the same text.
+    else if (n.t === 'link' && n.c.length === 1 && n.c[0]?.t === 'text' && n.c[0].v === n.href) out += n.href;
+    else return null;
+  }
+  return out;
+}
+
+/** markdown-lite: the text as is when the inline parser reads it back unchanged, else escaped. */
+function liteText(s: string): string {
+  if (!s) return s;
+  // A trailing backslash would escape whatever follows the run.
+  if (s.endsWith('\\')) return escapeText(s);
+  const back = readsAs(parseInline(s, 0));
+  return back !== null && back.toLowerCase() === s.toLowerCase() ? s : escapeText(s);
 }
 
 function codeSpan(s: string): string {
@@ -62,12 +97,13 @@ function sortedMarks(marks: PmMark[] | undefined): PmMark[] {
 
 const sameMark = (a: PmMark, b: PmMark): boolean => a.type === b.type && (a.type !== 'link' || a.attrs?.['href'] === b.attrs?.['href']);
 
-function openMark(m: PmMark): string {
+function openMark(m: PmMark, lite = false): string {
   switch (m.type) {
     case 'bold':
       return '**';
     case 'italic':
-      return '_';
+      // markdown-lite: `_` does not open inside a word (snake_case), `*` does.
+      return lite ? '*' : '_';
     case 'strike':
       return '~~';
     case 'link':
@@ -77,18 +113,45 @@ function openMark(m: PmMark): string {
   }
 }
 
-function closeMark(m: PmMark): string {
+function closeMark(m: PmMark, lite = false): string {
   if (m.type === 'link') return `](${str(m.attrs?.['href'], '')})`;
-  return openMark(m);
+  return openMark(m, lite);
+}
+
+const isWordChar = (ch: string | undefined): boolean => ch !== undefined && /[\p{L}\p{N}]/u.test(ch);
+
+/**
+ * markdown-lite: a text linked to itself goes out bare when the parser links exactly it back —
+ * nothing word-like before it, nothing after it that would extend the address.
+ */
+function bareLink(n: PmNode, next: PmNode | undefined, before: string): string | null {
+  const marks = sortedMarks(n.marks);
+  const href = marks.length === 1 && marks[0]?.type === 'link' ? str(marks[0].attrs?.['href'], '') : '';
+  if (!href || n.text !== href || isWordChar(before.slice(-1))) return null;
+  let after = '';
+  if (next?.type === 'text') {
+    if (next.marks?.length) return null;
+    after = liteText(next.text ?? '');
+  } else if (next && next.type !== 'hardBreak') return null;
+  return URL_RE.exec(href + after)?.[0] === href ? href : null;
 }
 
 function inlineMd(nodes: PmNode[] | undefined, o: Required<ToMarkdownOptions>): string {
   let out = '';
   const active: PmMark[] = [];
   const closeTo = (keep: number): void => {
-    while (active.length > keep) out += closeMark(active.pop() as PmMark);
+    while (active.length > keep) out += closeMark(active.pop() as PmMark, o.lite);
   };
-  for (const n of nodes ?? []) {
+  const list = nodes ?? [];
+  for (let i = 0; i < list.length; i++) {
+    const n = list[i] as PmNode;
+    if (o.lite && n.type === 'text' && !active.length) {
+      const bare = bareLink(n, list[i + 1], out);
+      if (bare) {
+        out += bare;
+        continue;
+      }
+    }
     const marks = n.type === 'text' ? sortedMarks(n.marks) : [];
     // Keep the common prefix of open marks, close the rest, open the new ones.
     let keep = 0;
@@ -97,11 +160,11 @@ function inlineMd(nodes: PmNode[] | undefined, o: Required<ToMarkdownOptions>): 
     const code = marks.some((m) => m.type === 'code');
     for (const m of marks.slice(keep)) {
       if (m.type === 'code') continue;
-      out += openMark(m);
+      out += openMark(m, o.lite);
       active.push(m);
     }
-    if (n.type === 'text') out += code ? codeSpan(n.text ?? '') : escapeText(n.text ?? '');
-    else if (n.type === 'hardBreak') out += '\\\n';
+    if (n.type === 'text') out += code ? codeSpan(n.text ?? '') : o.lite ? liteText(n.text ?? '') : escapeText(n.text ?? '');
+    else if (n.type === 'hardBreak') out += o.lite ? '\n' : '\\\n';
     else if (n.type === 'mention') out += o.mention(str(n.attrs?.['id'], ''), str(n.attrs?.['label'], ''));
     else if (n.type === 'wikiPageLink') {
       const id = str(n.attrs?.['pageId'], '');
@@ -167,7 +230,8 @@ function tableMd(node: PmNode, o: Required<ToMarkdownOptions>): string {
 function blockMd(node: PmNode, o: Required<ToMarkdownOptions>): string {
   switch (node.type) {
     case 'paragraph':
-      return escapeLineStart(inlineMd(node.content, o));
+      // markdown-lite shows a line start as typed (a backslash would show too).
+      return o.lite ? inlineMd(node.content, o) : escapeLineStart(inlineMd(node.content, o));
     case 'heading': {
       const level = Math.min(6, Math.max(1, Number(node.attrs?.['level'] ?? 1)));
       return `${'#'.repeat(level)} ${inlineMd(node.content, o)}`;
@@ -190,7 +254,10 @@ function blockMd(node: PmNode, o: Required<ToMarkdownOptions>): string {
       return tableMd(node, o);
     case 'image': {
       const id = str(node.attrs?.['fileId'], '');
-      return id ? `![${escapeText(str(node.attrs?.['alt'], ''))}](${o.imageUrl(id)})` : '';
+      if (!id) return '';
+      const alt = str(node.attrs?.['alt'], '');
+      // markdown-lite: a picture line keeps its name as is, minus brackets and newlines (as the task's own picture lines).
+      return `![${o.lite ? alt.replace(/[[\]\n\r]/g, ' ').trim() : escapeText(alt)}](${o.imageUrl(id)})`;
     }
     case 'callout': {
       const icon = str(node.attrs?.['icon'], '💡');
@@ -206,21 +273,41 @@ function blockMd(node: PmNode, o: Required<ToMarkdownOptions>): string {
   }
 }
 
-function blocksMd(nodes: PmNode[] | undefined, o: Required<ToMarkdownOptions>, sep = '\n\n'): string {
-  return (nodes ?? [])
-    .map((n) => blockMd(n, o))
-    .filter((s) => s !== '')
-    .join(sep);
+const LISTS = new Set(['bulletList', 'orderedList', 'taskList']);
+
+/** markdown-lite: blocks the parser would merge (or a table would swallow) keep a blank line between them. */
+function looseBetween(a: PmNode, b: PmNode): boolean {
+  if (a.type === 'paragraph' && b.type === 'paragraph') return true;
+  if (LISTS.has(a.type) && a.type === b.type) return true;
+  if (a.type === 'blockquote' && b.type === 'blockquote') return true;
+  return [a.type, b.type].some((t) => t === 'table' || t === 'callout' || t === 'toggle');
+}
+
+function blocksMd(nodes: PmNode[] | undefined, o: Required<ToMarkdownOptions>, sep?: string): string {
+  let out = '';
+  let prev: PmNode | null = null;
+  for (const n of nodes ?? []) {
+    const s = blockMd(n, o);
+    if (s === '') continue;
+    if (prev) out += sep ?? (o.lite && !looseBetween(prev, n) ? '\n' : '\n\n');
+    out += s;
+    prev = n;
+  }
+  return out;
 }
 
 /** The page as Markdown (export). `title` becomes a leading `# title` when given. */
 export function toMarkdown(doc: PmNode, opts: ToMarkdownOptions & { title?: string } = {}): string {
+  const lite = opts.lite === true;
   const o: Required<ToMarkdownOptions> = {
     imageUrl: opts.imageUrl ?? ((id) => `/api/files/${id}`),
-    mention: opts.mention ?? ((id, label) => `@${label || id}`),
+    mention: opts.mention ?? (lite ? (id) => `@${id}` : (id, label) => `@${label || id}`),
     pageUrl: opts.pageUrl ?? ((id) => wikiPageHref('', id)),
     pageTitle: opts.pageTitle ?? (() => undefined),
+    lite,
   };
+  // markdown-lite: blank lines inside code stay as they are (no collapsing); no trailing newline.
+  if (lite) return blocksMd(doc.content, o).replace(/^\n+|\s+$/g, '');
   const body = blocksMd(doc.content, o).replace(/\n{3,}/g, '\n\n').trim();
   const title = opts.title?.trim();
   return `${title ? `# ${title}\n\n` : ''}${body}\n`;
@@ -231,6 +318,13 @@ export function toMarkdown(doc: PmNode, opts: ToMarkdownOptions & { title?: stri
 export interface FromMarkdownOptions {
   /** Label stored with a pasted `@<user_id>` mention. */
   mentionLabel?: (id: string) => string;
+  /**
+   * A line holding only `![alt](url)` becomes an image block when this returns the url's file id
+   * (task descriptions: `calaba-file:<id>`); other images read as links.
+   */
+  imageFileId?: (url: string) => string | null;
+  /** Wiki page addresses become page links (default true; false keeps them plain links). */
+  pageLinks?: boolean;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -261,8 +355,13 @@ function mdInline(nodes: MdNode[], marks: PmMark[], o: FromMarkdownOptions, out:
         mdInline(n.c, [...marks, { type: 'strike' }], o, out);
         break;
       case 'link': {
+        // An address inside link text (`[https://a](https://a)`) is that link's text, not a second link mark.
+        if (marks.some((m) => m.type === 'link')) {
+          mdInline(n.c, marks, o, out);
+          break;
+        }
         // A wiki page address (any origin, owner 14.10) is a page link: the title is live, not the link text.
-        const pageId = wikiPageIdOf(n.href);
+        const pageId = o.pageLinks === false ? null : wikiPageIdOf(n.href);
         if (pageId) {
           out.push({ type: 'wikiPageLink', attrs: { pageId } });
           break;
@@ -287,10 +386,9 @@ function inlineFrom(lines: string[], o: FromMarkdownOptions): PmNode[] {
   lines.forEach((l, i) => {
     if (i > 0) out.push({ type: 'hardBreak' });
     // Images: never inlined (only uploaded files are images); keep the alt text / URL as a link.
-    const src = l
-      .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_m, alt: string, url: string) => `[${alt || url}](${url})`)
-      // The bare `/wiki/<id>` page path (the serializer's default) reads as a link too (any host matches).
-      .replace(/\]\(\/wiki\//g, '](https://_/wiki/');
+    let src = l.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_m, alt: string, url: string) => `[${alt || url}](${url})`);
+    // The bare `/wiki/<id>` page path (the serializer's default) reads as a link too (any host matches).
+    if (o.pageLinks !== false) src = src.replace(/\]\(\/wiki\//g, '](https://_/wiki/');
     mdInline(parseMarkdown(src.replace(/\\$/, '')), [], o, out);
   });
   return out;
@@ -303,6 +401,7 @@ const HEADING_RE = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
 const HR_RE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
 const ITEM_RE = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
 const TASK_RE = /^\[([ xX]?)\]\s+(.*)$|^\[([ xX]?)\]$/;
+const IMAGE_LINE_RE = /^!\[([^\]\n]*)\]\(([^)\s]+)\)$/;
 const TABLE_SEP_RE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
 
 function splitRow(line: string): string[] {
@@ -376,6 +475,14 @@ function parseBlocks(lines: string[], o: FromMarkdownOptions, depth: number): Pm
       });
       continue;
     }
+    const img = o.imageFileId ? IMAGE_LINE_RE.exec(line.trim()) : null;
+    const fileId = img ? o.imageFileId?.(img[2] ?? '') : null;
+    if (img && fileId) {
+      flush();
+      out.push({ type: 'image', attrs: { fileId, alt: img[1] ?? '' } });
+      i++;
+      continue;
+    }
     const item = ITEM_RE.exec(line);
     if (item && depth < 8) {
       flush();
@@ -432,6 +539,8 @@ function parseList(lines: string[], start: number, o: FromMarkdownOptions, depth
       i++;
     }
     const content = nonEmpty(parseBlocks(body, o, depth + 1));
+    // An item opens with a paragraph (schema `paragraph block*`): an image or code line first gets an empty one.
+    if (content[0]?.type !== 'paragraph') content.unshift({ type: 'paragraph' });
     items.push(task ? { type: 'taskItem', attrs: { checked }, content } : { type: 'listItem', content });
   }
   const startNum = ordered ? Number.parseInt(first?.[2] ?? '1', 10) || 1 : 1;

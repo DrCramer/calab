@@ -306,20 +306,15 @@ const ru = {
     },
     web: 'Или откройте {link} — в Chrome, Edge, Safari или Firefox, в том числе на телефоне. Приложения для iPhone и Android — скоро.',
     webLink: 'веб-версию',
-    whatsNew: 'Что нового:',
-    changelog: 'Список изменений',
-    releases: 'Релизы на GitHub',
   },
   pricing: {
     live: {
       perMonth: '≈ {amount} за человека за 30 дней',
-      connect: 'Подключить в приложении',
+      buy: 'Купить',
       request: 'По запросу',
       switchLabel: 'Валюта цен',
       currencyRub: '₽',
       currencyUsd: '$',
-      pricesInRub: 'Цены в рублях.',
-      pricesInUsd: 'Цены в долларах США.',
       contactNote: 'Цены в долларах США. Платные тарифы подключаем по запросу.',
     },
     perSeatDay: 'за человека в сутки',
@@ -327,8 +322,11 @@ const ru = {
     offerLink: 'Условия оплаты и возврата',
     eyebrow: 'Тарифы',
     title: 'Free, Team, Business и Enterprise',
+    accent: 'Business и Enterprise',
     lead: 'Начните бесплатно. Нужно больше — Team или Business в облаке, либо Enterprise: Calab на вашем собственном сервере.',
-    startHere: 'Начните здесь',
+    popular: 'Популярный',
+    /** Footnote for the «*» on Business limits (owner, 24.10). */
+    quotaNote: 'Квоты могут быть увеличены по запросу.',
     plans: {
       free: { name: 'Free', price: 'Бесплатно', note: 'До 50 участников' },
       team: { name: 'Team', price: '6 ₽', note: 'До 100 участников' },
@@ -338,7 +336,6 @@ const ru = {
     cta: {
       web: 'Веб',
       download: 'Скачать',
-      contact: 'Связаться',
       license: 'Условия лицензии',
     },
     table: {
@@ -362,6 +359,7 @@ const ru = {
         boards: "Доски задач",
         tempRooms: "Временные комнаты на человека (до 30 дней)",
         wiki: "Страницы Вики",
+        canvases: "Холсты",
         calendar: "Календарь",
         caldav: "CalDAV",
         musician: "Режим музыканта",
@@ -393,6 +391,7 @@ const ru = {
         boards: ["3", "30", "50", "∞"],
         tempRooms: ["3", "10", "50", "∞"],
         wiki: ["10", "50", "500", "∞"],
+        canvases: ["3", "30", "100", "∞"],
         calendar: ["✓", "✓", "✓", "✓"],
         caldav: ["—", "✓", "✓", "✓"],
         musician: ["—", "✓", "✓", "✓"],
@@ -420,6 +419,7 @@ const ru = {
     contactLink: 'форму связи',
     eyebrow: 'Вопросы',
     title: 'Коротко о главном',
+    lead: 'Часто задаваемые вопросы',
     items: {
       server: {
         q: "Что нужно для своего сервера?",

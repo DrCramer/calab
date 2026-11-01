@@ -12,6 +12,7 @@ import { isWeb, platform } from '../platform';
 import { useRooms } from '../stores/rooms';
 import { myUserId, useSession } from '../stores/session';
 import { toast, useToasts } from '../stores/toasts';
+import { useCall } from '../stores/call';
 import { setVoice, useVoice } from '../stores/voice';
 import { memberName, useWorkspaces } from '../stores/workspaces';
 import { callKeptOnExit, keepCallOnExit, resumeCall } from './call';
@@ -42,6 +43,11 @@ import { voice } from './voice';
  * and a duplicated tab copies nothing (the record exists only between `pagehide` and READY). The
  * desktop renderer reloaded in place (navigation type «reload») takes the same record when main
  * has none; an app restart is not a reload, so it is unchanged.
+ *
+ * Safari's back/forward cache: a page frozen on `pagehide` and restored on `pageshow`
+ * (persisted) gets no READY — and LiveKit left the room on `pagehide` (disconnectOnPageLeave). The
+ * seat `pagehide` wrote is taken back through the same decision and window (≤ 2 min), once the
+ * leave that frozen page had started has settled.
  */
 
 /** How long a call's rejoin may take before its toast is given up (the join reports failures itself). */
@@ -72,6 +78,8 @@ function currentSeat(): ResumeVoiceSeat | null {
 
 /** How long the web «Вернуться в комнату» toast waits for the click. */
 const REJOIN_PROMPT_MS = 60_000;
+/** A page restored from the back/forward cache waits at most this long for the leave its `pagehide` started. */
+const BFCACHE_SETTLE_MS = 3_000;
 
 /** Once per app: answers main's «restarting for an update» with the voice seat. */
 export function installResumeVoice(): void {
@@ -92,6 +100,10 @@ export function installResumeVoice(): void {
       const seat = currentSeat() ?? unloadSeat;
       unloadSeat = null;
       saveWebResume(store, reloadSeat(seat, callKeptOnExit()), useSession.getState().serverUrl, Date.now());
+    });
+    window.addEventListener('pageshow', (ev: PageTransitionEvent) => {
+      voice.onPageShow(ev.persisted);
+      if (ev.persisted && isWeb) void restoreFromBfcache().catch((e: unknown) => log.warn('resume voice after the back/forward cache failed', e));
     });
   }
   platform.app.onPrepareRestart(() => {
@@ -143,6 +155,42 @@ export function resumeVoiceAfterReady(readyCall: Call | undefined): void {
     .catch((e: unknown) => log.warn('resume voice failed', e));
 }
 
+/**
+ * A page back from the back/forward cache: the seat its `pagehide` kept (lib/webResume, one use,
+ * ≤ 2 min), taken like a reload's — after the leave LiveKit's page-leave started has settled.
+ */
+async function restoreFromBfcache(): Promise<void> {
+  await voiceIdle(BFCACHE_SETTLE_MS);
+  const rec = takeWebResume(tabStorage(), Date.now());
+  log.info(`resume voice after the back/forward cache: seat ${rec ? `${rec.kind} ${rec.roomId}` : 'none'}`);
+  if (!rec) {
+    restoreTabSelf();
+    return;
+  }
+  takeVoiceSelf(tabStorage(), myUserId()); // the seat carries the mic state: the tab's copy is spent
+  await resume(rec, useCall.getState().call);
+}
+
+/** Resolves once this device is out of voice (no seat, no join) or after `ms`. */
+function voiceIdle(ms: number): Promise<void> {
+  const idle = (): boolean => {
+    const v = useVoice.getState();
+    return v.roomId === null && v.joining === null;
+  };
+  if (idle()) return Promise.resolve();
+  return new Promise((resolve) => {
+    const finish = (): void => {
+      clearTimeout(timer);
+      unsub();
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    const unsub = useVoice.subscribe(() => {
+      if (idle()) finish();
+    });
+  });
+}
+
 async function resume(rec: ResumeVoice, readyCall: Call | null): Promise<void> {
   const me = myUserId();
   const v = useVoice.getState();
@@ -155,7 +203,7 @@ async function resume(rec: ResumeVoice, readyCall: Call | null): Promise<void> {
     myVoice: myServerVoice(me),
     activeCall: mine ? { id: readyCall.id, dmRoomId: readyCall.dmRoomId } : null,
   });
-  log.info(`resume voice after the update restart: ${d.kind}${d.kind === 'none' ? ` (${d.reason})` : ''}`);
+  log.info(`resume voice: ${d.kind}${d.kind === 'none' ? ` (${d.reason})` : ''}`);
   switch (d.kind) {
     case 'none':
       // Not rejoined, but the user is the same: the mic stays as they left it (never back unmuted).

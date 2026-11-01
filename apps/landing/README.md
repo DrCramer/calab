@@ -55,7 +55,7 @@ Payment return pages `/onpay/success/` and `/onpay/fail/` (Tochka merchant URLs)
 
 ## Public agreements and browser preferences
 
-RU uses Gromtekh / RUB 6 and 18 per employee/day; other locales use Unne / USD $0.10 and $0.30.
+RU uses Gromtekh / RUB 6 and 18 per employee/day; other locales are priced in USD $0.10 and $0.30.
 `content/legal.json` is the RU edition; `content/legal-global.json` is the English Global edition.
 Six documents × four locale paths; canonical legal URLs use RU or EN respectively. ES/ZH
 keep localized navigation and explicitly identify English legal text. The previous monthly
@@ -63,11 +63,14 @@ edition is kept in `content/legal-archive/` and is not imported into pages.
 
 The corner panel uses `lib/site-preferences.ts`; consent is optional-off by default, versioned
 and expires after 180 days. It controls real language persistence in both the switcher and
-the root redirect. Analytics/marketing categories are prepared but inactive. Before enabling
+the root redirect. Analytics (Yandex Metrika, `components/yandex-metrika.tsx`, loaded only after the visitor opts in) is active; marketing is prepared but inactive. Before enabling
 a provider: disclose recipients/purposes/lifetimes, bump the consent version, update parser
 and root-router validation together, and gate loading plus withdrawal through the purpose
-check. Never add a tracker via an unconditional script. Only preferences are active now.
+check. Never add a tracker via an unconditional script. Active now: preferences and analytics. The landing CSP (`infra/docker/caddy/sites.caddy`) allows `mc.yandex.ru/.com` + `yastatic.net` for it.
 Run `pnpm -F @calaba/landing test:preferences` for consent and root-router regression checks.
+Metrika goals (`lib/metrika.ts`, delegated clicks in `components/goal-tracking.tsx`; `goal()` is a no-op without consent, nothing is queued): `download_click` {os}, `open_web_app`, `plan_buy_click` {plan}, `payment_success` (OnPay success page), `contact_click`, `support_chat_open` (first click into the chat widget), `pricing_view` (one IntersectionObserver), `docs_open`. Ids must match the JS-event goals in Metrika exactly.
+UTM passthrough: `utm_*`/`yclid` of the landing URL are kept in sessionStorage and appended to `APP_URL` links at click time so the app can attribute signups; no personal data and no third party, so it works without consent.
+Server-side conversions (ADR-0135): after consent the tag's ClientID (`ym(…, 'getClientID')`) is appended to `APP_URL` links as `ym_cid` (never without consent; forgotten on withdrawal). The web client keeps `utm_*`/`yclid`/`ym_cid` of the first open and sends them with the registration; the server reports the goals `signup` and `purchase` (amount, currency, plan, payment id) over the Measurement Protocol. The desktop app opened from an installer gets no landing params, so desktop sign-ups are not attributed.
 No analytics SDK, third-party CMP or payment functionality is enabled by these pages.
 
 ## Where it is served
@@ -130,7 +133,38 @@ Every scene is captured per language with that language's team (docs/09 #139).
    `src/lib/screens.ts`), writes `public/screens/<lang>/<name>@2x.webp`, `<name>.webp` (1x) and `<name>-720.webp`
    (phones), each ≤ 300 KB, and `public/og/<lang>.png` (1200×630). `node scripts/assets.mjs --only=sipdial,webapps` regenerates
    just those images (no other raw captures needed; OpenGraph is redrawn only when `voice` is listed). The READMEs (`README*.md`) use the same files.
-3. Rebuild and commit `public/screens` and `public/og`.
+3. Landing v6 (docs/plans/landing-v6.md §5): `e2e-marketing/landing-v6.spec.ts` (data `copy4.ts`, shared seeds `v6-kit.ts`,
+   `v6-canvas.ts`, `v6-seeds.ts`) — one day of the «Нордлайт» team: a request in the chat → the task APP-7 → the review
+   → the wiki page → the retro canvas → a phone call, plus the telephony, role, recording and AI windows.
+   ```sh
+   livekit-server --dev            # the call scenes (voice, canvas, phone-call) need the dev LiveKit
+   cd apps/desktop && CALABA_VISUAL_WORKERS=1 MOCK_LIVEKIT_ROOM_PREFIX=landing_ \
+     pnpm exec playwright test --config playwright.marketing.config.ts landing-v6
+   ```
+   `CALABA_LANDING_LOCALES=ru,en` narrows the languages, `CALABA_V6_SCENES=chat-full,chat-full-focus` the captures (a
+   scene with a phone crop has a second capture, `<scene>-focus`, taken in a window as wide as the panel so the crop follows
+   the panel's border, never the middle of a message), `CALABA_V6_TIMEOUT` the per-test limit in ms.
+   Scenes (name — crop in CSS px, see `CROPS` in `scripts/assets.mjs`): `voice`, `chat-full`, `kanban-full`, `calendar-week`,
+   `canvas`, `phone-call`, `wiki-full`, `timeline`, `mail` — 1440×900 (`timeline` 1110×870, `mail` 1440×758) with a phone
+   `focus` (720×560, `mail` 381×560); catalogue tiles ≤ 860 wide: `chat-focus`, `wiki-focus`, `canvas-panel`,
+   `phone-call-panel`, `recording-focus` (860×538), `recording-transcript`, `story-*`; windows: `telephony-ivr`,
+   `telephony-groups`, `telephony-call`, `roles` (the settings pane), `temp-room`, `aitask`; `rail`, `phone-canvas`.
+   The chat scenes show the pinned request, a reply with a quote, a voice note, a sticker and the APP-7 card; the telephony
+   frames run on the mock's exchange renamed in `v6-seeds.ts`; the retro canvas's vote is finished and its 04:32 timer paused
+   (a running one counts from the server clock, which the frozen page clock cannot follow).
+4. `pnpm -F @calaba/landing assets` — `scripts/assets.mjs` crops (CSS px at the top of the script, equal to
+   `src/lib/screens.ts`), writes `public/screens/<lang>/<name>@2x.webp`, `<name>.webp` (1x), `<name>-720.webp`
+   (phones, scenes wider than 720) and, for a crop with `focus`, `<name>-focus@2x.webp` / `<name>-focus.webp`, each ≤ 300 KB,
+   and `public/og/<lang>.png` (1200×630). `focus.own` means the rectangle is cut from the `<scene>-focus-<locale>@2x.png`
+   capture, otherwise from the scene's own crop (a scene without a raw capture keeps its committed files and only gets its
+   focus from the committed @2x). `--only=sipdial,webapps` regenerates just those, `--lang=ru` one language,
+   `--strict` fails on a missing capture. A crop with `from: '<scene>'` (the catalogue tiles `voice-panel`, `kanban-panel`,
+   `timeline-panel`, `taskhistory-panel`, `findtime-panel`, `disk-panel`, `mail-panel`, `notifyrelay-panel`, `webapps-panel`,
+   `bot-card`, `phone-call-panel`) is cut out of that scene's capture — or, without one, out of its committed @2x file — so a tile
+   can be re-cut without a new capture; every crop ends at a panel's edge in all four languages. The READMEs (`README*.md`) use the same files.
+5. `node scripts/assets.mjs --check` (no captures needed) — every scene of `src/lib/screens.ts` has its files in all four
+   languages with the sizes the table says, none over 300 KB, `CROPS` equals `SCREENS`.
+6. Rebuild and commit `public/screens` and `public/og`.
 
 ## TODO
 

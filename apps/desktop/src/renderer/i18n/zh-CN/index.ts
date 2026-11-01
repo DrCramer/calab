@@ -48,8 +48,12 @@ import { zhTemp } from './temp';
 import { zhContacts } from './contacts';
 import { zhSip } from './sip';
 import { zhPbx } from './pbx';
+import { zhTelephony } from './telephony';
+import { zhTelephonySettings } from './telephonySettings';
+import { zhTelephonyContacts } from './telephonyContacts';
 import { zhAi } from './ai';
 import { zhSmartTask } from './smartTask';
+import { zhTaskSearch } from './taskSearch';
 import { zhWebApps } from './webapps';
 
 /** Simplified Chinese UI strings (ADR-0022): same keys and placeholders as `ru`/`en`; glossary docs/i18n-glossary.md. */
@@ -69,8 +73,12 @@ export const zhCN: Dict = {
   ...zhContacts,
   ...zhSip,
   ...zhPbx,
+  ...zhTelephony,
+  ...zhTelephonySettings,
+  ...zhTelephonyContacts,
   ...zhAi,
   ...zhSmartTask,
+  ...zhTaskSearch,
   ...zhWebApps,
   ...zhDm,
   ...zhNotes,
@@ -394,6 +402,10 @@ export const zhCN: Dict = {
   // voice
   'voice.connecting': '连接中…',
   'voice.reconnecting': '重新连接中…',
+  'voice.audioBlocked': '你听不到其他人',
+  'voice.audioBlockedAction': '开启声音',
+  'voice.micRecovering': '等待麦克风',
+  'voice.micUnheard': '别人听不到你',
   'voice.connected': '语音已连接',
   'voice.blocked': '语音不可用',
   'voice.quality': '连接质量 · 延迟{rtt}毫秒 · 丢包{loss}%',
@@ -464,6 +476,7 @@ export const zhCN: Dict = {
   'voice.pttMac': 'macOS：需要"辅助功能"和"输入监控"权限。',
   'voice.rnnoise': '降噪',
   'voice.rnnoiseHint': '消除键盘敲击声和背景噪音。会增加 CPU 占用，默认关闭',
+  'voice.rnnoisePlatform': '此设备由系统自行降噪——再叠加一层降噪会使声音失真',
   'voice.red': '弱网抗性',
   'voice.redHint': '在较差的 Wi-Fi 或 VPN 下减少语音断续，但流量翻倍',
   'voice.myBitrate': '我的语音音质',
@@ -711,6 +724,7 @@ export const zhCN: Dict = {
   'unit.mb': '{n} MB',
   'unit.gb': '{n} GB',
   'date.todayAt': '今天{time}',
+  'date.yesterdayAt': '昨天{time}',
   'date.yesterday': '昨天',
   'perm.granted': '已允许',
   'perm.denied': '已拒绝',

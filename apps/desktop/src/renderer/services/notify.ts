@@ -1,5 +1,7 @@
 import { CallOutcome, PresenceStatus, levelNotifies, type Message, type Room } from '@calaba/protocol';
 import { holdNotification } from '../lib/notifyHold';
+import { toSource } from '../lib/notifyClick';
+import { useChatView } from '../features/chat/chatView';
 import { chatSound } from '../lib/chatSound';
 import { mentionsMe } from '../lib/mentions';
 import { achievementForMe } from '../lib/achievements';
@@ -107,16 +109,35 @@ export function onIncomingMessage(m: Message, workspaceId: string, visible: bool
   });
 }
 
+/**
+ * The title of a message's system notification (ADR-0141): the source first — macOS cuts a long
+ * title at its end — then the author: «#общий · Борис», ««Планёрка» · Борис» for a voice room; with
+ * more than one workspace, its name after the room: «#общий (Команда) · Борис». A DM is titled
+ * with its author alone (the chat is them).
+ */
+export function messageNoticeTitle(author: string, room: Pick<Room, 'name' | 'type'> | undefined, dm: boolean, wsName = ''): string {
+  if (!room || dm) return author;
+  const source = wsName ? `${roomLabel(room)} (${wsName})` : roomLabel(room);
+  return author ? `${source} · ${author}` : source;
+}
+
+/** The workspace's name when the user has more than one (a room name alone is ambiguous then). */
+function workspaceNameIfMany(workspaceId: string): string {
+  const all = useWorkspaces.getState().byId;
+  return workspaceId && Object.keys(all).length > 1 ? (all[workspaceId]?.ws.name ?? '') : '';
+}
+
 function showMessageNotification(m: Message, workspaceId: string, room: Room | undefined, dm: boolean): void {
   const author = memberName(workspaceId || null, m.authorId);
   const body = systemPreview(m, author) || previewText(workspaceId || null, m.content).slice(0, 180) || (m.attachments.length ? t('notify.attachment') : '');
   try {
-    // A DM is titled with its author alone (the chat is them).
-    const n = holdNotification(new Notification(`${author}${room && !dm ? ` · ${roomLabel(room)}` : ''}`, { body, silent: true, tag: m.roomId }));
-    n.onclick = () => {
-      window.focus();
+    const title = messageNoticeTitle(author, room, dm, workspaceNameIfMany(workspaceId));
+    const n = holdNotification(new Notification(title, { body, silent: true, tag: m.roomId }));
+    // The chat (switching the workspace) at the message itself.
+    n.onclick = toSource(() => {
       useUi.getState().openRoom(dm ? HOME : workspaceId, m.roomId);
-    };
+      useChatView.getState().requestJump(m.roomId, m.id);
+    });
   } catch {
     // notifications unavailable
   }

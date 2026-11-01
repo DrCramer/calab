@@ -273,10 +273,14 @@ func ValidAudioBitrate(kbps uint32) bool { return audioBitrates[kbps] }
 // MaxCameraLimit caps camera_limit (webcams at once in a voice room; 0 = cameras off).
 const MaxCameraLimit = 25
 
+// MaxJoinLeaveSoundMax caps join_leave_sound_max (others' join/leave cues play while the room
+// has at most that many people; 0 = never).
+const MaxJoinLeaveSoundMax = 99
+
 // mediaDB is a validated media override in its DB form (nil = workspace default).
 type mediaDB struct {
-	audio, streams, cameras *int32
-	preset                  *string
+	audio, streams, cameras, joinLeave *int32
+	preset                             *string
 }
 
 // mediaParams validates a media override and returns its DB form (nil = default).
@@ -312,6 +316,13 @@ func mediaParams(o *v1.RoomMediaOverride, field string) (mediaDB, error) {
 		}
 		v := int32(o.GetCameraLimit()) //nolint:gosec // validated above
 		m.cameras = &v
+	}
+	if o.JoinLeaveSoundMax != nil {
+		if o.GetJoinLeaveSoundMax() > MaxJoinLeaveSoundMax {
+			return m, httpx.Validation(field+".joinLeaveSoundMax", "join/leave sound limit must be 0..99")
+		}
+		v := int32(o.GetJoinLeaveSoundMax()) //nolint:gosec // validated above
+		m.joinLeave = &v
 	}
 	return m, nil
 }
@@ -398,19 +409,20 @@ func (h *Handlers) create(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		room, err = q.CreateRoom(r.Context(), sqlc.CreateRoomParams{
-			WorkspaceID:      wsID,
-			Type:             typ,
-			Name:             name,
-			Topic:            topic,
-			Position:         req.Position,
-			IsPrivate:        req.GetIsPrivate(),
-			AudioBitrateKbps: media.audio,
-			MaxStreamPreset:  media.preset,
-			MaxStreams:       media.streams,
-			CameraLimit:      media.cameras,
-			CategoryID:       category,
-			UserLimit:        int32(req.GetUserLimit()), //nolint:gosec // ≤ 99
-			CreatedBy:        ptr(auth.MustFromContext(r.Context()).UserID),
+			WorkspaceID:       wsID,
+			Type:              typ,
+			Name:              name,
+			Topic:             topic,
+			Position:          req.Position,
+			IsPrivate:         req.GetIsPrivate(),
+			AudioBitrateKbps:  media.audio,
+			MaxStreamPreset:   media.preset,
+			MaxStreams:        media.streams,
+			CameraLimit:       media.cameras,
+			JoinLeaveSoundMax: media.joinLeave,
+			CategoryID:        category,
+			UserLimit:         int32(req.GetUserLimit()), //nolint:gosec // ≤ 99
+			CreatedBy:         ptr(auth.MustFromContext(r.Context()).UserID),
 		})
 		if err != nil {
 			return err
@@ -600,7 +612,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		p.AudioBitrateKbps, p.MaxStreamPreset, p.MaxStreams, p.CameraLimit = m.audio, m.preset, m.streams, m.cameras
+		p.AudioBitrateKbps, p.MaxStreamPreset, p.MaxStreams, p.CameraLimit, p.JoinLeaveSoundMax = m.audio, m.preset, m.streams, m.cameras, m.joinLeave
 		if m.audio != nil {
 			cur, err := h.db.Q.GetRoom(r.Context(), roomID)
 			if err != nil {
@@ -660,7 +672,7 @@ func (h *Handlers) update(w http.ResponseWriter, r *http.Request) error {
 		if room.Type != "voice" && room.UserLimit > 0 {
 			return httpx.Validation("userLimit", "user limit applies to voice rooms only")
 		}
-		if room.Type != "voice" && (room.AudioBitrateKbps != nil || room.MaxStreamPreset != nil || room.MaxStreams != nil || room.CameraLimit != nil) {
+		if room.Type != "voice" && (room.AudioBitrateKbps != nil || room.MaxStreamPreset != nil || room.MaxStreams != nil || room.CameraLimit != nil || room.JoinLeaveSoundMax != nil) {
 			return httpx.Validation("mediaOverride", "media settings apply to voice rooms only")
 		}
 		pb, err = h.load(r.Context(), q, room)

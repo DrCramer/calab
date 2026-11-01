@@ -1,5 +1,6 @@
-import { desktopCapturer, nativeImage, shell, systemPreferences, webContents, type Session, type WebContents } from 'electron';
+import { desktopCapturer, nativeImage, screen, shell, systemPreferences, webContents, type Session, type WebContents } from 'electron';
 import log from 'electron-log/main';
+import { resolveScreenDisplays } from '../shared/annot';
 import { sameThumb, THUMB_DEFAULT, type ThumbRequest, type ThumbSize } from '../shared/captureThumb';
 import type { CaptureSelection, CaptureSource, ScreenAccess } from '../shared/ipc';
 import { loopbackDevice, systemAudioSupport as systemAudioSupportFor, type SystemAudioSupport } from './systemAudio';
@@ -44,6 +45,7 @@ export async function listSources(req: ThumbRequest = { screen: THUMB_DEFAULT, w
   const sources = sameThumb(req.screen, req.window)
     ? await get(['screen', 'window'], req.screen)
     : (await Promise.all([get(['screen'], req.screen), get(['window'], req.window)])).flat();
+  const displayOf = screenDisplays(sources);
   return sources.map((s) => {
     // Typed as always present, but null for screens and windows without an icon.
     const ic = s.appIcon as Electron.NativeImage | null;
@@ -52,10 +54,39 @@ export async function listSources(req: ThumbRequest = { screen: THUMB_DEFAULT, w
       name: s.name,
       kind: s.id.startsWith('screen:') ? 'screen' : 'window',
       thumbnail: s.thumbnail.isEmpty() ? '' : s.thumbnail.toDataURL(),
-      displayId: s.display_id,
+      displayId: displayOf.get(s.id) ?? s.display_id,
       appIcon: ic && !ic.isEmpty() ? ic.resize({ width: 32, height: 32 }).toDataURL() : '',
     };
   });
+}
+
+let loggedLayout = '';
+
+/**
+ * Screen sources → `screen.getAllDisplays()` ids for the annotation overlay (ADR-0028, issue
+ * #102): Windows may hand out an empty or foreign `display_id` (shared/annot
+ * `resolveScreenDisplays`). A layout whose ids did not all match is logged once.
+ */
+function screenDisplays(sources: readonly Electron.DesktopCapturerSource[]): Map<string, string> {
+  const screens = sources
+    .filter((s) => s.id.startsWith('screen:'))
+    .map((s) => {
+      const size = s.thumbnail.getSize();
+      return { id: s.id, displayId: s.display_id, thumbWidth: size.width, thumbHeight: size.height };
+    });
+  if (screens.length === 0) return new Map();
+  const displays = screen.getAllDisplays();
+  const resolved = resolveScreenDisplays(screens, displays);
+  const raw = screens.map((s) => `${s.id}=${s.displayId || '∅'}→${resolved.get(s.id) || '∅'}`).join(' ');
+  if (screens.some((s) => resolved.get(s.id) !== s.displayId) && raw !== loggedLayout) {
+    loggedLayout = raw;
+    log.info('[annot] screen sources need display mapping', {
+      platform: process.platform,
+      sources: raw,
+      displays: displays.map((d) => `${d.id} ${d.bounds.x},${d.bounds.y} ${d.bounds.width}x${d.bounds.height} @${d.scaleFactor}`).join('; '),
+    });
+  }
+  return resolved;
 }
 
 // ---------------------------------------------------------------- visual-test sources

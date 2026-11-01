@@ -1,5 +1,6 @@
 import { timestampFromMs, timestampMs } from '@bufbuild/protobuf/wkt';
 import { holdNotification } from '../lib/notifyHold';
+import { toSource } from '../lib/notifyClick';
 import type { MessageInitShape } from '@bufbuild/protobuf';
 import {
   AttendeeStatus,
@@ -38,7 +39,9 @@ import { dayKey, eventSpan, formatWhen, gridWindow, monthOf, occurrenceMs, viewe
 import { can, mayManageEvents, roomPerms } from '../lib/permissions';
 import { log } from '../lib/log';
 import { platform } from '../platform';
+import { joinPlan } from '../lib/joinConfirm';
 import { useCalendar } from '../stores/calendar';
+import { useJoinConfirm } from '../stores/joinConfirm';
 import { useFreeBusy } from '../stores/freebusy';
 import { prefs } from '../stores/prefs';
 import { useRooms } from '../stores/rooms';
@@ -69,7 +72,11 @@ async function fetchMonth(workspaceId: string, month: string): Promise<void> {
   const [from, to] = gridWindow(month);
   try {
     const r = await api.calendar.list(workspaceId, new Date(from), new Date(to));
-    useCalendar.setState((s) => ({ occ: replaceWindow(s.occ, workspaceId, from, to, r.events), months: s.months[id] ? s.months : { ...s.months, [id]: true } }));
+    useCalendar.setState((s) => ({
+      occ: replaceWindow(s.occ, workspaceId, from, to, r.events),
+      months: s.months[id] ? s.months : { ...s.months, [id]: true },
+      holidays: s.holidays[workspaceId] === r.holidayCalendar ? s.holidays : { ...s.holidays, [workspaceId]: r.holidayCalendar },
+    }));
   } catch (e) {
     // A guest (403) or a network error: nothing to show; the next open tries again.
     log.warn('calendar: list failed', e);
@@ -89,6 +96,23 @@ export function ensureMonth(workspaceId: string, month: string): void {
   useCalendar.setState((s) => ({ months: { ...s.months, [id]: true } }));
   const p = fetchMonth(workspaceId, month).finally(() => inflight.delete(id));
   inflight.set(id, p);
+}
+
+/**
+ * The holiday calendar of a workspace's new working-days series (ADR-0136) for the event dialog's
+ * hint: known from any listed month, else asked once with an empty one-minute list.
+ */
+export function ensureHolidayCalendar(workspaceId: string): void {
+  if (cal().holidays[workspaceId] !== undefined || inflight.has(workspaceId)) return;
+  const now = Date.now();
+  const p = api.calendar
+    .list(workspaceId, new Date(now), new Date(now + 60_000))
+    .then(
+      (r) => useCalendar.setState((s) => ({ holidays: { ...s.holidays, [workspaceId]: r.holidayCalendar } })),
+      (e: unknown) => log.warn('calendar: holiday calendar failed', e),
+    )
+    .finally(() => inflight.delete(workspaceId));
+  inflight.set(workspaceId, p);
 }
 
 const refetchTimers = new Map<string, number>();
@@ -270,7 +294,8 @@ export function onEventReminder(v: CalendarEventReminder): void {
   }
   const room = ev.roomId ? useRooms.getState().byId[ev.roomId] : undefined;
   const text = reminderText(v.minutes, ev.title, room?.name ?? '');
-  const act = room ? (): void => goToRoom(ev) : (): void => openEvent(ev);
+  // A click never joins by itself: it asks first (features/calendar/JoinConfirm).
+  const act = room ? (): void => requestJoin(ev) : (): void => openEvent(ev);
   notifyReminder(text, room ? t('cal.goToRoom') : t('cal.openEvent'), `event:${occKey(ev)}:${v.minutes}`, act);
 }
 
@@ -290,10 +315,7 @@ function remindExternal(minutes: number, ev: WireExternalEvent): void {
 function notifyReminder(text: string, action: string, tag: string, act: () => void): void {
   try {
     const n = holdNotification(new Notification(text, { body: action, tag }));
-    n.onclick = () => {
-      window.focus();
-      act();
-    };
+    n.onclick = toSource(act);
   } catch {
     // notifications unavailable: the toast below still says it
   }
@@ -303,7 +325,20 @@ function notifyReminder(text: string, action: string, tag: string, act: () => vo
 
 // ---------------------------------------------------------------- navigation
 
-/** «Перейти»: the meeting's room, joining its voice (unless already there). */
+/**
+ * A notification (system or toast) led to the meeting's room: ask «Войти в комнату?» before joining
+ * (owner, 29.10). Already in that room — just show it, nothing to join or ask.
+ */
+export function requestJoin(ev: CalendarEvent): void {
+  if (!ev.roomId) return;
+  if (joinPlan({ roomId: useVoice.getState().roomId, call: useVoice.getState().call }, ev.roomId) === 'here') {
+    goToRoom(ev);
+    return;
+  }
+  useJoinConfirm.getState().ask(ev);
+}
+
+/** «Перейти»: the meeting's room, joining its voice. A deliberate button only. */
 export function goToRoom(ev: Pick<CalendarEvent, 'workspaceId' | 'roomId'>): void {
   if (!ev.roomId) return;
   useUi.getState().openRoom(ev.workspaceId, ev.roomId);

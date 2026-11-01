@@ -5,7 +5,7 @@ import { useSession } from '../stores/session';
 import { usePrefs } from '../stores/prefs';
 import { useVoice } from '../stores/voice';
 import { useCall } from '../stores/call';
-import { SessionAuthorityKind } from '@calaba/protocol';
+import { CallState, PushProvider, SessionAuthorityKind, type Call } from '@calaba/protocol';
 vi.mock('../platform', () => ({ platform: { auth: { onLoggedOut: () => () => undefined } } }));
 
 const state: HostNotificationState = { permission: 'granted', appId: 'dev.calab.test', environment: 'development',
@@ -15,7 +15,7 @@ function harness(initial: HostNotificationState = state) {
  const capability: HostNotificationsCapability = { state: vi.fn().mockResolvedValue(initial), subscribe: () => () => undefined, clear: vi.fn(), acknowledge: vi.fn() };
  const api: HostPushApi = { capabilities: vi.fn().mockResolvedValue([{ appId: state.appId, environment: state.environment }]),
   register: vi.fn().mockResolvedValue({ id: 'endpoint', version: 1n }), unregister: vi.fn().mockResolvedValue(undefined),
-  resolve: vi.fn().mockResolvedValue({ roomId: 'room', workspaceId: '' }), open: vi.fn() };
+  resolve: vi.fn().mockResolvedValue({ roomId: 'room', workspaceId: '' }), open: vi.fn(), call: vi.fn() };
  const controller = new HostPushController(capability, api);
  const start = async () => { controller.update({ session: 'first', mentions: true, all: false }); await Promise.resolve(); await controller.settled(); };
  return { controller, capability, api, start };
@@ -120,4 +120,28 @@ it('revokes a registration that completes while the same session disables alerts
  expect(h.api.unregister).toHaveBeenCalledWith({id:'endpoint',version:1n});
  h.controller.accept(state); await h.controller.settled();
  expect(h.api.unregister).toHaveBeenCalledTimes(2);
+});
+
+describe('Android FCM endpoint (ADR-0070/0071, Android)', () => {
+ const android: HostNotificationState = { permission: 'granted', provider: 'fcm', appId: 'dev.calab.test', environment: 'production',
+  installationId: '00000000-0000-0000-0000-000000000001', token: 'fcm-token:' + 'A1_-'.repeat(30) };
+ const fcmHarness = () => { const h = harness(android); vi.mocked(h.api.capabilities).mockResolvedValue([{ appId: 'dev.calab.test', environment: 'production' }]); return h; };
+ it('registers FCM with calls and keeps the endpoint for calls when message alerts are off', async () => {
+  const h = fcmHarness(); await h.start();
+  expect(h.api.capabilities).toHaveBeenCalledWith(PushProvider.FCM, expect.any(AbortSignal));
+  expect(h.api.register).toHaveBeenCalledOnce();
+  h.controller.update({ session: 'first', mentions: false, all: false }); await Promise.resolve(); await h.controller.settled();
+  expect(h.api.unregister).not.toHaveBeenCalled(); expect(h.api.register).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(h.api.register).mock.lastCall?.[1]).toMatchObject({ mentions: false, all: false });
+ });
+ it('a call tap rings or acts through the call service; only a plain tap opens the DM', async () => {
+  const call = { id: 'call', state: CallState.RINGING } as Call;
+  const h = fcmHarness(); vi.mocked(h.api.resolve).mockResolvedValue({ roomId: 'dm', workspaceId: '', call }); await h.start();
+  const answer = { ...tap(), action: 'answer' as const };
+  h.controller.accept({ ...android, tap: answer }); await h.controller.settled();
+  expect(h.api.call).toHaveBeenCalledWith(call, 'answer'); expect(h.api.open).not.toHaveBeenCalled(); expect(h.capability.acknowledge).toHaveBeenCalledWith(answer);
+  const plain = { ...tap(), eventId: '00000000-0000-0000-0000-000000000004' };
+  h.controller.accept({ ...android, tap: plain }); await h.controller.settled();
+  expect(h.api.open).toHaveBeenCalledWith('dm', ''); expect(h.api.call).toHaveBeenLastCalledWith(call, undefined);
+ });
 });

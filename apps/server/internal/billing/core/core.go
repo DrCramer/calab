@@ -82,6 +82,10 @@ type Hooks struct {
 	Committed func(ctx context.Context, acc sqlc.BillingAccount, planChanged bool)
 	// Guard checks the owner's plan transitions (ADR-0086; plans.Service in the wiring). nil: none.
 	Guard Guard
+	// PaymentCredited runs inside the credit's transaction right after a payment got its funding
+	// lot (once per payment): the Metrika purchase conversion (ADR-0135). It must only write
+	// rows of its own (no network, no account changes). nil: none.
+	PaymentCredited func(ctx context.Context, q *sqlc.Queries, acc sqlc.BillingAccount, pay sqlc.BillingPayment) error
 }
 
 // Guard checks an owner's plan transition inside the command's transaction (ADR-0086): Activate,

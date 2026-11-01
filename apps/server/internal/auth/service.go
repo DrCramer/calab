@@ -26,6 +26,7 @@ import (
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/identitypolicy"
 	"github.com/calaba/calaba/server/internal/mail"
+	"github.com/calaba/calaba/server/internal/metrika"
 	"github.com/calaba/calaba/server/internal/moderation"
 	"github.com/calaba/calaba/server/internal/pbconv"
 	"github.com/calaba/calaba/server/internal/perm"
@@ -68,6 +69,9 @@ type Service struct {
 	// Mail sends verification / reset codes (ADR-0023); disabled = no SMTP (addresses are
 	// then verified at registration). Set before serving.
 	Mail *mail.Service
+	// Conversions records the Metrika sign-up conversion of an account that came with a
+	// ClientID (ADR-0135), in the registration transaction. nil / disabled: none.
+	Conversions *metrika.Service
 	// OnEmailVerified runs after an account's address became verified (auto-join of pending
 	// email invitations, see workspaces.AcceptEmailInvites) and returns the joined workspaces.
 	// Optional.
@@ -414,6 +418,17 @@ func (s *Service) Register(ctx context.Context, req *v1.RegisterRequest, c Clien
 		}
 		if err != nil {
 			return err
+		}
+		// First-touch ad attribution and the sign-up conversion (ADR-0135): the account is
+		// usable at once (email confirmation is not the activation point), so creation counts.
+		if attr, ok := metrika.Attribution(req.GetAttribution()); ok {
+			attr.UserID = user.ID
+			if err := q.InsertUserAttribution(ctx, attr); err != nil {
+				return err
+			}
+			if err := s.Conversions.Signup(ctx, q, user.ID, attr.YmClientID, s.now()); err != nil {
+				return err
+			}
 		}
 		if gate != nil {
 			// A suspended workspace takes nobody in; a banned address stays out (item 32).

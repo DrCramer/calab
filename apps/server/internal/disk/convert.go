@@ -148,6 +148,7 @@ var activityKinds = map[string]v1.DiskActivityKind{
 	"share": v1.DiskActivityKind_DISK_ACTIVITY_KIND_SHARE, "link_on": v1.DiskActivityKind_DISK_ACTIVITY_KIND_LINK_ON,
 	"link_off": v1.DiskActivityKind_DISK_ACTIVITY_KIND_LINK_OFF, "trash": v1.DiskActivityKind_DISK_ACTIVITY_KIND_TRASH,
 	"restore": v1.DiskActivityKind_DISK_ACTIVITY_KIND_RESTORE, "delete": v1.DiskActivityKind_DISK_ACTIVITY_KIND_DELETE,
+	"edit": v1.DiskActivityKind_DISK_ACTIVITY_KIND_EDIT,
 }
 
 func activityProto(a sqlc.DiskActivity) *v1.DiskActivity {

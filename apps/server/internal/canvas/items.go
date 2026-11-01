@@ -18,6 +18,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
 	"github.com/calaba/calaba/server/internal/perm"
+	"github.com/calaba/calaba/server/internal/plans"
 )
 
 // PageMax bounds a listing page (canvas.proto ListCanvasItemsResponse).
@@ -221,6 +222,13 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) error {
 		ch, err := addable(r, q, ws, c, parent)
 		if err != nil {
 			return err
+		}
+		// The plan caps the live canvases (owner, 23.10: Free 3, Team 30, Business 100); folders are
+		// free. The tree lock (the kind's lock) is held.
+		if kind == kindCanvas {
+			if err := s.Plans.Check(ctx, q, ws, plans.KindCanvases, false); err != nil {
+				return err
+			}
 		}
 		pos, err := slot(ctx, q, ws, parent, uuid.Nil, nil)
 		if err != nil {
@@ -591,6 +599,15 @@ func (s *Service) restore(w http.ResponseWriter, r *http.Request) error {
 					}
 				}
 			}
+		}
+		// The canvases coming back take seats of the plan limit like new ones (ADR-0126 addendum
+		// 2026-10-23); a subtree without canvases restores even over the limit.
+		back, err := q.CountCanvasRestoreCanvases(ctx, id)
+		if err != nil {
+			return err
+		}
+		if err := s.Plans.CheckAdd(ctx, q, ws, plans.KindCanvases, false, back); err != nil {
+			return err
 		}
 		pos, err := slot(ctx, q, ws, parent, id, nil)
 		if err != nil {

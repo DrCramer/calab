@@ -3,7 +3,7 @@ import { WorkspaceRole } from '@calaba/protocol';
 import { DndContext, MouseSensor, TouchSensor, closestCenter, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { Ellipsis, GripVertical, Pin } from 'lucide-react';
 import { memo, useCallback, useMemo, type ReactNode } from 'react';
-import { BoardsActiveIcon, BoardsIdleIcon, CalendarActiveIcon, CalendarIdleIcon, CanvasActiveIcon, CanvasIdleIcon, DiskActiveIcon, DiskIdleIcon, PersonalActiveIcon, PersonalIdleIcon, TeamActiveIcon, TeamIdleIcon, WikiActiveIcon, WikiIdleIcon } from '../../assets/nav/icons';
+import { BoardsActiveIcon, BoardsIdleIcon, CalendarActiveIcon, CalendarIdleIcon, CanvasActiveIcon, CanvasIdleIcon, DiskActiveIcon, DiskIdleIcon, PersonalActiveIcon, PersonalIdleIcon, PhoneActiveIcon, PhoneIdleIcon, TeamActiveIcon, TeamIdleIcon, WikiActiveIcon, WikiIdleIcon } from '../../assets/nav/icons';
 import { CountBadge, cx } from '../../components/ui';
 import { plural, t } from '../../i18n';
 import { haptics } from '../../lib/haptics';
@@ -18,6 +18,8 @@ import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useWorkspaces } from '../../stores/workspaces';
 import { ProfileTabIcon } from './PhoneProfile';
+import { useSipJournal } from '../../stores/sipJournal';
+import { useTelephonyVisible } from '../telephony/access';
 
 /**
  * The phone's bottom tab bar (ADR-0073 §1, ADR-0095 + addendum 2026-10-14): four pinned tabs and
@@ -51,6 +53,8 @@ export function tabLabel(tab: PhoneTab): string {
       return t('mobile.tabWiki');
     case 'canvas':
       return t('canvas.section');
+    case 'telephony':
+      return t('tel.section');
     case 'profile':
       return t('mobile.profile');
   }
@@ -73,6 +77,8 @@ const TabIcon = memo(function TabIcon({ tab, active, cls }: { tab: PhoneTab; act
       return active ? <WikiActiveIcon className={cls} /> : <WikiIdleIcon className={cls} />;
     case 'canvas':
       return active ? <CanvasActiveIcon className={cls} /> : <CanvasIdleIcon className={cls} />;
+    case 'telephony':
+      return active ? <PhoneActiveIcon className={cls} /> : <PhoneIdleIcon className={cls} />;
     case 'profile':
       return <ProfileTabIcon active={active} />;
   }
@@ -86,14 +92,17 @@ export function TabBar({ tab }: { tab: PhoneTab }): ReactNode {
   const full = useWorkspaces((s) => s.order.some((id) => s.byId[id] && s.byId[id].role !== WorkspaceRole.GUEST));
   const pinned = usePrefs((s) => s.phonePinnedTabs);
   const order = usePrefs((s) => s.phoneTabOrder);
+  // «Телефония» (ADR-0137 §5, §7): only where telephony is connected and mine — in «Ещё», pinnable.
+  const telephony = useTelephonyVisible(useBadgeWorkspace());
   const available = useMemo(
     () =>
       PHONE_TABS.filter((x) => {
         if (x === 'dms') return !guest;
         if (x === 'boards' || x === 'calendar' || x === 'disk' || x === 'wiki' || x === 'canvas') return full && !guest;
+        if (x === 'telephony') return telephony && !guest;
         return true;
       }),
-    [guest, full],
+    [guest, full, telephony],
   );
   const { bar, more } = useMemo(() => barTabs(pinned, available, order), [pinned, available, order]);
   const hidden = useMemo(() => available.filter((x) => !bar.includes(x)), [available, bar]);
@@ -300,12 +309,20 @@ function useBadge(tabs: readonly PhoneTab[]): Badge {
     return n > 0 ? n : unread ? UNREAD_DOT : 0;
   });
   const dms = useRooms((s) => (wantDms ? dmBadge(s) : 0));
+  const wsId = useBadgeWorkspace();
+  const boards = useBoards((s) => (wantBoards && wsId ? unreadCount(s, wsId) : 0));
+  // «Телефония»: my missed calls of the open workspace (ADR-0137 §7).
+  const wantTel = tabs.includes('telephony');
+  const tel = useSipJournal((s) => (wantTel && wsId ? (s.missed[wsId] ?? 0) : 0));
+  const count = Math.max(chats, 0) + dms + boards + tel;
+  return count > 0 ? count : chats === UNREAD_DOT ? UNREAD_DOT : 0;
+}
+
+/** The workspace of the per-workspace tabs («Доски», «Телефония»): the open one, else the first. */
+function useBadgeWorkspace(): string | null {
   const open = useUi((s) => (s.activeWorkspaceId === HOME ? null : s.activeWorkspaceId));
   const first = useWorkspaces((s) => s.order[0] ?? null);
-  const wsId = open ?? first;
-  const boards = useBoards((s) => (wantBoards && wsId ? unreadCount(s, wsId) : 0));
-  const count = Math.max(chats, 0) + dms + boards;
-  return count > 0 ? count : chats === UNREAD_DOT ? UNREAD_DOT : 0;
+  return open ?? first;
 }
 
 /** A tab's badge: a count on the icon corner (or inline in a card row), or a dot. A leaf with its own subscription. */
@@ -323,7 +340,9 @@ function BadgeOf({ tabs, inline = false, plate = false }: { tabs: readonly Phone
           ? t('dm.homeUnread', { n: count })
           : only === 'boards'
             ? plural('boards.unreadCount', count)
-            : `${t('ws.unread')}: ${count}`;
+            : only === 'telephony'
+              ? plural('tel.missedCount', count)
+              : `${t('ws.unread')}: ${count}`;
   if (inline) {
     return count > 0 ? (
       <CountBadge count={count} phone role="img" aria-label={label} />

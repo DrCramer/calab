@@ -1,17 +1,20 @@
-import { ChevronRight, RefreshCw, TriangleAlert } from 'lucide-react';
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { ArrowUp, ChevronRight, Plus, RefreshCw, TriangleAlert, X } from 'lucide-react';
+import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { confirmAction } from '../../components/Confirm';
 import { PlanLock } from '../../components/PlanLock';
+import { PickerPopover } from '../../components/picker/Picker';
+import type { PickerGroup } from '../../components/picker/pickerModel';
 import { useSettingsNav } from '../../components/SettingsWindow';
-import { Button, Card, Field, Input, PasswordInput, Row, Segmented, Select, Spinner, Toggle, cx } from '../../components/ui';
+import { Button, Card, Field, IconButton, Input, PasswordInput, Row, Segmented, Select, Spinner, Toggle, cx } from '../../components/ui';
 import { t, useLocale } from '../../i18n';
 import { errorText } from '../../lib/api/errors';
 import type { WorkHours } from '../../lib/calendar/freebusy';
 import { freebusyApi, workHoursOf, type CalDavAccount, type ShareLevel } from '../../lib/calendar/freebusyApi';
 import { formatMinutes, viewerZone, weekStart } from '../../lib/calendar/time';
+import { MAX_EXTRA_ZONES, ZONE_LABEL_MAX, moveUp, parseZonesSig, zoneCity, zoneOffsetLabel, zoneOptions, zoneTime, zonesSig, type ExtraZone, type ZoneOption } from '../../lib/calendar/zones';
 import { WORK_ENDS, WORK_STARTS, toggleWeekday, validateWorkHours, weekdayOrder, withStart } from '../../lib/calendar/workHours';
 import { dateTimeFormat } from '../../lib/format';
-import { loadCalDav, saveMyWorkHours, setCalDav, setExternalReminders, setShareLevel } from '../../services/freebusy';
+import { loadCalDav, saveCalendarZones, saveMyWorkHours, setCalDav, setExternalReminders, setShareLevel } from '../../services/freebusy';
 import { useFreeBusy } from '../../stores/freebusy';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
@@ -26,6 +29,7 @@ export function CalendarTab(): ReactNode {
   return (
     <>
       <WorkHoursCard />
+      <ZonesCard />
       <RemindersLink />
       <CalDavCard />
     </>
@@ -91,6 +95,122 @@ function WorkHoursCard(): ReactNode {
         </div>
       </Row>
     </Card>
+  );
+}
+
+// ---------------------------------------------------------------- extra time zones (board #85)
+
+type ZoneItem = ZoneOption;
+
+/**
+ * «Дополнительные часовые пояса»: up to two zones shown as muted hour columns next to the main
+ * scale (day and week views). Each row: the zone's label (or city), its offset and wall time now,
+ * an optional label, ↑ and ×; «Добавить часовой пояс» opens the one list picker over the IANA
+ * zones (search by city, zone name, localized name or offset). Saved to Me at once.
+ */
+function ZonesCard(): ReactNode {
+  const locale = useLocale();
+  const sig = useSession((s) => zonesSig(s.me?.settings?.calendarZones));
+  const zones = useMemo(() => parseZonesSig(sig), [sig]);
+  const [open, setOpen] = useState(false);
+  // The «now» of the rows: when the page opened (a settings page, no clock ticking).
+  const [now] = useState(Date.now);
+  // Built when the picker first opens (≈ 420 zones × Intl), not with the settings page.
+  const options = useMemo(() => (open ? zoneOptions(locale) : []), [open, locale]);
+  const groups = useMemo<PickerGroup<ZoneItem>[]>(
+    () => [{ id: 'zones', label: '', items: options.filter((o) => !zones.some((z) => z.zone === o.id)) }],
+    [options, zones],
+  );
+  const save = (next: readonly ExtraZone[]): void => void saveCalendarZones(next);
+  const onSelect = useCallback(
+    (item: ZoneItem) => {
+      setOpen(false);
+      void saveCalendarZones([...zones, { zone: item.id, label: '' }]);
+    },
+    [zones],
+  );
+  const renderItem = useCallback(
+    (item: ZoneItem, active: boolean) => (
+      <>
+        <span className="min-w-0 flex-1 truncate">
+          {item.city}
+          {item.name && item.name !== item.city ? <span className={cx('ml-1.5', active ? null : 'text-muted')}>{item.name}</span> : null}
+        </span>
+        <span className={cx('shrink-0 text-caption tabular-nums', active ? null : 'text-muted')}>
+          {item.offsetLabel} · {zoneTime(now, item.id, locale)}
+        </span>
+      </>
+    ),
+    [locale, now],
+  );
+  const main = viewerZone();
+  return (
+    <Card title={t('fb.tz.title')} footer={t('fb.tz.hint')}>
+      <Row label={t('fb.tz.main')} hint={t('fb.tz.mainHint', { zone: main })}>
+        <span className="text-caption tabular-nums text-muted">{t('fb.tz.now', { offset: zoneOffsetLabel(main, now), time: zoneTime(now, main, locale) })}</span>
+      </Row>
+      {zones.map((z, i) => (
+        <ZoneRow key={z.zone} zone={z} first={i === 0} now={now} onLabel={(label) => save(zones.map((x, j) => (j === i ? { ...x, label } : x)))} onUp={() => save(moveUp(zones, i))} onRemove={() => save(zones.filter((_, j) => j !== i))} />
+      ))}
+      {zones.length < MAX_EXTRA_ZONES ? (
+        <div className="px-3 py-2">
+          <PickerPopover
+            groups={groups}
+            renderItem={renderItem}
+            onSelect={onSelect}
+            placeholder={t('fb.tz.search')}
+            label={t('fb.tz.list')}
+            emptyText={t('fb.tz.empty')}
+            open={open}
+            onOpenChange={setOpen}
+            width={380}
+            testId="cal-zone-list"
+          >
+            <Button variant="ghost" size="sm" data-testid="cal-zone-add">
+              <Plus className="size-3.5" aria-hidden />
+              {t('fb.tz.add')}
+            </Button>
+          </PickerPopover>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+function ZoneRow({ zone, first, now, onLabel, onUp, onRemove }: { zone: ExtraZone; first: boolean; now: number; onLabel: (label: string) => void; onUp: () => void; onRemove: () => void }): ReactNode {
+  const locale = useLocale();
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? zone.label;
+  const city = zoneCity(zone.zone);
+  const commit = (): void => {
+    if (draft !== null && draft.trim() !== zone.label) onLabel(draft.trim());
+    setDraft(null);
+  };
+  return (
+    <Row label={zone.label || city} hint={`${zone.zone} · ${t('fb.tz.now', { offset: zoneOffsetLabel(zone.zone, now), time: zoneTime(now, zone.zone, locale) })}`}>
+      <Input
+        value={value}
+        onChange={(e) => setDraft(e.target.value.slice(0, ZONE_LABEL_MAX))}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Escape') setDraft(null);
+        }}
+        placeholder={city}
+        maxLength={ZONE_LABEL_MAX}
+        aria-label={t('fb.tz.labelOf', { zone: city })}
+        className="w-32"
+        data-testid="cal-zone-label"
+      />
+      {first ? null : (
+        <IconButton label={t('fb.tz.up', { zone: zone.label || city })} size="sm" onClick={onUp} data-testid="cal-zone-up">
+          <ArrowUp className="size-4" aria-hidden />
+        </IconButton>
+      )}
+      <IconButton label={t('fb.tz.remove', { zone: zone.label || city })} size="sm" onClick={onRemove} data-testid="cal-zone-remove">
+        <X className="size-4" aria-hidden />
+      </IconButton>
+    </Row>
   );
 }
 

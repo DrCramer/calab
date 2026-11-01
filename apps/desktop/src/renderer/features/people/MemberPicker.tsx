@@ -37,7 +37,8 @@ export function MemberPickRow({ item, active, trailing }: { item: MemberPickItem
           </span>
         ) : null}
       </span>
-      {item.note ? <span className={cx('shrink-0 text-caption', active ? 'opacity-75' : 'text-muted')}>{item.note}</span> : null}
+      {/* Full strength on the accent row: at 75 % the note fails the 4.5:1 contrast (axe). */}
+      {item.note ? <span className={cx('shrink-0 text-caption tabular-nums', !active && 'text-muted')}>{item.note}</span> : null}
       {trailing}
     </>
   );

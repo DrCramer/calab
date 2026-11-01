@@ -6,6 +6,7 @@ import { fromJson, type JsonValue } from '@bufbuild/protobuf';
 import { MeSchema, SessionAuthoritySchema } from '@calaba/protocol';
 import type { AuthSession, LogoutReason } from '../../shared/ipc';
 import { log } from '../lib/log';
+import { gatewayOnPower } from '../lib/powerGateway';
 import { useDms } from '../stores/dms';
 import { useNotes } from '../stores/notes';
 import { useRoomPreviews } from '../stores/roomPreviews';
@@ -67,8 +68,9 @@ export async function bootstrap(): Promise<void> {
     voice.resetPtt();
     if (ev === 'resume' || ev === 'unlock-screen') {
       // After sleep the socket is usually dead but not closed: reconnect right away. A screen
-      // lock alone keeps the network: reconnect only if the socket turns out dead.
-      if (ev === 'resume') reconnectGateway();
+      // lock alone — or the web's `online`, a network switch — keeps the session: reconnect only
+      // if the socket turns out dead (lib/powerGateway.ts).
+      if (gatewayOnPower(ev, platform.kind === 'web') === 'reconnect') reconnectGateway();
       else wakeGateway();
       if (useSession.getState().status === 'offline') void retryConnect();
       recheckTimeZone(); // a laptop may wake up in another zone (docs/09 #48)
@@ -208,6 +210,7 @@ export async function retryConnect(): Promise<void> {
 }
 
 export async function logout(allSessions = false): Promise<void> {
+  voice.leaveParked(); // first: leaving a phone call would resume a parked room (ADR-0133)
   await voice.leave(false);
   await platform.auth.logout(allSessions);
   await endSession('logout');
@@ -220,6 +223,7 @@ async function endSession(reason: LogoutReason): Promise<void> {
   resetIdentityGate();
   stopGateway();
   resetGatewaySubscriptions();
+  voice.leaveParked();
   await voice.leave(false);
   useWorkspaces.getState().reset();
   useRooms.getState().reset();

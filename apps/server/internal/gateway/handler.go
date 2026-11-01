@@ -532,6 +532,23 @@ func (h *Hub) buildReady(ctx context.Context, s *Session, uid uuid.UUID) (*v1.Re
 	for _, p := range prs {
 		ready.PeerReads = append(ready.PeerReads, &v1.PeerRead{RoomId: p.RoomID.String(), LastReadMessageId: p.LastReadMessageID.String()})
 	}
+	// ADR-0140 §5: own messages before this have no ticks.
+	from, err := db.FeatureEpoch(ctx, h.db.Q, db.EpochReadReceipts)
+	if err != nil {
+		return nil, err
+	}
+	ready.ReadReceiptsFrom = from.String()
+	// ADR-0151: the client counts its bots' tasks as its own for author rights.
+	if !u.IsBot && !u.IsGuest {
+		bots, err := h.db.Q.ListOwnedBotIDs(ctx, uid)
+		if err != nil {
+			return nil, err
+		}
+		ready.MyBotIds = make([]string, len(bots))
+		for i, b := range bots {
+			ready.MyBotIds[i] = b.String()
+		}
+	}
 	ns, err := h.db.Q.ListRoomNotificationSettings(ctx, sqlc.ListRoomNotificationSettingsParams{UserID: uid, RoomIds: append(visible, dmRooms...)})
 	if err != nil {
 		return nil, err

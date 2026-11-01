@@ -7,10 +7,10 @@
 #
 # The service talks to livekit-server over Valkey (psrpc, the same DB 1 as LiveKit and egress)
 # and joins rooms over the loopback websocket as the phone line's participant.
-ws_url: ws://127.0.0.1:7880
+ws_url: ws://127.0.0.1:17880
 
 redis:
-  address: 127.0.0.1:6379
+  address: 127.0.0.1:16379
   db: 1
   password: "${REDIS_PASSWORD}"
 

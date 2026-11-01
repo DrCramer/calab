@@ -1,3 +1,4 @@
+import { isCalendarLink } from '../shared/calendarLink';
 import { readFileSync } from 'node:fs';
 import { cpus, hostname } from 'node:os';
 import { join } from 'node:path';
@@ -23,6 +24,7 @@ import {
   recoverIdentity,
   beginSso,
   cancelSso,
+  currentServerUrl,
   invalidateSsoServer,
   forceRefresh,
   getAccessToken,
@@ -59,11 +61,14 @@ import { hideTip, showTip } from './tipOverlay';
 import { parseTipPayload } from './tipOverlayPolicy';
 import { appViewShown, forgetApp, hideApp, navigateApp, openApp, openAppExternal, setAppBounds } from './webApps';
 import { parseAppId, parseBounds } from './webAppPolicy';
-import { openLink } from './ownLink';
-import { getMainWindow, isOwnPage, isShown } from './windows';
+import { APP_ORIGINS, openLink } from './ownLink';
+import { getMainWindow, isOwnPage, isShown, showMainWindow } from './windows';
 import { mailRequest } from './mail';
+import { setOfficeFrame } from './officeFrame';
+import { OFFICE_KINDS, learnOfficeFrom, warmOffice, type OfficeKind } from './officeWarm';
 
 const VISUAL_TEST = process.env['CALABA_VISUAL_TEST'] === '1';
+const VISUAL_VIBRANCY = process.env['CALABA_VISUAL_VIBRANCY'] === '1';
 
 /** Only our own renderer may call privileged IPC. */
 function assertTrusted(e: IpcMainInvokeEvent): void {
@@ -158,6 +163,19 @@ function mediaAccess(kind: 'microphone' | 'screen' | 'camera'): string {
 
 type Handler = (e: IpcMainInvokeEvent, arg: unknown) => unknown;
 
+/** The Document Server URL of the server this app is logged in to (GET /api/office/capabilities); '' when the editor is off. */
+async function officeDocsUrl(): Promise<string> {
+  const token = await getAccessToken();
+  if (!token) return '';
+  const res = await apiSession().fetch(`${currentServerUrl()}/api/office/capabilities`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) return '';
+  const body = (await res.json()) as { enabled?: unknown; docsUrl?: unknown };
+  return body.enabled === true && typeof body.docsUrl === 'string' ? body.docsUrl : '';
+}
+
 function handle(channel: string, fn: Handler): void {
   ipcMain.handle(channel, (e, arg: unknown) => {
     assertTrusted(e);
@@ -220,12 +238,14 @@ export function registerIpc(): void {
     fakeMedia: process.env['CALABA_FAKE_MEDIA'] === '1',
     forceRelay: process.env['CALABA_FORCE_RELAY'] === '1',
     visualTest: VISUAL_TEST,
+    visualVibrancy: VISUAL_VIBRANCY,
     systemAudioLoopback: systemAudioSupport(),
     micAccess: mediaAccess('microphone'),
     screenAccess: mediaAccess('screen'),
     // app.getLocale() follows --lang (tests pin it to ru); the system list covers languages
     // Chromium has no UI pack for (ADR-0022: kk, be → ru; the app ships only our packs).
     locales: systemLocales(app.getLocale(), app.getPreferredSystemLanguages(), app.commandLine.hasSwitch('lang')),
+    appOrigins: [...APP_ORIGINS],
   }));
   handle(IPC.appSetStrings, (_e, a) => {
     const s = parseMainStrings(a);
@@ -263,6 +283,7 @@ export function registerIpc(): void {
   });
   handle(IPC.appOpenExternal, (_e, a) => {
     const url = str(a, 2048).trim();
+    if (isCalendarLink(url, currentServerUrl())) return shell.openExternal(url);
     // http(s) pages and mailto: (the plan contact, ADR-0024); never file:, custom schemes, etc.
     if (!/^(https?:\/\/|mailto:[^\s/]+@)/i.test(url)) throw new Error('only http(s) and mailto: links');
     // Our own in-app routes (/t/KEY …) open in the app, not the browser (CBF-63).
@@ -335,6 +356,13 @@ export function registerIpc(): void {
       if (process.platform === 'darwin') app.dock?.bounce('informational');
       else win.flashFrame(true);
     }
+  });
+
+  // A notification click (ADR-0141): window.focus() in the page neither shows a window the close
+  // button hid nor restores a minimized one. Only the main window asks.
+  handle(IPC.appShowWindow, (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    if (win && win === getMainWindow()) showMainWindow();
   });
 
   handle(IPC.appSetBadge, (_e, a) => {
@@ -461,6 +489,18 @@ export function registerIpc(): void {
     hideTip();
   });
   // ---- mail (ADR-0088 §7): validated and relayed to the engine utilityProcess ----
+  // ---- office editor (ADR-0143 §11): the frame's origin comes from the server, not the renderer ----
+  handle(IPC.officeFrame, async (e, a) => {
+    const origin = await setOfficeFrame(e.sender, a === true, officeDocsUrl);
+    learnOfficeFrom(origin);
+    return origin;
+  });
+  handle(IPC.officeWarm, (_e, a) => {
+    const { reason, kinds } = (a ?? {}) as { reason?: unknown; kinds?: unknown };
+    if (reason !== 'disk' && reason !== 'ready') return;
+    const ks = Array.isArray(kinds) ? OFFICE_KINDS.filter((k: OfficeKind) => kinds.includes(k)) : [];
+    return warmOffice(reason, ks, officeDocsUrl);
+  });
   handle(IPC.mailRequest, (_e, a) => mailRequest(a));
   handle(IPC.systemOpenPrivacySettings, (_e, pane) => {
     if (process.platform === 'win32') {

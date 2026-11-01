@@ -633,9 +633,19 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 	case *v1.DispatchEvent_BotCreate, *v1.DispatchEvent_BotUpdate, *v1.DispatchEvent_BotDelete:
 		// Bots (ADR-0031) are managed by MANAGE_BOTS members (ADR-0048); the owner of a bot sees its
 		// events too (the owner's own devices also get BOT_UPDATE on the user channel).
-		owner := parseID(ev.GetBotCreate().GetBot().GetOwnerUserId())
+		bot := ev.GetBotCreate().GetBot()
 		if b := ev.GetBotUpdate().GetBot(); b != nil {
-			owner = parseID(b.GetOwnerUserId())
+			bot = b
+		}
+		owner := parseID(bot.GetOwnerUserId())
+		// ADR-0151: the owner is an author of the bot's tasks (create-only rule) in the bot's home
+		// workspace only; a bot that left (or was deleted) no longer makes its owner one here —
+		// fail closed until a reload.
+		if id := parseID(bot.GetUser().GetId()); id != uuid.Nil && owner != uuid.Nil && parseID(bot.GetWorkspaceId()) == wid {
+			st.setBotOwner(id, owner)
+		}
+		if d := ev.GetBotDelete(); d != nil {
+			st.setBotOwner(parseID(d.GetBotUserId()), uuid.Nil)
 		}
 		for _, s := range sessions {
 			if (st.members[s.user].Workspace().Has(perm.ManageBots) && st.role(s.user) != perm.RoleGuest) || (owner != uuid.Nil && s.user == owner) {
@@ -654,6 +664,24 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 		// (MANAGE_INTEGRATIONS, never a guest); bots read the endpoint themselves.
 		for _, s := range sessions {
 			if !s.bot && st.members[s.user].Workspace().Has(perm.ManageIntegrations) && st.role(s.user) != perm.RoleGuest {
+				s.dispatchEnc(id, shared)
+			}
+		}
+	case *v1.DispatchEvent_SipJournalEntry:
+		// The call journal (ADR-0137 §1): as REST GET …/sip/journal — VIEW_JOURNALS with the
+		// call's room visible (if it has one), or a party of the call; never guests, bots read REST.
+		entry := e.SipJournalEntry.GetEntry()
+		parties := map[uuid.UUID]bool{}
+		for _, p := range entry.GetParties() {
+			parties[parseID(p.GetUserId())] = true
+		}
+		rid := parseID(entry.GetCall().GetRoomId())
+		for _, s := range sessions {
+			if s.bot || st.role(s.user) == perm.RoleGuest {
+				continue
+			}
+			journal := st.members[s.user].Workspace().Has(perm.ViewJournals) && (rid == uuid.Nil || st.bits(rid, s.user).Has(perm.ViewRoom))
+			if journal || parties[s.user] {
 				s.dispatchEnc(id, shared)
 			}
 		}

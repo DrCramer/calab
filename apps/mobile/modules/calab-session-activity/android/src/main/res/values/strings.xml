@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="calab_push_app_name" translatable="false">Calab</string>
+  <string name="calab_push_new_notification">New message</string>
+  <string name="calab_push_channel_messages">Messages</string>
+  <string name="calab_push_channel_calls">Calls</string>
+  <string name="calab_push_incoming_call">Incoming call</string>
+  <string name="calab_push_answer">Answer</string>
+  <string name="calab_push_decline">Decline</string>
+</resources>

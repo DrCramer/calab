@@ -1,0 +1,94 @@
+syntax = "proto3";
+package calaba.v1;
+
+// Office editing in ONLYOFFICE Docs (ADR-0143, off by default: OFFICE_ENABLED). The editing and
+// recalculation run in the user's browser (the Document Server JS API); the API signs the editor
+// configuration, serves the file to the Document Server by a short-lived signed URL and stores
+// what the Document Server sends back as a new version of the same Disk item.
+
+enum OfficeMode {
+  OFFICE_MODE_UNSPECIFIED = 0;
+  OFFICE_MODE_VIEW = 1; // DISK_VIEW only, a view-only or legacy format, an attachment, trash, read-only workspace, phone
+  OFFICE_MODE_EDIT = 2; // DISK_VIEW | DISK_WRITE on the item and a format edited in place
+}
+
+// What the editor does with a format: the server's one map (ADR-0143 «Форматы»); the client
+// asks GET /api/office/capabilities and never keeps a list of its own.
+enum OfficeCapability {
+  OFFICE_CAPABILITY_UNSPECIFIED = 0; // no editor: opens as before
+  OFFICE_CAPABILITY_EDIT = 1; // edited in place: every save is a new version of the same item
+  OFFICE_CAPABILITY_VIEW = 2; // view only (pdf)
+  // A legacy format (doc, xls, ppt): opens read-only; «Сохранить как <convert_to>»
+  // (POST /api/office/convert) makes a NEW item next to it, the original is never written.
+  OFFICE_CAPABILITY_CONVERT = 3;
+}
+
+// One extension of the map.
+message OfficeFormat {
+  string extension = 1; // lower case, without the dot
+  string document_type = 2; // the Document Server's documentType: word, cell, slide, pdf
+  OfficeCapability capability = 3;
+  string convert_to = 4; // CONVERT: the extension «Сохранить как» produces (docx, xlsx, pptx)
+  // EDIT in a format that is not OOXML (odt, ods, odp, rtf, csv, txt): the Document Server saves
+  // it back in the same format but may drop what that format cannot hold (its «lossy-edit»).
+  bool lossy = 5;
+}
+
+// GET /api/office/capabilities: whether the editor is on and the format map.
+message OfficeCapabilitiesResponse {
+  bool enabled = 1; // false: OFFICE_ENABLED is off; formats is empty then
+  repeated OfficeFormat formats = 2;
+  uint64 max_size_bytes = 3; // files above this do not open (OFFICE_MAX_SIZE_MB)
+  string docs_url = 4; // the Document Server origin (the frame's postMessage target)
+  // The editor's uiTheme for the app's dark and light themes (OFFICE_THEME_DARK / _LIGHT): the
+  // open editor follows a theme switch of the app.
+  string theme_dark = 5;
+  string theme_light = 6;
+}
+
+// GET /api/office/config?item={diskItemId}|file={fileId}&theme=dark|light&phone=0|1&lang=ru: the
+// editor of one Disk file (item) or of an attachment (file: a chat or task file, always view).
+// 404 when the caller cannot read it (or the feature is off), 415 for a format without an
+// editor, 413 above max_size_bytes, 429 over the rate limit.
+message OfficeConfigResponse {
+  // Origin of the Document Server for the browser (postMessage target of the host page).
+  string docs_url = 1;
+  // The DocsAPI.DocEditor configuration as JSON, with its "token" (HS256 over the rest, the
+  // Document Server's JWT secret). Passed to the editor as is: the client never edits it.
+  string config_json = 2;
+  OfficeMode mode = 3;
+  // The co-editing key: the same for everyone who opens the item until its session ends.
+  string key = 4;
+  // The Calab host page on the Document Server's origin (infra/office/calab-editor.html): the
+  // client frames it on «Открыть» and removes the frame on close; the page loads the Document
+  // Server's api.js, so its JS never runs in the Calab page.
+  string host_url = 5;
+  OfficeFormat format = 6; // the opened file's entry of the map
+  string item_id = 7; // the Disk item (empty for an attachment)
+  string file_id = 8; // the file opened: the item's current file, or the attachment
+}
+
+// «Сохранить как docx/xlsx/pptx» of a format with convert_to (CONVERT): the Document Server
+// converts the file; the result is a NEW Disk item with its own id, the source is never written.
+// POST /api/disk/items/{id}/office/convert (no body): next to the item, DISK_VIEW on it and
+// DISK_WRITE on its folder. POST /api/workspaces/{id}/office/convert (this body): an attachment the
+// caller may read into folder parent_id of the workspace (DISK_WRITE there). 201 DiskItemResponse.
+message OfficeConvertRequest {
+  string file_id = 1;
+  string parent_id = 2; // empty = the root
+}
+
+// «Создать» in the Disk (ADR-0143): a blank document, spreadsheet or presentation from the
+// server's templates, filed like an upload (quota, DISK_WRITE on the folder, the journal's
+// «upload», a taken name gets « (2)»). POST /api/workspaces/{id}/office/create → 201
+// DiskItemResponse. 404 while the editor is off.
+message CreateOfficeFileRequest {
+  string parent_id = 1; // empty = the root
+  string extension = 2; // docx, xlsx or pptx
+  // Without the extension; empty = «Новый документ» / «Новая таблица» / «Новая презентация»
+  // in lang. The server adds the extension.
+  string name = 3;
+  // The app language (ru, en, es, zh): the template's text language (the editor's spell check
+  // of new text) and the sheet name. Empty or unknown = ru.
+  string lang = 4;
+}

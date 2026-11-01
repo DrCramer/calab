@@ -12,6 +12,10 @@ import { RESERVE_DAYS, cabinetPhase, type CabinetPhase } from './model';
 export type PlanTier = Plan.FREE | Plan.TEAM | Plan.ENTERPRISE;
 export const TIERS: readonly PlanTier[] = [Plan.FREE, Plan.TEAM, Plan.ENTERPRISE];
 
+/** The `plan` of a `/plans?plan=` deep link (the landing's «Купить» buttons): `business` is the ENTERPRISE tier. */
+export type PlanLink = 'team' | 'business';
+export const PLAN_LINK_TIER: Readonly<Record<PlanLink, PlanTier>> = { team: Plan.TEAM, business: Plan.ENTERPRISE };
+
 /** The badge exists: a billing workspace (Workspace.billing state, every member) or an owner who may start billing. */
 export const badgeShown = (state: BillingState, selfServe: boolean): boolean => state !== BillingState.UNSPECIFIED || selfServe;
 
