@@ -1,6 +1,11 @@
+{
+	import log.caddy
+}
+
 :8080 {
+	# Preserve upstream's handling of identity and calendar credentials in URLs.
 	log {
-		output stdout
+		output discard
 	}
 	header {
 		Strict-Transport-Security "max-age=31536000"

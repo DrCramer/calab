@@ -29,6 +29,10 @@ Keep the existing secret values in `.env`. Do not copy `.env` into Git.
 Enable SSL and Force SSL for both hosts. Use HTTP/2. `Block Common Exploits` can stay on.
 The RTC host is a signaling WebSocket endpoint; it is not a media proxy.
 
+The bundled Caddy disables raw access logs and filters request URLs and headers from
+proxy error logs, matching upstream. Apply equivalent logging protection in NPM:
+identity and calendar-subscription URLs can contain credentials in their paths or queries.
+
 Do not create an ordinary NPM Proxy Host for `turn.cramerstation.ru`. LiveKit TURN is
 served directly by the host: DNS for `turn.cramerstation.ru` must point to the public IP,
 and the router forwards UDP 443 and TCP 5349 directly to the server. LiveKit terminates

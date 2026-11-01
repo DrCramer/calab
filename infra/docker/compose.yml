@@ -40,6 +40,7 @@ services:
       retries: 3
     volumes:
       - ./caddy/Caddyfile.npm:/etc/caddy/Caddyfile:ro
+      - ./caddy/log.caddy:/etc/caddy/log.caddy:ro
       - ../../web:/srv/web:ro
     logging: *logging
 

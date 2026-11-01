@@ -5,6 +5,7 @@
 port: 17880
 bind_addresses:
   - "${NPM_HOST_IP}"     # signal HTTP listener reachable from NPM's Docker bridge; media ports stay public
+  - "127.0.0.1"          # egress, SIP and IVR connect locally
 
 rtc:
   tcp_port: 7881
@@ -68,7 +69,7 @@ webhook:
     - http://${NPM_HOST_IP}:13000/api/rtc/webhook
 
 prometheus:
-  port: 6789              # 127.0.0.1 only (bind_addresses); scrape: see docs/06-deployment.md
+  port: 6789              # loopback and NPM bridge only (bind_addresses); do not expose publicly
 
 logging:
   level: info
