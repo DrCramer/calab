@@ -88,8 +88,9 @@ func Detached(ctx context.Context, fallback time.Duration) (context.Context, fun
 		d = b.left
 		b.mu.Unlock()
 	}
-	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), max(d, 0))
+	// Charge timeout construction too, so reaching its deadline always exhausts the budget.
 	start := time.Now()
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), max(d, 0))
 	return dctx, func() {
 		cancel()
 		if b != nil {
