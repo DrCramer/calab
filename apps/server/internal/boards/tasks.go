@@ -78,16 +78,18 @@ func (c *change) recordAs(ctx context.Context, q *sqlc.Queries, t taskRow, actor
 	b, a := enc(before), enc(after)
 	// ADR-0106: the request's own actor acting through a bot on its behalf is marked; other
 	// actors of the transaction (a rule, the server) are not.
+	// ADR-0156: so is the channel (MCP) of the request's own actor.
 	var via *uuid.UUID
-	if v := auth.ViaBot(ctx); v != nil && actor != nil && rule == nil {
+	var channel *string
+	if actor != nil && rule == nil {
 		if id, ok := auth.FromContext(ctx); ok && id.UserID == *actor {
-			via = v
+			via, channel = auth.ViaBot(ctx), auth.Channel(ctx)
 		}
 	}
 	// A repeated change of the field by the same user merges into his recent entry (ADR-0081):
 	// the journal keeps the first before and the last after; c.acts — rules, webhooks,
 	// notifications — still gets this change as it is.
-	replaced, first, merged, err := mergeTarget(ctx, q, t, actor, rule, via, kind, after)
+	replaced, first, merged, err := mergeTarget(ctx, q, t, actor, rule, via, channel, kind, after)
 	if err != nil {
 		return err
 	}
@@ -97,13 +99,13 @@ func (c *change) recordAs(ctx context.Context, q *sqlc.Queries, t taskRow, actor
 		if noOp(kind, first, a) { // back to where it was: no entry at all
 			c.journal = append(c.journal, journalEntry{task: t.ID, board: t.BoardID, replaced: replaced})
 			c.acts = append(c.acts, sqlc.TaskActivity{ID: replaced, TaskID: t.ID, BoardID: t.BoardID, ActorID: actor, Kind: kind,
-				Before: b, After: a, CreatedAt: time.Now(), ViaBotID: via})
+				Before: b, After: a, CreatedAt: time.Now(), ViaBotID: via, Via: channel})
 			return nil
 		}
 	}
 	row, err := q.InsertTaskActivity(ctx, sqlc.InsertTaskActivityParams{
 		TaskID: t.ID, BoardID: t.BoardID, ActorID: actor, Kind: kind, Before: stored, After: a, RuleID: rule,
-		ViaBotID: via,
+		ViaBotID: via, Via: channel,
 	})
 	if err != nil {
 		return err
@@ -957,7 +959,7 @@ func (s *Service) insertTask(r *http.Request, boardID uuid.UUID, acc perm.BoardA
 		if err != nil {
 			return err
 		}
-		if err := checkCreateGate(len(approvers), required, *st); err != nil {
+		if err := checkCreateGate(len(approvers), required, *st, b.ApprovalGateOff); err != nil {
 			return err
 		}
 		number, err := q.NextTaskNumber(r.Context(), boardID)
@@ -1506,7 +1508,8 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 			}
 			to, t.StatusID = x, sid
 		}
-		// APPROVALS off (ADR-0058 §3): the gate does not apply; the votes are kept.
+		// APPROVALS off (ADR-0058 §3) or the board's gate off (ADR-0160): the gate does not apply. A status
+		// change never touches the votes.
 		var overridden *Tally
 		if t.StatusID != old.StatusID && !approvalsOff {
 			tl, err := taskTally(r.Context(), q, old)
@@ -1516,7 +1519,7 @@ func (s *Service) updateTask(w http.ResponseWriter, r *http.Request) error {
 			if resets {
 				tl = tl.reset() // the same request resets the votes: they do not count
 			}
-			if err := checkApprovalGate(tl, from, to); err != nil {
+			if err := boardGate(r.Context(), q, old.BoardID, tl, from, to); err != nil {
 				if !req.GetOverrideApproval() {
 					return err
 				}
@@ -1857,14 +1860,14 @@ func (s *Service) moveBoard(r *http.Request, q *sqlc.Queries, tx pgx.Tx, t *task
 		return httpx.Conflict("the target board has no status")
 	}
 	// Approvers and votes move along; a task not approved may not land in COMPLETED (ADR-0049 §2)
-	// unless the target board has APPROVALS off (ADR-0058 §3). Other features may differ: the
+	// unless the target board has APPROVALS off (ADR-0058 §3) or its gate off (ADR-0160). Other features may differ: the
 	// fields stay and are just hidden there.
 	if !Disabled(dst.DisabledFeatures, v1.BoardFeature_BOARD_FEATURE_APPROVALS) {
 		tl, err := taskTally(r.Context(), q, *t)
 		if err != nil {
 			return err
 		}
-		if err := checkApprovalGate(tl, from, *to); err != nil {
+		if err := boardGate(r.Context(), q, dstID, tl, from, *to); err != nil { // the target board's setting
 			return err
 		}
 	}

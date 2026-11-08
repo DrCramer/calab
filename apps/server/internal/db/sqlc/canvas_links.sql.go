@@ -45,7 +45,7 @@ func (q *Queries) GetCanvasLink(ctx context.Context, canvasID uuid.UUID) (Canvas
 }
 
 const getCanvasLinkByCode = `-- name: GetCanvasLinkByCode :one
-SELECT l.code, l.canvas_id, l.created_by, l.created_at, l.expires_at, l.revoked_at, l.views, ci.id, ci.workspace_id, ci.parent_id, ci.kind, ci.name, ci.position, ci.owner_id, ci.restricted, ci.preview, ci.doc_size, ci.next_seq, ci.updated_by, ci.created_at, ci.updated_at, ci.trashed_at, ci.trashed_by, ci.trashed_root
+SELECT l.code, l.canvas_id, l.created_by, l.created_at, l.expires_at, l.revoked_at, l.views, ci.id, ci.workspace_id, ci.parent_id, ci.kind, ci.name, ci.position, ci.owner_id, ci.restricted, ci.preview, ci.doc_size, ci.next_seq, ci.updated_by, ci.created_at, ci.updated_at, ci.trashed_at, ci.trashed_by, ci.trashed_root, ci.emoji
 FROM canvas_links l
 JOIN canvas_item_heads ci ON ci.id = l.canvas_id
 WHERE l.code = $1 AND l.revoked_at IS NULL AND (l.expires_at IS NULL OR l.expires_at > now())
@@ -86,6 +86,7 @@ func (q *Queries) GetCanvasLinkByCode(ctx context.Context, code string) (GetCanv
 		&i.CanvasItemHead.TrashedAt,
 		&i.CanvasItemHead.TrashedBy,
 		&i.CanvasItemHead.TrashedRoot,
+		&i.CanvasItemHead.Emoji,
 	)
 	return i, err
 }

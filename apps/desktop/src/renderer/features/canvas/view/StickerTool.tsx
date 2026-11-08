@@ -3,6 +3,7 @@ import { Smile } from 'lucide-react';
 import { memo, useCallback, useEffect, useState, type ReactNode } from 'react';
 import * as Popover from '../../../components/radix/popover';
 import { IconButton } from '../../../components/ui';
+import { ToolHint } from './ToolHint';
 import { t, useLocale } from '../../../i18n';
 import { useStickers } from '../../../stores/stickers';
 import { StickerPanel } from '../../chat/stickers/StickerPicker';
@@ -28,11 +29,13 @@ export const StickerTool = memo(function StickerTool({ engine, workspaceId, focu
   const label = t('canvasBoard.tool.sticker');
   return (
     <Popover.Root open={open} onOpenChange={setOpen} modal={false}>
-      <Popover.Trigger asChild>
-        <IconButton label={label} shortcut="K" active={open} onMouseDown={keepFocus} data-testid="canvas-tool-sticker">
-          <Smile className="size-[18px]" strokeWidth={1.75} aria-hidden />
-        </IconButton>
-      </Popover.Trigger>
+      <ToolHint id="sticker" title={label} shortcut="K" suppress={open}>
+        <Popover.Trigger asChild>
+          <IconButton label={label} tip={false} active={open} onMouseDown={keepFocus} data-testid="canvas-tool-sticker">
+            <Smile className="size-[18px]" strokeWidth={1.75} aria-hidden />
+          </IconButton>
+        </Popover.Trigger>
+      </ToolHint>
       <Popover.Portal>
         <Popover.Content
           side="right"

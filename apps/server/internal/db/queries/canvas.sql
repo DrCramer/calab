@@ -133,15 +133,16 @@ VALUES (sqlc.arg('workspace_id'), sqlc.narg('parent_id'), sqlc.arg('kind'), sqlc
 RETURNING *;
 
 -- name: UpdateCanvasItem :one
--- Rename (name) and the restricted switch.
+-- Rename (name), the emoji and the restricted switch.
 UPDATE canvas_items SET
     name       = coalesce(sqlc.narg('name'), name),
+    emoji      = coalesce(sqlc.narg('emoji'), emoji),
     restricted = coalesce(sqlc.narg('restricted'), restricted),
     updated_by = sqlc.narg('updated_by'),
     updated_at = now()
 WHERE id = sqlc.arg('id')
 RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq,
-    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root;
+    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root, emoji;
 
 -- name: MoveCanvasItem :one
 -- A move (under LockCanvasTree): the item goes under parent_id (NULL = the top level) at position
@@ -154,7 +155,7 @@ UPDATE canvas_items SET
     updated_at = now()
 WHERE id = sqlc.arg('id')
 RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq,
-    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root;
+    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root, emoji;
 
 -- name: LastCanvasRootPosition :one
 -- The highest position among the live top-level items other than exclude_id, -1 when none.
@@ -214,7 +215,7 @@ UPDATE canvas_items SET
     updated_at = now()
 WHERE id = sqlc.arg('id') AND kind = 'canvas'
 RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq,
-    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root;
+    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root, emoji;
 
 -- name: TrashCanvasSubtree :many
 -- Moves an item and its live subtree to the trash in one UPDATE: one timestamp for all, the item

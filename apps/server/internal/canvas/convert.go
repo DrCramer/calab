@@ -26,7 +26,7 @@ func head(p sqlc.CanvasItem) sqlc.CanvasItemHead {
 	return sqlc.CanvasItemHead{ID: p.ID, WorkspaceID: p.WorkspaceID, ParentID: p.ParentID, Kind: p.Kind, Name: p.Name,
 		Position: p.Position, OwnerID: p.OwnerID, Restricted: p.Restricted, Preview: p.Preview, DocSize: p.DocSize,
 		NextSeq: p.NextSeq, UpdatedBy: p.UpdatedBy, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, TrashedAt: p.TrashedAt,
-		TrashedBy: p.TrashedBy, TrashedRoot: p.TrashedRoot}
+		TrashedBy: p.TrashedBy, TrashedRoot: p.TrashedRoot, Emoji: p.Emoji}
 }
 
 func kindProto(kind string) v1.CanvasItemKind {
@@ -42,7 +42,7 @@ func kindProto(kind string) v1.CanvasItemKind {
 // itemProto converts an item; bits is the caller's (0 in events).
 func itemProto(p sqlc.CanvasItemHead, shared, children bool, bits perm.Bits) *v1.CanvasItem {
 	out := &v1.CanvasItem{
-		Id: p.ID.String(), WorkspaceId: p.WorkspaceID.String(), ParentId: idp(p.ParentID), Kind: kindProto(p.Kind), Name: p.Name,
+		Id: p.ID.String(), WorkspaceId: p.WorkspaceID.String(), ParentId: idp(p.ParentID), Kind: kindProto(p.Kind), Name: p.Name, Emoji: p.Emoji,
 		OwnerId: idp(p.OwnerID), Restricted: p.Restricted, Shared: shared, Preview: p.Preview,
 		UpdatedAt: timestamppb.New(p.UpdatedAt), UpdatedBy: idp(p.UpdatedBy), MyBits: uint64(bits & perm.Canvas),
 		HasChildren: children, CreatedAt: timestamppb.New(p.CreatedAt), Position: p.Position, TrashedBy: idp(p.TrashedBy),

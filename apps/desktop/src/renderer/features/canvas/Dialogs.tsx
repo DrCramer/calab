@@ -96,7 +96,7 @@ function ShareDialog({ itemId, onClose }: { itemId: string; onClose: () => void 
       data-testid="canvas-share-send"
     >
       <Send className="size-4" strokeWidth={1.75} aria-hidden />
-      {t('canvas.sendToChat').replace(/…$/, '')}
+      {t('canvas.sendToChat')}
     </Button>
   ) : null;
   return (
@@ -127,7 +127,8 @@ function ShareDialog({ itemId, onClose }: { itemId: string; onClose: () => void 
         )
       }
     >
-      <div className="flex min-h-[340px] flex-col gap-4" data-testid="canvas-share-dialog">
+      {/* A canvas keeps one height across its two tabs (no jump); a folder has one tab and fits its list. */}
+      <div className={cx('flex flex-col gap-4', isCanvas && 'min-h-[300px]')} data-testid="canvas-share-dialog">
         {isCanvas ? (
           <Segmented<ShareTab>
             value={tab}
@@ -243,7 +244,7 @@ export function VersionsDialog({ workspaceId, canvasId, onClose }: { workspaceId
       }
     >
       <div className="flex h-[min(60vh,420px)] gap-3" data-testid="canvas-versions">
-        <ol className="scrollbar-thin flex w-56 shrink-0 flex-col gap-0.5 overflow-y-auto rounded-[var(--radius-card)] bg-[var(--color-card)] p-1">
+        <ol className="scrollbar-thin flex max-h-full w-56 shrink-0 flex-col gap-0.5 self-start overflow-y-auto rounded-[var(--radius-card)] bg-[var(--color-card)] p-1">
           {list.map((v) => (
             <VersionRow key={v.id} workspaceId={workspaceId} v={v} active={v.id === picked} onPick={setPicked} />
           ))}

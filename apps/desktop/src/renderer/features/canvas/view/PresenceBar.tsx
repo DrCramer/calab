@@ -26,7 +26,7 @@ export const Presence = memo(function Presence({ store, engine }: { store: Prese
       role="group"
       aria-label={t('canvasBoard.presence.title', { names })}
       data-testid="canvas-presence"
-      className={cx(PANEL, 'absolute right-3 top-3 z-10 flex items-center rounded-full px-1.5 py-1')}
+      className={cx(PANEL, 'absolute right-3 top-3 z-10 flex items-center rounded-full')}
     >
       {shown.map((u, i) => {
         const on = following === u.followKey;

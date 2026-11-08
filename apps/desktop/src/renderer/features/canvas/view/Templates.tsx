@@ -1,5 +1,5 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Columns3, Grid2x2, File, LayoutTemplate, MessagesSquare, Network, Workflow, type LucideIcon } from 'lucide-react';
+import { CalendarClock, Columns3, Grid2x2, File, ChartGantt, LayoutTemplate, MessagesSquare, Network, Target, Workflow, type LucideIcon } from 'lucide-react';
 import { memo, useCallback, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { IconButton, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
@@ -9,9 +9,13 @@ import { toast } from '../../../stores/toasts';
 import type { CanvasEngine } from '../engine';
 import { MENU_BOX, PANEL, keepFocus } from './chrome';
 import { useSyncStatus } from './StatusBanner';
+import { ToolHint } from './ToolHint';
 
 /** One icon per template (the menu, the card and the phone's «+» sheet). */
-export const TEMPLATE_ICON: Record<TemplateId, LucideIcon> = { kanban: Columns3, retro: MessagesSquare, swot: Grid2x2, mindmap: Network, flow: Workflow };
+export const TEMPLATE_ICON: Record<TemplateId, LucideIcon> = {
+  kanban: Columns3, retro: MessagesSquare, swot: Grid2x2, mindmap: Network, flow: Workflow,
+  matrix: Target, roadmap: ChartGantt, meeting: CalendarClock,
+};
 
 const text = (key: TemplateKey, params?: Record<string, string | number>): string => t(`canvasBoard.templates.${key}`, params);
 
@@ -26,17 +30,19 @@ export function useInsertTemplate(engine: CanvasEngine, focusCanvas: () => void)
   );
 }
 
-/** «Шаблоны» in the toolbar: one button, the five templates in a small menu. */
+/** «Шаблоны» in the toolbar: one button, the templates in a small menu. */
 export const TemplatesMenu = memo(function TemplatesMenu({ engine, focusCanvas }: { engine: CanvasEngine; focusCanvas: () => void }): ReactNode {
   useLocale();
   const insert = useInsertTemplate(engine, focusCanvas);
   return (
     <Dropdown.Root modal={false}>
-      <Dropdown.Trigger asChild>
-        <IconButton label={t('canvasBoard.templates.menu')} onMouseDown={keepFocus} data-testid="canvas-templates-button">
-          <LayoutTemplate className="size-[18px]" strokeWidth={1.75} aria-hidden />
-        </IconButton>
-      </Dropdown.Trigger>
+      <ToolHint id="templates" title={t('canvasBoard.templates.menu')}>
+        <Dropdown.Trigger asChild>
+          <IconButton label={t('canvasBoard.templates.menu')} tip={false} onMouseDown={keepFocus} data-testid="canvas-templates-button">
+            <LayoutTemplate className="size-[18px]" strokeWidth={1.75} aria-hidden />
+          </IconButton>
+        </Dropdown.Trigger>
+      </ToolHint>
       <Dropdown.Portal>
         <Dropdown.Content
           side="right"
@@ -83,7 +89,7 @@ function TemplateRow({ id, onPick, as }: { id: TemplateId; onPick: () => void; a
 }
 
 /**
- * The card on an empty canvas: the same five templates. «Empty» is the scene's: it shows once the document has
+ * The card on an empty canvas: the same templates. «Empty» is the scene's: it shows once the document has
  * arrived (a canvas still loading is empty too), until the first object appears or it is closed. Its box takes
  * pointer events; the rest of the canvas keeps them (double-click for a text still works around it).
  */
@@ -98,13 +104,14 @@ export const TemplatesCard = memo(function TemplatesCard({ engine, sync, focusCa
   const insert = useInsertTemplate(engine, focusCanvas);
   if (!empty || !synced || closed) return null;
   return (
-    <div className="pointer-events-none absolute inset-0 z-[5] grid place-items-center px-24 py-16" data-testid="canvas-templates-card-host">
-      <div className={cx(PANEL, 'pointer-events-auto flex w-[min(460px,100%)] flex-col')} role="region" aria-label={t('canvasBoard.templates.title')} data-testid="canvas-templates-card">
+    <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center px-24 py-16" data-testid="canvas-templates-card-host">
+      <div className={cx(PANEL, 'pointer-events-auto flex max-h-full w-[min(460px,100%)] flex-col')} role="region" aria-label={t('canvasBoard.templates.title')} data-testid="canvas-templates-card">
         <div className="flex flex-col gap-0.5 px-3 pb-2.5 pt-3">
           <span className="text-title text-fg">{t('canvasBoard.templates.title')}</span>
           <span className="text-caption text-muted">{t('canvasBoard.templates.hint')}</span>
         </div>
-        <div className="flex flex-col gap-0.5">
+        {/* The list scrolls inside the card when the window is low (960 × 600 with all the templates). */}
+        <div className="scrollbar-thin flex min-h-0 flex-col gap-0.5 overflow-y-auto">
           {/* «Blank canvas» only puts the card away; the canvas stays as it is. */}
           <button
             type="button"

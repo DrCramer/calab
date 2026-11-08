@@ -5,7 +5,7 @@
  * panel. Mounted inside the view's chrome; the canvas itself never re-renders for a comment.
  */
 import { MessageSquare } from 'lucide-react';
-import { memo, useEffect, useMemo, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { IconButton, cx } from '../../../../components/ui';
 import { plural, t, useLocale } from '../../../../i18n';
 import { commentRights, pinAt, pinWorld } from '../../../../lib/canvas/comments';
@@ -17,7 +17,8 @@ import { toast } from '../../../../stores/toasts';
 import type { CanvasEngine } from '../../engine';
 import type { CanvasSync } from '../../../../lib/canvasSync';
 import { CommentPins } from './CommentPins';
-import { CommentsPanel } from './CommentsPanel';
+import { CommentsPanel, type Ctx } from './CommentsPanel';
+import { ThreadPopover } from './ThreadPopover';
 
 export interface CommentsLayerProps {
   engine: CanvasEngine;
@@ -39,10 +40,12 @@ export const CommentsLayer = memo(function CommentsLayer({ engine, sync, canvasI
     return () => {
       const st = useCanvasComments.getState();
       if (st.draft?.canvasId === canvasId) st.setDraft(null);
+      st.setPinOpen(false);
     };
   }, [canvasId]);
 
-  // A click of the «Комментарий» tool: the pin goes there, the panel opens on the new thread's input.
+  // A click of the «Комментарий» tool: the pin goes there and the new thread's field opens — in a popover at the pin
+  // on the desktop, at the bottom of the panel on the phone.
   useEffect(
     () =>
       engine.onCommentAt((c) => {
@@ -50,10 +53,25 @@ export const CommentsLayer = memo(function CommentsLayer({ engine, sync, canvasI
         const st = useCanvasComments.getState();
         st.setDraft({ canvasId, ...pinAt(c.world, c.objectId ? engine.scene.get(c.objectId) : undefined) });
         st.setActive(null);
-        st.setPanel(true);
+        if (phone) st.setPanel(true);
+        else st.setPinOpen(true);
       }),
-    [engine, canvasId, rights.write],
+    [engine, canvasId, rights.write, phone],
   );
+  // A pin's click: its thread in a popover at the pin (desktop) or in the panel (phone).
+  const pick = useCallback(
+    (id: string) => {
+      const st = useCanvasComments.getState();
+      st.setDraft(null);
+      st.setActive(id);
+      if (phone) st.setPanel(true);
+      else st.setPinOpen(true);
+    },
+    [phone],
+  );
+  const layer = useRef<HTMLDivElement>(null);
+  const ctx = useMemo<Ctx>(() => ({ canvasId, workspaceId, rights, engine }), [canvasId, workspaceId, rights, engine]);
+  const focusCanvas = useCallback(() => engine.canvas.focus({ preventScroll: true }), [engine]);
 
   // A thread asked for from outside (a notification): centred once both the comments and the document are here.
   const focus = useCanvasComments((s) => (s.focus?.canvasId === canvasId ? s.focus.threadId : ''));
@@ -91,8 +109,9 @@ export const CommentsLayer = memo(function CommentsLayer({ engine, sync, canvasI
 
   return (
     <>
-      <CommentPins engine={engine} canvasId={canvasId} workspaceId={workspaceId} />
+      <CommentPins engine={engine} canvasId={canvasId} workspaceId={workspaceId} onPick={pick} layer={layer} />
       <CommentsPanel canvasId={canvasId} workspaceId={workspaceId} rights={rights} engine={engine} phone={phone} />
+      {phone ? null : <ThreadPopover ctx={ctx} layer={layer} focusCanvas={focusCanvas} />}
     </>
   );
 });

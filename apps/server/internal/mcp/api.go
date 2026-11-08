@@ -17,6 +17,38 @@ import (
 	"github.com/calaba/calaba/server/internal/auth"
 )
 
+// innerRoutes are the route patterns the tools call (api.call): an MCP connection's token
+// (ADR-0158) reaches these and the endpoint, nothing else (auth.Service.MCPInnerRoutes). A new
+// tool that calls another route adds it here; the OAuth integration test runs every tool.
+var innerRoutes = []string{
+	"GET /api/boards/{id}",
+	"GET /api/me/tasks",
+	"GET /api/rooms/{id}",
+	"GET /api/rooms/{id}/messages",
+	"GET /api/search",
+	"GET /api/t/{key}",
+	"GET /api/tasks/{id}",
+	"GET /api/workspaces",
+	"GET /api/workspaces/{id}/boards",
+	"GET /api/workspaces/{id}/members",
+	"GET /api/workspaces/{id}/members/{userId}",
+	"GET /api/workspaces/{id}/rooms",
+	"GET /api/workspaces/{id}/tasks/search",
+	"PATCH /api/tasks/{id}",
+	"POST /api/boards/{id}/tasks",
+	"POST /api/rooms/{id}/messages",
+	"PUT /api/tasks/{id}/assignees",
+}
+
+// InnerRoutes returns the set of innerRoutes.
+func InnerRoutes() map[string]bool {
+	m := make(map[string]bool, len(innerRoutes))
+	for _, r := range innerRoutes {
+		m[r] = true
+	}
+	return m
+}
+
 // maxAnswer caps one REST answer read by a tool (a page of history with attachments fits).
 const maxAnswer = 8 << 20
 
@@ -72,7 +104,8 @@ func (a *api) call(ctx context.Context, method, path string, query url.Values, b
 	// A fresh context, cancelled with the MCP request: none of the outer request's values (its
 	// identity, mutation boundary, publish budget) leak into the inner one, which the chain
 	// builds itself like for any REST call.
-	inner, cancel := context.WithCancel(context.Background())
+	// The one value it carries is the channel (ADR-0156): what the call writes is marked «via MCP».
+	inner, cancel := context.WithCancel(auth.WithChannel(context.Background(), auth.ChannelMCP))
 	defer cancel()
 	stop := context.AfterFunc(ctx, cancel)
 	defer stop()
@@ -80,15 +113,14 @@ func (a *api) call(ctx context.Context, method, path string, query url.Values, b
 	if err != nil {
 		return err
 	}
-	// Only what identifies the caller: the token and the client address headers (the chain
-	// recomputes the client IP from RemoteAddr and the trusted proxies). Calab-On-Behalf is
-	// not carried: the MCP endpoint is the bot itself.
-	for _, k := range []string{"Authorization", "X-Forwarded-For", "X-Real-Ip", "User-Agent", "Accept-Language"} {
+	// Only what identifies the caller: the token, Calab-On-Behalf (ADR-0156: the inner call is
+	// checked on behalf again, route by route) and the client address headers (the chain
+	// recomputes the client IP from RemoteAddr and the trusted proxies).
+	for _, k := range []string{"Authorization", auth.OnBehalfHeader, "X-Forwarded-For", "X-Real-Ip", "User-Agent", "Accept-Language"} {
 		if v := a.outer.Header.Values(k); len(v) > 0 {
 			req.Header[k] = v
 		}
 	}
-	req.Header.Del(auth.OnBehalfHeader)
 	req.RemoteAddr, req.Host = a.outer.RemoteAddr, a.outer.Host
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

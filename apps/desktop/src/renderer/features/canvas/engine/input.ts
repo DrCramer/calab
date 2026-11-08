@@ -1,8 +1,8 @@
-import { ROTATE_CURSOR, dist, hitHandleRot, resizeCursorAt, rotateHandlePoint, type HandleId, type Point } from '../../../lib/canvas/geometry';
+import { ROTATE_CURSOR, dist, hitHandleRot, rectContainsPoint, resizeCursorAt, rotateHandlePoint, type HandleId, type Point } from '../../../lib/canvas/geometry';
 import { isConnector } from '../../../lib/canvas/types';
-import type { CanvasEngine } from './engine';
+import type { CanvasEngine, Tool } from './engine';
 import {
-  CreateGesture, EndpointGesture, MarqueeGesture, MoveGesture, PanGesture, PinchGesture, ResizeGesture, RotateGesture, TOUCH_SLOP_PX, TapPanGesture, WireGesture,
+  CreateGesture, DrawGesture, EndpointGesture, EraseGesture, MarqueeGesture, MoveGesture, PanGesture, PinchGesture, ResizeGesture, RotateGesture, TOUCH_SLOP_PX, TapPanGesture, WireGesture,
   type Mods,
 } from './gestures';
 import { HANDLE_PX, ROTATE_OFFSET_PX, TOUCH_HIT_PX, TOUCH_ROTATE_OFFSET_PX, type SelFrame } from './overlay';
@@ -23,7 +23,7 @@ const mods = (e: { shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey
   mod: e.ctrlKey || e.metaKey,
 });
 
-const TOOL_KEYS = { v: 1, s: 1, t: 1, r: 1, c: 1, k: 1 };
+const TOOL_KEYS = { v: 1, s: 1, t: 1, r: 1, c: 1, k: 1, p: 1, e: 1, f: 1 };
 const NO_MODS: Mods = { shift: false, alt: false, mod: false };
 /** Touch editing (ADR-0127 wave 5b): a press that stays put this long on empty canvas opens the phone's menu. */
 const LONG_PRESS_MS = 500;
@@ -37,6 +37,44 @@ const TOUCH_PICK_PX = 10;
  * Returns the detach function. Camera input (wheel, pinch, Safari gestures) is queued on the engine and
  * applied once per frame; nothing here owns a timer or a frame of its own.
  */
+/** The eraser's cursor: a ring of its radius, so what it will take is plain to see (one string per size). */
+const eraserCursors = new Map<number, string>();
+function eraserCursor(r: number): string {
+  let c = eraserCursors.get(r);
+  if (!c) {
+    const s = 2 * r + 4;
+    c = `url("data:image/svg+xml,${encodeURIComponent(
+      `<svg xmlns='http://www.w3.org/2000/svg' width='${s}' height='${s}'><circle cx='${r + 2}' cy='${r + 2}' r='${r}' fill='white' fill-opacity='0.6' stroke='black' stroke-width='1.5'/></svg>`,
+    )}") ${r + 2} ${r + 2}, crosshair`;
+    eraserCursors.set(r, c);
+  }
+  return c;
+}
+
+/** The canvas cursor while a tool is armed: an I-beam for text (as in every editor), a ring for the eraser, a crosshair for the other creators. */
+export function toolCursor(t: Tool, eraserPx: number): string {
+  return t === 'select' ? '' : t === 'text' ? 'text' : t === 'eraser' ? eraserCursor(eraserPx) : 'crosshair';
+}
+
+/**
+ * A drag on a sticky pad, alone in the selection, pulls a new sticky off it: same colour, size and text size, empty, on
+ * top. Undefined for anything else (the drag moves the selection).
+ */
+function padPull(engine: CanvasEngine, id: string, ids: readonly string[]): (() => string[]) | undefined {
+  const o = engine.scene.get(id);
+  if (o?.kind !== 'sticky' || !o.pad || ids.length !== 1 || ids[0] !== id) return undefined;
+  return () => {
+    const made = engine.doc.create({
+      kind: 'sticky', x: o.x, y: o.y, w: o.w, h: o.h, color: o.color,
+      ...(o.fontSize ? { fontSize: o.fontSize } : {}), ...(o.fontPx ? { fontPx: o.fontPx } : {}),
+    });
+    return made ? [made] : [];
+  };
+}
+
+/** Kinds a double-click writes in. */
+const writable = (o: { kind: string }): boolean => o.kind === 'sticky' || o.kind === 'text' || o.kind === 'shape';
+
 export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): () => void {
   const pointers = new Map<number, Point>();
   let spaceDown = false;
@@ -73,18 +111,26 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
 
   const idleCursor = (): string => {
     if (spaceDown) return 'grab';
-    return engine.tool === 'select' ? '' : 'crosshair';
+    return toolCursor(engine.tool, engine.eraserPx);
   };
 
   const hoverCursor = (w: Point): string => {
-    if (engine.tool !== 'select') return 'crosshair';
+    if (engine.tool !== 'select') return toolCursor(engine.tool, engine.eraserPx);
     if (engine.readOnly) return 'grab';
+    if (engine.quickAt(w)) return 'pointer';
     if (rotateHandleAt(w)) return ROTATE_CURSOR;
     const g = resizeHandleAt(w);
     if (g) return resizeCursorAt(g, engine.selectionFrame()?.rot ?? 0);
     if (connectorEndAt(w)) return 'pointer';
     const over = engine.hitAt(w);
-    return over ? (engine.votableAt(over.id) ? 'pointer' : 'move') : '';
+    const padId = over?.kind === 'sticky' && over.pad && !engine.votableAt(over.id) ? over.id : null;
+    const pad = padId !== null;
+    // Its corner lifts under the pointer (the engine animates it).
+    engine.hoverPad(padId);
+    if (!over) return '';
+    if (engine.votableAt(over.id)) return 'pointer';
+    // A pad hands out stickies: a hand, as for taking one (Alt-drag moves it).
+    return pad ? 'grab' : 'move';
   };
 
   /** The selection frame's rotation handle under the pointer. */
@@ -123,13 +169,18 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
   /** A finger on an editable canvas (the phone's edit mode): tap selects, drag moves what is selected, anything else pans. */
   const touchDown = (e: PointerEvent, s: Point, w: Point): void => {
     const tool = engine.tool;
-    if (tool === 'sticky' || tool === 'text' || tool === 'shape') {
+    if (tool === 'sticky' || tool === 'text' || tool === 'shape' || tool === 'frame') {
       // A tap places the object (a text opens its editor at once); a drag pans to where it should go.
       engine.activeGesture = new TapPanGesture(engine, s, () => new CreateGesture(engine, tool, w, s).end(w, s, NO_MODS));
       return;
     }
     if (tool === 'connector') {
       engine.activeGesture = new WireGesture(engine, w, s, TOUCH_SLOP_PX);
+      return;
+    }
+    if (tool === 'pen' || tool === 'eraser') {
+      engine.clearSelection();
+      engine.activeGesture = tool === 'pen' ? new DrawGesture(engine, w) : new EraseGesture(engine, w);
       return;
     }
     if (tool === 'comment') {
@@ -192,8 +243,8 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
         const now = Date.now();
         if (lastTap && lastTap.id === hit.id && now - lastTap.at < DOUBLE_TAP_MS && !engine.votableAt(hit.id)) {
           lastTap = null;
-          // As a double click: the first steps into a group, the next edits the text.
-          if (engine.enterGroupAt(hit.id)) return;
+          // As a double click: steps into its group and edits the text at once (a picture or a stroke only steps in).
+          if (engine.enterGroupAt(hit.id) && !writable(hit)) return;
           engine.setSelection([hit.id]);
           engine.startTextEdit(hit.id);
           return;
@@ -201,7 +252,7 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
         lastTap = { id: hit.id, at: now };
         if (ids.length > 1) engine.setSelection(unit);
         engine.voteClick(hit.id, w, false);
-      }, TOUCH_SLOP_PX);
+      }, TOUCH_SLOP_PX, padPull(engine, hit.id, ids));
       return;
     }
     // Not selected: a tap selects (adds, in «several» mode), a drag pans — nothing moves by accident.
@@ -274,18 +325,36 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
       case 'sticky':
       case 'text':
       case 'shape':
+      case 'frame':
         engine.activeGesture = new CreateGesture(engine, engine.tool, w, s);
         return;
       case 'connector':
         engine.activeGesture = new WireGesture(engine, w, s);
         return;
       case 'comment':
+        // The new thread's field takes the focus: no compatibility mousedown, whose default would focus the canvas back.
+        e.preventDefault();
         engine.emitCommentAt(s, w);
+        return;
+      case 'pen':
+        // The frame of what was selected would sit over the drawing (and every frame would repaint it).
+        engine.clearSelection();
+        engine.activeGesture = new DrawGesture(engine, w);
+        return;
+      case 'eraser':
+        engine.clearSelection();
+        engine.activeGesture = new EraseGesture(engine, w);
         return;
       case 'select':
         break;
     }
     // Select tool.
+    const quick = engine.quickAt(w);
+    const qg = quick ? engine.quickGesture(quick, s) : null;
+    if (qg) {
+      engine.activeGesture = qg;
+      return;
+    }
     if (rotateHandleAt(w)) {
       engine.activeGesture = new RotateGesture(engine, engine.selection, w);
       // The turn keeps its cursor while the pointer leaves the knob (moves do not touch it during a gesture).
@@ -328,7 +397,7 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
         if (!m.shift && wasSelected && ids.length > 1) engine.setSelection(unit);
         // Voting open: a plain click on a sticky or shape is a vote (Alt or its own badge takes one back).
         if (!m.shift && !m.mod) engine.voteClick(hit.id, w, m.alt);
-      });
+      }, undefined, m.shift ? undefined : padPull(engine, hit.id, ids));
       return;
     }
     engine.activeGesture = new MarqueeGesture(engine, w, m.shift);
@@ -347,12 +416,23 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     const g = engine.activeGesture;
     if (g) {
       const m = mods(e);
+      if ((g.kind === 'draw' || g.kind === 'erase') && typeof e.getCoalescedEvents === 'function') {
+        // The pen and the eraser take every sample the system had between two events (a fast stroke stays smooth).
+        const all = e.getCoalescedEvents();
+        for (let i = 0; i < all.length - 1; i++) {
+          const c = all[i];
+          if (c) g.move(local(c).w, local(c).s, m);
+        }
+      }
       g.move(w, s, m);
       if (downAt) engine.dragPointer(downAt, s, m, e.pointerType !== 'touch');
       return;
     }
     engine.setLocalCursor(w);
-    if (e.pointerType === 'mouse') setCursor(spaceDown ? 'grab' : hoverCursor(w));
+    if (e.pointerType === 'mouse') {
+      engine.hoverQuick(spaceDown ? null : engine.quickAt(w));
+      setCursor(spaceDown ? 'grab' : hoverCursor(w));
+    }
   };
 
   const finish = (e: PointerEvent, cancelled: boolean): void => {
@@ -393,7 +473,11 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
 
   const onUp = (e: PointerEvent): void => finish(e, false);
   const onCancel = (e: PointerEvent): void => finish(e, true);
-  const onLeave = (): void => engine.setLocalCursor(null);
+  const onLeave = (): void => {
+    engine.setLocalCursor(null);
+    engine.hoverQuick(null);
+    engine.hoverPad(null);
+  };
 
   const onDouble = (e: MouseEvent): void => {
     if (engine.readOnly || engine.tool !== 'select') return;
@@ -401,11 +485,18 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
     // A double-click on a handle of the frame is two presses on the handle, not a new text.
     if (rotateHandleAt(w) || resizeHandleAt(w)) return;
     const hit = engine.hitAt(w);
+    // A frame's board is a place to write on, as the empty canvas; its title is renamed in the properties.
+    if (hit?.kind === 'frame') {
+      const title = engine.scene.frameTitleRect(hit);
+      if (!title || !rectContainsPoint(title, w, 0)) engine.createTextAt(w);
+      return;
+    }
     if (hit) {
       // While voting a double-click is two votes, not a text edit.
       if (engine.votableAt(hit.id)) return;
-      // First double-click on a group member steps into the group; the next edits the text.
-      if (engine.enterGroupAt(hit.id)) return;
+      // A double-click on a group member steps into the group and edits its text at once (owner 30.10: one double-click
+      // on a sticky writes in it); a picture or a stroke only steps in.
+      if (engine.enterGroupAt(hit.id) && !writable(hit)) return;
       engine.setSelection([hit.id]);
       engine.startTextEdit(hit.id);
     } else engine.createTextAt(w);
@@ -537,6 +628,9 @@ export function attachInput(engine: CanvasEngine, canvas: HTMLCanvasElement): ()
             case 't': if (engine.readOnly) return; engine.setTool('text'); break;
             case 'r': if (engine.readOnly) return; engine.setTool('shape'); break;
             case 'c': if (engine.readOnly) return; engine.setTool('connector'); break;
+            case 'p': if (engine.readOnly) return; engine.setTool('pen'); break;
+            case 'e': if (engine.readOnly) return; engine.setTool('eraser'); break;
+            case 'f': if (engine.readOnly) return; engine.setTool('frame'); break;
             // K: «Стикер из набора» — the view opens the sticker picker.
             case 'k': if (engine.readOnly) return; engine.emitStickerKey(); break;
             default: return;

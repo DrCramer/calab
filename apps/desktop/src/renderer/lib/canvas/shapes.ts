@@ -1,5 +1,5 @@
 import type { Rect } from './geometry';
-import { SHAPE_PAD, STICKY_PAD, TEXT_PAD } from './textLayout';
+import { SHAPE_PAD, TEXT_PAD, stickyPad } from './textLayout';
 import type { ShapeKind, TextBoxRec } from './types';
 
 /** The subset of path methods shared by CanvasRenderingContext2D, OffscreenCanvasRenderingContext2D and Path2D. */
@@ -186,7 +186,7 @@ export function traceRounded(p: PathTarget, r: Rect, radius: number): void {
 /** Where an object's text lives (inside the outline, clear of the corners that the shape cuts away). */
 export function contentRect(o: TextBoxRec): Rect {
   const inset = (r: Rect, d: number): Rect => ({ x: r.x + d, y: r.y + d, w: Math.max(1, r.w - 2 * d), h: Math.max(1, r.h - 2 * d) });
-  if (o.kind === 'sticky') return inset(o, STICKY_PAD);
+  if (o.kind === 'sticky') return inset(o, stickyPad(o));
   if (o.kind === 'text') return inset(o, TEXT_PAD);
   switch (o.shape) {
     case 'ellipse': {

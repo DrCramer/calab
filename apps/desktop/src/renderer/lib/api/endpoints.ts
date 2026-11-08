@@ -75,6 +75,9 @@ import {
   AdminSetPlanResponseSchema,
   AdminSetSuspensionRequestSchema,
   AdminSetSuspensionResponseSchema,
+  AdminSetUploadLimitsRequestSchema,
+  AdminSetUploadLimitsResponseSchema,
+  UploadLimitsSchema,
   CreateBanRequestSchema,
   CreateBanResponseSchema,
   ListBansResponseSchema,
@@ -86,6 +89,7 @@ import {
   UserNoteResponseSchema,
   ChangeEmailRequestSchema,
   ChangePasswordRequestSchema,
+  DeleteAccountRequestSchema,
   CreateCategoryRequestSchema,
   CreateCategoryResponseSchema,
   CreateInviteRequestSchema,
@@ -132,6 +136,7 @@ import {
   ListMessageReadersResponseSchema,
   ListMessagesResponseSchema,
   ListTaskNoticesResponseSchema,
+  InboxDismissSchema,
   ListReactionUsersResponseSchema,
   MoveMemberRequestSchema,
   ListSessionsResponseSchema,
@@ -240,6 +245,11 @@ import {
   CreateBotResponseSchema,
   GetBotMeResponseSchema,
   ListBlockedBotsResponseSchema,
+  ListBlockedUsersResponseSchema,
+  CreateReportRequestSchema,
+  CreateReportResponseSchema,
+  ListReportsResponseSchema,
+  type ReportReason,
   ListBotsResponseSchema,
   ListRoomBotCommandsResponseSchema,
   ReissueBotTokenResponseSchema,
@@ -297,6 +307,9 @@ export const api = {
       callEmpty('PATCH', '/api/me/password', body(ChangePasswordRequestSchema, init)),
     changeEmail: (init: MessageInitShape<typeof ChangeEmailRequestSchema>) =>
       call('PATCH', '/api/me/email', UpdateMeResponseSchema, body(ChangeEmailRequestSchema, init)),
+    /** ADR-0153: 204, the account is gone and every session revoked. 403 INVALID_CREDENTIALS = wrong password; 409 OWNS_WORKSPACES. */
+    deleteAccount: (init: MessageInitShape<typeof DeleteAccountRequestSchema>) =>
+      callEmpty('POST', '/api/me/delete', body(DeleteAccountRequestSchema, init)),
     /** Custom status (text + emoji, optional expiry); empty text and emoji clear it. */
     setStatus: (init: MessageInitShape<typeof UpdateStatusRequestSchema>) =>
       call('PATCH', '/api/me/status', UpdateMeResponseSchema, body(UpdateStatusRequestSchema, init)),
@@ -306,6 +319,8 @@ export const api = {
     /** My task notices (ADR-0141), newest first, of tasks I see now (cursor `before`, limit ≤ 100). */
     taskNotices: (p: { limit?: number; before?: string }, signal?: AbortSignal) =>
       call('GET', `/api/me/task-notices${qs(p)}`, ListTaskNoticesResponseSchema, undefined, signal),
+    /** CBF-155: the ✕ on «Упоминания» cards (≤ 100 ids of each kind) → 204; INBOX_DISMISS to my sessions. */
+    dismissInbox: (init: MessageInitShape<typeof InboxDismissSchema>) => callEmpty('POST', '/api/me/inbox/dismiss', body(InboxDismissSchema, init)),
   },
   users: {
     /** My private note about a user (docs/09 #20); empty text = none. 404 = no shared workspace / DM. */
@@ -477,7 +492,9 @@ export const api = {
     update: (id: string, init: MessageInitShape<typeof UpdateCalendarEventRequestSchema>) =>
       call('PATCH', `/api/events/${id}`, CalendarEventResponseSchema, body(UpdateCalendarEventRequestSchema, init)),
     /** 204: cancels the meeting (EVENT_DELETE), or with `occurrence` (its start) that occurrence of a series only. */
-    cancel: (id: string, occurrence?: Date) => callEmpty('DELETE', `/api/events/${id}${qs({ occurrence: occurrence?.toISOString() })}`),
+    /** The meeting; an occurrence of a series only; with `following` it and the following ones (ADR-0157). */
+    cancel: (id: string, occurrence?: Date, following = false) =>
+      callEmpty('DELETE', `/api/events/${id}${qs({ occurrence: occurrence?.toISOString(), scope: following ? 'following' : undefined })}`),
     rsvp: (id: string, status: AttendeeStatus) =>
       call('PUT', `/api/events/${id}/rsvp`, CalendarEventResponseSchema, body(RsvpCalendarEventRequestSchema, { status })),
     /** Comments on a meeting (ADR-0104): the newest `limit` before `before`, oldest first; 404 hidden, 403 guest. */
@@ -721,6 +738,22 @@ export const api = {
       call('PATCH', `/api/dms/${roomId}/state`, UpdateDmStateResponseSchema, body(UpdateDmStateRequestSchema, state)),
   },
   /**
+   * Report and block users (ADR-0154). Blocks are account-level: a block in either direction
+   * refuses a new DM, DM messages and calls (403 USER_UNAVAILABLE); shared rooms are hidden in
+   * the client. Reports go to the workspace's MANAGE_MEMBERS (429 over 10 per hour).
+   */
+  blocks: {
+    list: () => call('GET', '/api/me/blocked-users', ListBlockedUsersResponseSchema),
+    block: (userId: string) => callEmpty('POST', `/api/me/blocked-users/${userId}`),
+    unblock: (userId: string) => callEmpty('DELETE', `/api/me/blocked-users/${userId}`),
+  },
+  reports: {
+    create: (r: { workspaceId: string; userId: string; messageId: string; reason: ReportReason; comment: string }) =>
+      call('POST', '/api/reports', CreateReportResponseSchema, body(CreateReportRequestSchema, r)),
+    list: (workspaceId: string, signal?: AbortSignal) => call('GET', `/api/workspaces/${workspaceId}/reports`, ListReportsResponseSchema, undefined, signal),
+    resolve: (workspaceId: string, reportId: string) => callEmpty('POST', `/api/workspaces/${workspaceId}/reports/${reportId}/resolve`),
+  },
+  /**
    * Notes shelves (ADR-0039): personal rooms; messages use the room endpoints, uploads go to
    * `/api/dms/{id}/files` (uploadPath) and count against the personal quota. 409 NOTES_LIMIT
    * at 20; 404 not mine; 403 bots / guest accounts.
@@ -947,6 +980,9 @@ export const adminApi = {
       AdminSetSuspensionResponseSchema,
       body(AdminSetSuspensionRequestSchema, { suspended, reason }),
     ),
+  /** Upload limits of the workspace (ADR-0155): an unset field = the server default. */
+  setUploadLimits: (id: string, limits: MessageInitShape<typeof UploadLimitsSchema>) =>
+    call('PUT', `/api/admin/workspaces/${id}/upload-limits`, AdminSetUploadLimitsResponseSchema, body(AdminSetUploadLimitsRequestSchema, { limits })),
 };
 
 export interface UploadHandle {
@@ -988,7 +1024,9 @@ export function uploadInto<S extends DescMessage, R>(
       if (e.lengthComputable) onProgress(e.loaded / e.total);
     };
     xhr.onload = () => {
-      const res = new Response(xhr.responseText, { status: xhr.status });
+      // Retry-After rides along: a 429's wait drives the Disk's upload queue (ADR-0155).
+      const retryAfter = xhr.getResponseHeader('Retry-After');
+      const res = new Response(xhr.responseText, { status: xhr.status, headers: retryAfter ? { 'Retry-After': retryAfter } : {} });
       if (xhr.status >= 200 && xhr.status < 300) {
         // A throw inside onload would leave the promise (and the message) pending forever (review L6).
         let out: R | undefined;

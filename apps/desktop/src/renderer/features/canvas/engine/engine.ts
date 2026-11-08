@@ -1,6 +1,6 @@
 import type * as Y from 'yjs';
 import {
-  DEFAULT_CAMERA, clampScale, edgePanVelocity, fitRect, lerpCamera, nextZoomStep, panBy, sameCamera, screenToWorld, visibleRect, zoomAt,
+  DEFAULT_CAMERA, clampScale, edgePanVelocity, fitRect, lerpCamera, nextZoomStep, panBy, sameCamera, screenToWorld, visibleRect, worldToScreen, zoomAt,
   type Camera,
 } from '../../../lib/canvas/camera';
 import { duplicate, parse, serialize, toInits } from '../../../lib/canvas/clipboard';
@@ -11,19 +11,22 @@ import { Scene, visualBounds } from '../../../lib/canvas/scene';
 import { contentRect } from '../../../lib/canvas/shapes';
 import { buildTemplate, type TemplateId, type TemplateText } from '../../../lib/canvas/templates';
 import { LABEL_SIZE, TextLayouter, boxFontSize, estimateMeasure, fontOf, type MeasureFn } from '../../../lib/canvas/textLayout';
-import { connectorMidpoint } from '../../../lib/canvas/route';
+import { connectorMidpoint, type ConcreteSide } from '../../../lib/canvas/route';
+import { framePresetSize, type FramePreset } from '../../../lib/canvas/frames';
+import { ERASER_SIZES, INK_MAX_WIDTH, INK_MIN_WIDTH, MARKER_WIDTHS, PEN_WIDTHS } from '../../../lib/canvas/ink';
 import { LiveLayer } from '../../../lib/canvas/live';
 import {
   DEFAULTS, MAX_OBJECTS, aabb, hasText, isConnector,
-  type ObjectKind, type ObjectPatch, type ObjectRec, type RouteKind, type ShapeKind,
+  type Endpoint, type ObjectKind, type ObjectPatch, type ObjectRec, type RouteKind, type ShapeKind, type ShapeRec, type StickyRec,
 } from '../../../lib/canvas/types';
 import { VOTE_DEFAULT, VoteBook, type VotePhase, type VoteSession } from '../../../lib/canvas/votes';
 import { AwarenessLayer, sameView, type PeerState, type PeerView } from './awareness';
-import type { Core, Gesture, Mods } from './gestures';
-import { attachInput } from './input';
+import { QuickGesture, createScale, type Core, type Gesture, type InkStyle, type Mods } from './gestures';
+import { attachInput, toolCursor } from './input';
 import { ImageCache, type DecodeFn, type ImageResolver } from './images';
-import { emptyOverlay, type Outline, type OverlayState, type SelFrame } from './overlay';
-import { readableInk, resolveColor, resolveSticky, type CanvasPalette } from './palette';
+import { OPPOSITE, QUICK_ANIM_MS, QUICK_ROUTE, QUICK_SIDES, choiceInit, choiceSize, dropRect, quickInit, type QuickChoice, quickSideAt, quickTarget } from './quick';
+import { emptyOverlay, type InkPreview, type Outline, type OverlayState, type SelFrame } from './overlay';
+import { readableInk, resolveColor, resolveFill, resolveSticky, type CanvasPalette } from './palette';
 import { Renderer, renderSceneTo, type FrameStats } from './renderer';
 import { selectionFrame } from './selection';
 import { TextEditor, type EditSpec } from './textEditor';
@@ -32,7 +35,8 @@ import { BADGE_MARGIN_PX, hitBadge } from './voteDraw';
 /** Why an action did nothing: a paste or ⌘D over the object (`objects`) or state (`size`) limit, a create at the limit, the clipboard denied. */
 export type RefusedWhy = 'objects' | 'size' | 'create' | 'clipboard';
 
-export type Tool = 'select' | 'sticky' | 'text' | 'shape' | 'connector' | 'comment';
+/** `pen` draws with the pen or the marker (`EngineState.inkMarker`); `eraser` removes freehand strokes (ADR-0127 addendum 2026-10-29). */
+export type Tool = 'select' | 'sticky' | 'text' | 'shape' | 'connector' | 'comment' | 'pen' | 'eraser' | 'frame';
 
 /** A click (tap) of the «Комментарий» tool (ADR-0127 wave 4): where, and the object under it (null = the field). */
 export interface CommentClick {
@@ -42,12 +46,28 @@ export interface CommentClick {
 }
 
 /** Everything React is allowed to see: primitives only (ADR-0126 §4). The object identity changes only when a value does. */
+/** The drop menu's place: the end of the «continue» line, canvas px. */
+export interface QuickDrop {
+  readonly screen: Point;
+}
+
 export interface EngineState {
   /** The selected object when exactly one is selected. */
   readonly selectedId: string | null;
   readonly selectionCount: number;
   readonly tool: Tool;
   readonly shapeKind: ShapeKind;
+  /** The color the sticky tool creates with (a palette token). */
+  readonly stickyColor: string;
+  /** The pen tool draws with the marker (semi-transparent, wide) rather than the pen. */
+  readonly inkMarker: boolean;
+  /** Color (a palette token) and width of the pen tool's current kind. */
+  readonly inkColor: string;
+  readonly inkWidth: number;
+  /** The eraser's radius, screen px (`ERASER_SIZES`). */
+  readonly eraserPx: number;
+  /** The size the «Фрейм» tool places with a click (`custom`: drag to draw, a click places 16:9). */
+  readonly frameSize: FramePreset;
   /** Rounded zoom, percent. */
   readonly zoomPct: number;
   readonly canUndo: boolean;
@@ -104,6 +124,8 @@ export interface EngineOptions {
   editorHost?: HTMLElement;
   /** The text editor's accessible name, in the UI language (read at every open). */
   editorLabel?: () => string;
+  /** The title of the `n`-th frame, in the UI language («Фрейм 3»); absent: new frames are untitled. */
+  frameTitle?: (n: number) => string;
   /**
    * Pictures (ADR-0127, 2026-10-23): an API media path → a URL an <img> loads (the app's authenticated loader). Absent:
    * pictures are drawn as plaques.
@@ -119,7 +141,11 @@ export interface EngineOptions {
   cancelRaf?: (id: number) => void;
 }
 
-const STATE_KEYS: readonly (keyof EngineState)[] = ['selectedId', 'selectionCount', 'tool', 'shapeKind', 'zoomPct', 'canUndo', 'canRedo', 'editing', 'readOnly', 'followKey', 'followName', 'votePhase', 'votesPer', 'votesLeft', 'canVote', 'multiSelect'];
+/** Whether box `o` wholly contains `inner` (a frame or a zone the object sits in). */
+const encloses = (o: ObjectRec, inner: Rect): boolean =>
+  !isConnector(o) && o.x <= inner.x && o.y <= inner.y && o.x + o.w >= inner.x + inner.w && o.y + o.h >= inner.y + inner.h;
+
+const STATE_KEYS: readonly (keyof EngineState)[] = ['selectedId', 'selectionCount', 'tool', 'shapeKind', 'stickyColor', 'inkMarker', 'inkColor', 'inkWidth', 'eraserPx', 'frameSize', 'zoomPct', 'canUndo', 'canRedo', 'editing', 'readOnly', 'followKey', 'followName', 'votePhase', 'votesPer', 'votesLeft', 'canVote', 'multiSelect'];
 const LOCAL_AWARENESS_MS = 50;
 /** Gestures that follow their pointer when the camera moves under it, and pan the view at its edge. */
 const FOLLOW_KINDS: ReadonlySet<Gesture['kind']> = new Set(['marquee', 'move', 'resize']);
@@ -130,11 +156,14 @@ const EDGE_PAN_MAX_DT = 0.05;
 /** Our camera goes out at most this often (5/s), and only when it moved. */
 const LOCAL_VIEW_MS = 200;
 const ANIM_MS = 180;
+/** How long a sticky pad's corner takes to lift under the pointer (and to settle after it). */
+const PAD_LIFT_MS = 180;
 /** Phone: the format bar above the keyboard (44 px targets + padding) and the zoom bar / count of others at the top. */
 const PHONE_FORMAT_BAR_PX = 56;
 const PHONE_TOP_BARS_PX = 64;
 
-function makeCanvasMeasure(family: () => string): MeasureFn {
+/** Text width through a 2D context (an estimate where there is no document). Also the hint pictures'. */
+export function makeCanvasMeasure(family: () => string): MeasureFn {
   if (typeof document === 'undefined') return estimateMeasure;
   const ctx = document.createElement('canvas').getContext('2d');
   if (!ctx) return estimateMeasure;
@@ -203,10 +232,25 @@ export class CanvasEngine implements Core {
   private reducedMotion: boolean;
   private readonly pressListeners = new Set<(screen: Point, world: Point) => void>();
   private readonly commentListeners = new Set<(c: CommentClick) => void>();
+  private readonly dropListeners = new Set<(d: QuickDrop | null) => void>();
+  /** A «continue» line released on empty canvas, waiting for the drop menu's choice. */
+  private drop: { src: string; side: ConcreteSide; from: Point; at: Point } | null = null;
   private readonly stickerListeners = new Set<() => void>();
   private tool_: Tool = 'select';
   private multi_ = false;
   private shape_: ShapeKind = 'rect';
+  private sticky_: string = DEFAULTS.stickyColor;
+  /** The hovered «continue» dot. */
+  private quickHot: ConcreteSide | null = null;
+  /** The sticky pad under the pointer, and each pad's corner lift in motion: from `v0` toward `to` since `t0`. */
+  private padHot: string | null = null;
+  private readonly padAnim = new Map<string, { v0: number; to: number; t0: number; settled?: boolean }>();
+  private quickT0 = 0;
+  private eraser_: number = ERASER_SIZES[1] ?? 12;
+  private frame_: FramePreset = '16:9';
+  /** The pen's and the marker's color and width, each kept for the session; `marker_` picks which one the pen tool uses. */
+  private readonly pens = { pen: { color: DEFAULTS.inkStroke, width: PEN_WIDTHS[1] ?? 4 }, marker: { color: 'yellow', width: MARKER_WIDTHS[1] ?? 20 } };
+  private marker_ = false;
   private route_: RouteKind = 'straight';
   private pasteCount = 0;
   /** The object whose text the editor is open on. */
@@ -262,6 +306,7 @@ export class CanvasEngine implements Core {
       beforeFrame: () => this.frameStart(),
       awareness: this.awareness,
       getVotes: () => (this.votes.active ? this.votes : undefined),
+      getPadLift: (id) => this.padLift(id),
       maxDpr: this.lowPower ? 1 : 2,
       ...(opts.raf ? { raf: opts.raf } : {}),
       ...(opts.cancelRaf ? { cancelRaf: opts.cancelRaf } : {}),
@@ -349,6 +394,12 @@ export class CanvasEngine implements Core {
       selectionCount: this.sel.size,
       tool: this.tool_,
       shapeKind: this.shape_,
+      stickyColor: this.sticky_,
+      inkMarker: this.marker_,
+      inkColor: this.pen.color,
+      inkWidth: this.pen.width,
+      eraserPx: this.eraser_,
+      frameSize: this.frame_,
       zoomPct: Math.round(this.cam.scale * 100),
       canUndo: this.doc.undo.undoStack.length > 0,
       canRedo: this.doc.undo.redoStack.length > 0,
@@ -386,8 +437,33 @@ export class CanvasEngine implements Core {
     return this.shape_;
   }
 
+  get stickyColor(): string {
+    return this.sticky_;
+  }
+
   get connectorRoute(): RouteKind {
     return this.route_;
+  }
+
+  private get pen(): { color: string; width: number } {
+    return this.marker_ ? this.pens.marker : this.pens.pen;
+  }
+
+  get eraserPx(): number {
+    return this.eraser_;
+  }
+
+  get inkStyle(): InkStyle {
+    return { color: this.pen.color, width: this.pen.width, marker: this.marker_ };
+  }
+
+  get frameSize(): { w: number; h: number } {
+    return framePresetSize(this.frame_);
+  }
+
+  /** «Фрейм N»: one more than the frames already on the board. */
+  nextFrameTitle(): string {
+    return this.opts.frameTitle?.(this.scene.frames().length + 1) ?? '';
   }
 
   // ── Core (used by gestures and input) ───────────────────────────────────────
@@ -492,6 +568,15 @@ export class CanvasEngine implements Core {
         if (dt > 0) this.steerCamera(panBy(this.liveCamera, -v.x * dt, -v.y * dt));
       } else d.at = 0;
     }
+    if (this.padAnim.size > 0 && this.stepPads()) more = true;
+    const q = this.overlay.quick;
+    if (q?.hot && q.hot.t < 1) {
+      const t = Math.min(1, (this.now() - this.quickT0) / QUICK_ANIM_MS);
+      this.overlay = { ...this.overlay, quick: { ...q, hot: { ...q.hot, t } } };
+      // The new step has to be painted: a frame request (the overlay was set directly).
+      this.renderer.requestFrame();
+      if (t < 1) more = true;
+    }
     this.flushCamera();
     if (d && !sameCamera(d.cam, this.cam)) {
       d.cam = this.cam;
@@ -522,6 +607,16 @@ export class CanvasEngine implements Core {
   setOverlay(p: Partial<OverlayState>): void {
     this.overlay = { ...this.overlay, ...p };
     this.renderer.requestFrame();
+  }
+
+  previewInk(ink: InkPreview | null, dirty: Rect | null): void {
+    this.overlay = { ...this.overlay, ink };
+    if (dirty) this.renderer.requestOverlayRect(dirty);
+    else this.renderer.requestFrame();
+  }
+
+  refuseCreate(): void {
+    this.opts.onRefused?.('create');
   }
 
   setSelection(ids: Iterable<string>): void {
@@ -558,8 +653,174 @@ export class CanvasEngine implements Core {
       else outlines.push({ rect: { x: o.x, y: o.y, w: o.w, h: o.h }, rot: o.rot ?? 0 });
     }
     const group = !this.readOnly && !this.editor.isOpen ? selectionFrame(recs) : null;
-    this.overlay = { ...this.overlay, outlines: this.sel.size > 1 ? outlines : [], connectors, group, ...(this.touch ? { touch: true } : {}) };
+    // No dots while the drop menu waits (its line is drawn instead).
+    const src = group && !this.drop ? this.quickSource() : null;
+    const quick = src ? { rect: { x: src.x, y: src.y, w: src.w, h: src.h }, sides: QUICK_SIDES, hot: null } : null;
+    this.quickHot = null;
+    this.overlay = { ...this.overlay, outlines: this.sel.size > 1 ? outlines : [], connectors, group, quick, ...(this.touch ? { touch: true } : {}) };
     this.renderer.requestFrame();
+  }
+
+  /**
+   * The object the «continue» dots belong to (engine/quick.ts): one selected, unlocked, unturned sticky or shape with
+   * the select tool, a mouse and nothing being edited.
+   */
+  private quickSource(): StickyRec | ShapeRec | null {
+    if (this.sel.size !== 1 || this.tool_ !== 'select' || this.touch || this.readOnly || this.editor.isOpen) return null;
+    const o = this.getSelected()[0];
+    return o && (o.kind === 'sticky' || o.kind === 'shape') && !o.locked && !o.rot ? o : null;
+  }
+
+  /** The «continue» dot under the pointer, if any (input: the hover cursor and the press). */
+  quickAt(w: Point): ConcreteSide | null {
+    if (!this.overlay.quick) return null;
+    const src = this.quickSource();
+    return src ? quickSideAt(src, w, this.px(1)) : null;
+  }
+
+  /** The new object's frame for `side` (the spot beside the source, stepping past objects already there). */
+  private quickRect(src: StickyRec | ShapeRec, side: ConcreteSide): Rect {
+    const probe = quickTarget(src, side, []);
+    const area = rectInflate(probe, Math.max(src.w, src.h) * 6);
+    // What holds the source (a frame, a template's zone) is the place it sits in, not an obstacle.
+    const taken = this.scene.query(area).flatMap((o) => (o.id !== src.id && !isConnector(o) && !encloses(o, src) ? [aabb(o)] : []));
+    return quickTarget(src, side, taken);
+  }
+
+  /** A pad's corner lift now (0…1): eased toward 1 under the pointer, back to 0 after it leaves. */
+  private padLift(id: string): number {
+    const a = this.padAnim.get(id);
+    if (!a) return 0;
+    const k = Math.min(1, (this.now() - a.t0) / PAD_LIFT_MS);
+    const e = 1 - (1 - k) * (1 - k) * (1 - k);
+    return a.v0 + (a.to - a.v0) * e;
+  }
+
+  /** The pointer is over this sticky pad (or none): its corner starts to lift, the previous one's to settle. */
+  hoverPad(id: string | null): void {
+    if (id === this.padHot) return;
+    const now = this.now();
+    for (const [pid, to] of [[this.padHot, 0], [id, 1]] as const) {
+      if (!pid) continue;
+      if (this.reducedMotion) {
+        if (to === 0) this.padAnim.delete(pid);
+        else this.padAnim.set(pid, { v0: 1, to: 1, t0: now - PAD_LIFT_MS });
+      } else this.padAnim.set(pid, { v0: this.padLift(pid), to, t0: now });
+      const o = this.scene.get(pid);
+      if (o) this.renderer.invalidate(visualBounds(o));
+    }
+    this.padHot = id;
+  }
+
+  /** One frame of the pads' lift: repaints the moving ones; true while any still moves. */
+  private stepPads(): boolean {
+    let moving = false;
+    const now = this.now();
+    for (const [id, a] of this.padAnim) {
+      if (a.settled) continue;
+      const o = this.scene.get(id);
+      if (o) this.renderer.invalidate(visualBounds(o));
+      if (now - a.t0 < PAD_LIFT_MS) moving = true;
+      // Done: painted once more at its final value; a lifted pad keeps its value, a settled one goes.
+      else if (a.to === 0) this.padAnim.delete(id);
+      else a.settled = true;
+    }
+    return moving;
+  }
+
+  /** Hover over a dot (or off it): the preview of what a click there would make. */
+  hoverQuick(side: ConcreteSide | null): void {
+    if (side === this.quickHot) return;
+    this.quickHot = side;
+    const q = this.overlay.quick;
+    const src = q ? this.quickSource() : null;
+    if (!q || !src) return;
+    // The dot grows into its button and the preview fades in over QUICK_ANIM_MS (frameStart steps it); none with reduced motion.
+    this.quickT0 = this.now();
+    this.setOverlay({ quick: { ...q, hot: side ? { side, ghost: this.quickRect(src, side), t: this.reducedMotion ? 1 : 0 } : null } });
+  }
+
+  /** A press on a dot: a click makes the quick copy, a drag places it (or connects) where it is released. */
+  quickGesture(side: ConcreteSide, s: Point): Gesture | null {
+    const src = this.quickSource();
+    if (!src) return null;
+    return new QuickGesture(this, src, side, s, () => this.quickCreate(side), () => this.refreshOverlay());
+  }
+
+  /** The drop menu opens (`screen`: the line's end, canvas px) or closes (null). */
+  onQuickDrop(fn: (d: QuickDrop | null) => void): () => void {
+    this.dropListeners.add(fn);
+    return () => this.dropListeners.delete(fn);
+  }
+
+  liftMoving(ids: readonly string[]): void {
+    this.renderer.liftObjects(ids);
+  }
+
+  dropMoving(): void {
+    this.renderer.dropLift();
+  }
+
+  openQuickDrop(src: string, side: ConcreteSide, from: Point, at: Point): void {
+    this.drop = { src, side, from, at };
+    const d: QuickDrop = { screen: worldToScreen(this.cam, at) };
+    for (const fn of [...this.dropListeners]) fn(d);
+  }
+
+  /**
+   * The drop menu's choice: the object at the line's end (its side facing the line on the end), wired from the source,
+   * selected — one undo step. With `text` (typed in the menu's field) it is written in; without, its editor opens.
+   */
+  quickPlace(c: QuickChoice, text = ''): void {
+    const d = this.drop;
+    if (!d) return;
+    this.closeDrop();
+    const src = this.scene.get(d.src);
+    if (!src || (src.kind !== 'sticky' && src.kind !== 'shape') || this.readOnly) {
+      this.refreshOverlay();
+      return;
+    }
+    const size = choiceSize(c, src);
+    const { rect, side } = dropRect(d.from, d.at, size.w, size.h);
+    const id = newId();
+    this.doc.checkpoint();
+    const made = this.doc.createMany([
+      { id, init: choiceInit(c, src, rect, this.sticky_, text.trim()) },
+      { init: { kind: 'connector', from: { id: src.id, side: d.side }, to: { id, side }, arrow: 'end', route: QUICK_ROUTE } },
+    ]);
+    this.finishCreate(made.length ? [id] : [], !text.trim());
+  }
+
+  /** The drop menu closed without a choice: the line goes, nothing is written, the dots come back. */
+  quickDismiss(): void {
+    if (!this.drop) return;
+    this.closeDrop();
+    this.refreshOverlay();
+  }
+
+  get quickDropOpen(): boolean {
+    return this.drop !== null;
+  }
+
+  private closeDrop(): void {
+    this.drop = null;
+    this.setOverlay({ wire: null });
+    for (const fn of [...this.dropListeners]) fn(null);
+  }
+
+  /** A click on a dot: the next object beside the source, wired from it, selected with its text open — one undo step. */
+  quickCreate(side: ConcreteSide): void {
+    const src = this.quickSource();
+    if (!src) return;
+    const at = this.quickRect(src, side);
+    const id = newId();
+    this.doc.checkpoint();
+    const made = this.doc.createMany([
+      { id, init: quickInit(src, at) },
+      { init: { kind: 'connector', from: { id: src.id, side }, to: { id, side: OPPOSITE[side] }, arrow: 'end', route: QUICK_ROUTE } },
+    ]);
+    this.quickHot = null;
+    this.finishCreate(made.length ? [id] : [], true);
   }
 
   /** The selection frame the input hit-tests its handles against (null when read-only or editing): the one the overlay draws, kept current by `refreshOverlay`. */
@@ -622,7 +883,9 @@ export class CanvasEngine implements Core {
   setTool(t: Tool): void {
     if (t === this.tool_) return;
     this.tool_ = t;
-    this.canvas.style.cursor = t === 'select' ? '' : 'crosshair';
+    // Another tool: the pad under the pointer is no longer an invitation.
+    if (t !== 'select') this.hoverPad(null);
+    this.canvas.style.cursor = toolCursor(t, this.eraser_);
     this.sync();
   }
 
@@ -679,6 +942,55 @@ export class CanvasEngine implements Core {
   setShapeKind(k: ShapeKind): void {
     this.shape_ = k;
     this.sync();
+  }
+
+  setStickyColor(c: string): void {
+    this.sticky_ = c;
+    this.sync();
+  }
+
+  /**
+   * The pen tool's settings: `marker` switches between the pen and the marker (each keeps its own color and width), then
+   * `color` / `width` apply to the one in use. Kept for the session.
+   */
+  setInk(p: { marker?: boolean; color?: string; width?: number }): void {
+    if (p.marker !== undefined) this.marker_ = p.marker;
+    const pen = this.pen;
+    if (p.color !== undefined) pen.color = p.color;
+    if (p.width !== undefined && Number.isFinite(p.width)) pen.width = Math.min(INK_MAX_WIDTH, Math.max(INK_MIN_WIDTH, p.width));
+    this.sync();
+  }
+
+  /** The eraser's size (screen px radius), kept for the session; its ring cursor follows. */
+  setEraserPx(px: number): void {
+    if (!Number.isFinite(px) || px === this.eraser_) return;
+    this.eraser_ = Math.min(64, Math.max(2, px));
+    if (this.tool_ === 'eraser') this.canvas.style.cursor = toolCursor('eraser', this.eraser_);
+    this.sync();
+  }
+
+  /** The size a click of the «Фрейм» tool places, kept for the session. */
+  setFrameSize(p: FramePreset): void {
+    this.frame_ = p;
+    this.sync();
+  }
+
+  /**
+   * The frames panel: brings a frame into view whole (animated, a margin around it) and selects it, so its title and
+   * fill are one click away. Unknown ids are ignored.
+   */
+  zoomToFrame(id: string): void {
+    const f = this.scene.get(id);
+    if (!f || f.kind !== 'frame') return;
+    this.setSelection([id]);
+    this.moveCamera(fitRect({ x: f.x, y: f.y - 32, w: f.w, h: f.h + 32 }, this.viewport, 48));
+  }
+
+  /** Renames a frame (the frames panel's inline field): one undo step. */
+  renameFrame(id: string, title: string): void {
+    if (!this.canEdit() || this.scene.get(id)?.kind !== 'frame') return;
+    this.doc.checkpoint();
+    this.doc.patch(id, { title });
   }
 
   setConnectorRoute(r: RouteKind): void {
@@ -916,7 +1228,8 @@ export class CanvasEngine implements Core {
     this.doc.checkpoint();
     // The copy lands to the right of the selection (a gap of 24), on the same line; a lone connector has no box to go beside and keeps the small diagonal step.
     const bb = boundsOf([...this.sel].flatMap((id) => { const o = this.scene.get(id); return o && !isConnector(o) ? [aabb(o)] : []; }));
-    const ids = duplicate(this.scene, this.doc, this.sel, bb ? bb.w + 24 : 24, bb ? 0 : 24);
+    // A frame is copied with what it holds.
+    const ids = duplicate(this.scene, this.doc, this.scene.withFrameMembers(this.sel), bb ? bb.w + 24 : 24, bb ? 0 : 24);
     if (ids.length > 0) this.setSelection(ids);
     else this.refused(this.sel.size);
     return ids;
@@ -929,7 +1242,7 @@ export class CanvasEngine implements Core {
 
   /** Writes the selection to the clipboard. Returns the text (also for callers with their own clipboard). */
   async copy(): Promise<string | null> {
-    const text = serialize(this.scene, this.doc, this.sel);
+    const text = serialize(this.scene, this.doc, this.scene.withFrameMembers(this.sel));
     if (text && this.clipboardPort) {
       try {
         await this.clipboardPort.writeText(text);
@@ -945,8 +1258,8 @@ export class CanvasEngine implements Core {
   /** Copies the selection and deletes what may be deleted: on locked objects ⌘X is a plain copy. */
   async cut(): Promise<void> {
     if (!this.canEdit()) return;
-    // What was copied is what goes: the selection may change while the clipboard write is awaited.
-    const ids = [...this.sel].filter((id) => !this.scene.get(id)?.locked);
+    // What was copied is what goes (a frame with what it holds): the selection may change while the clipboard write is awaited.
+    const ids = this.scene.withFrameMembers(this.sel).filter((id) => !this.scene.get(id)?.locked);
     await this.copy();
     const alive = ids.filter((id) => this.scene.get(id));
     if (!this.canEdit() || alive.length === 0) return;
@@ -1029,11 +1342,12 @@ export class CanvasEngine implements Core {
     return p;
   }
 
-  /** Moves the selection by a world delta (arrow keys); locked objects stay. */
+  /** Moves the selection by a world delta (arrow keys); locked objects stay, a frame takes what it holds along. */
   nudge(dx: number, dy: number): void {
     if (!this.canEdit() || this.sel.size === 0) return;
     const patches = new Map<string, ObjectPatch>();
-    for (const id of this.sel) {
+    const free = [...this.sel].filter((id) => !this.scene.get(id)?.locked);
+    for (const id of this.scene.withFrameMembers(free)) {
       const o = this.scene.get(id);
       if (o && !o.locked) patches.set(id, this.shiftPatch(o, dx, dy));
     }
@@ -1158,7 +1472,7 @@ export class CanvasEngine implements Core {
 
   private editSpec(o: ObjectRec): EditSpec | null {
     const p = this.palette;
-    if (o.kind === 'image') return null;
+    if (o.kind === 'image' || o.kind === 'ink' || o.kind === 'frame') return null;
     if (isConnector(o)) {
       const m = connectorMidpoint(o);
       return { box: { x: m.x - 80, y: m.y - 12, w: 160, h: 24 }, text: o.label, size: LABEL_SIZE, color: p.ink, align: 'center', vcenter: true, autoHeight: false, fontFamily: p.fontFamily };
@@ -1166,9 +1480,9 @@ export class CanvasEngine implements Core {
     const box = contentRect(o);
     const turn = o.rot ? { rot: o.rot, center: rectCenter(o) } : {};
     switch (o.kind) {
-      case 'sticky': return { box, text: o.text, size: boxFontSize(o), color: resolveSticky(p, o.color).fg, align: 'left', vcenter: false, autoHeight: false, fontFamily: p.fontFamily, rich: true, sized: true, ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
-      case 'text': return { box, text: o.text, size: o.size, color: resolveColor(p, o.color) ?? p.ink, align: 'left', vcenter: false, autoHeight: true, fontFamily: p.fontFamily, rich: true, sized: true, ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
-      case 'shape': return { box, text: o.text, size: boxFontSize(o), color: shapeInk(p, o.fill), align: 'center', vcenter: true, autoHeight: false, fontFamily: p.fontFamily, rich: true, sized: true, ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
+      case 'sticky': return { box, text: o.text, size: boxFontSize(o), color: resolveSticky(p, o.color).fg, align: 'center', vcenter: true, autoHeight: false, fontFamily: p.fontFamily, rich: true, sized: true, ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
+      case 'text': return { box, text: o.text, size: o.size, color: resolveColor(p, o.color) ?? p.ink, align: 'left', vcenter: false, autoHeight: true, fontFamily: p.fontFamily, rich: true, sized: true, frame: p.accent, ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
+      case 'shape': return { box, text: o.text, size: boxFontSize(o), color: shapeInk(p, o.fill, o.soft), align: 'center', vcenter: true, autoHeight: false, fontFamily: p.fontFamily, rich: true, sized: true, ...(o.fmt ? { fmt: o.fmt } : {}), ...turn };
     }
   }
 
@@ -1196,7 +1510,8 @@ export class CanvasEngine implements Core {
     if (this.editor.isOpen) this.editor.commit();
     const target = id ?? this.state.selectedId;
     const o = target ? this.scene.get(target) : undefined;
-    if (!o || o.locked) return false;
+    // A sticky pad is not written on (owner 30.10): it hands out stickies; its name goes next to it.
+    if (!o || o.locked || (o.kind === 'sticky' && o.pad)) return false;
     const spec = this.editSpec(o);
     if (!spec) return false;
     const oid = o.id;
@@ -1229,20 +1544,41 @@ export class CanvasEngine implements Core {
   }
 
   /**
-   * Inserts a built-in template centered on the visible area, in one transaction (one undo step), and selects it.
+   * Inserts a built-in template centered on the visible area, as one undo step, and selects it.
    * Returns the new ids; [] when the canvas has no room (the 5000-object limit) or cannot be edited.
    */
   insertTemplate(id: TemplateId, tr: TemplateText): string[] {
     if (!this.canEdit()) return [];
     const view = this.visibleWorld();
-    const items = buildTemplate(id, { x: view.x + view.w / 2, y: view.y + view.h / 2 }, tr, newId);
+    const center = rectCenter(view);
+    const items = buildTemplate(id, center, tr, newId);
     this.doc.checkpoint();
+    // The layout estimates the text boxes; the real bounds (text measured) decide the center, in the same gesture.
+    this.doc.beginGesture();
     const ids = this.doc.createMany(items);
+    if (ids.length > 0) this.centerObjects(ids, center);
+    this.doc.endGesture();
     if (ids.length > 0) {
       this.setSelection(ids);
       this.setTool('select');
     }
     return ids;
+  }
+
+  /** Moves the fresh objects so that their real bounds are centered on `c`; a connector moves by its free ends (glued ones follow). */
+  private centerObjects(ids: readonly string[], c: Point): void {
+    const b = this.scene.bounds(ids);
+    if (!b) return;
+    const dx = c.x - (b.x + b.w / 2);
+    const dy = c.y - (b.y + b.h / 2);
+    if (dx === 0 && dy === 0) return;
+    const move = (e: Endpoint): Endpoint => ('id' in e ? e : { x: e.x + dx, y: e.y + dy });
+    for (const oid of ids) {
+      const o = this.scene.get(oid);
+      if (!o) continue;
+      if (o.kind === 'connector') this.doc.patch(oid, { from: move(o.from), to: move(o.to) });
+      else this.doc.patch(oid, { x: o.x + dx, y: o.y + dy });
+    }
   }
 
   /** The text size in px of the object under edit (the format bar's size field): the object changes, the textarea follows. */
@@ -1259,7 +1595,10 @@ export class CanvasEngine implements Core {
   createTextAt(world: Point): string | null {
     if (!this.canEdit()) return null;
     this.doc.checkpoint();
-    const id = this.doc.create({ kind: 'text', x: world.x - 8, y: world.y - DEFAULTS.textSize });
+    // Sized for the zoom, like a click with the text tool.
+    const k = createScale(this.px(1));
+    const size = Math.min(DEFAULTS.maxTextSize, Math.round(DEFAULTS.textSize * k));
+    const id = this.doc.create({ kind: 'text', x: world.x - 8 * k, y: world.y - size, w: DEFAULTS.textW * k, size });
     this.finishCreate(id ? [id] : [], true);
     return id;
   }
@@ -1579,8 +1918,8 @@ function rectInView(r: Rect, view: Rect): boolean {
 
 
 /** The text color the renderer uses on a shape (readable on its fill), so the editor matches it. */
-function shapeInk(p: CanvasPalette, fillToken: string | undefined): string {
-  const fill = fillToken ? resolveColor(p, fillToken) : undefined;
+function shapeInk(p: CanvasPalette, fillToken: string | undefined, soft?: boolean): string {
+  const fill = fillToken ? resolveFill(p, fillToken, soft) : undefined;
   const ink = resolveColor(p, 'text') ?? p.ink;
   return fill ? readableInk(fill, ink) : ink;
 }

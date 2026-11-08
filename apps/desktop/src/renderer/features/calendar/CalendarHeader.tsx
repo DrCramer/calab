@@ -123,6 +123,7 @@ export function ConnectControl(): ReactNode {
       size="sm"
       title={t('fb.connectHint')}
       aria-label={t('fb.connect')}
+      className="h-(--control-h-bar)"
       onClick={() => useUi.getState().openDialog({ kind: 'settings', tab: 'calendar' })}
       data-testid="connect-calendar"
     >

@@ -149,8 +149,9 @@ func run(m *testing.M) int {
 		AccessTokenTTL:     24 * time.Hour, // the defaults (config.go): revocation must not lean on expiry
 		RefreshTokenTTL:    8760 * time.Hour,
 		TempRoomMaxTTLDays: 30, TempRoomsPerWorkspace: 50, // the defaults (config.go); the literal skips envDefault
-		RegistrationMode: config.RegistrationInvite,
-		PublicAppURL:     "https://app.example.com",
+		RegistrationMode:     config.RegistrationInvite,
+		PublicAppURL:         "https://app.example.com",
+		MCPOAuthRedirectURIs: []string{"https://claude.ai/api/mcp/auth_callback"},
 		// Abuse limits are exercised separately (TestAbuseLimits) with small values.
 		LoginAccountBurst:          1000,
 		MaxWorkspacesPerUser:       1000,
@@ -162,7 +163,9 @@ func run(m *testing.M) int {
 		PublicAppURLs:              []string{"https://app.example.com", "https://alias.example.org"},
 		AuthRateBurst:              5,
 		AuthRatePerMinute:          1,
-		MaxFileSizeMB:              1,        // small, so the size limit is testable
+		MaxFileSizeMB:              1,  // small, so the size limit is testable
+		UploadRateBurst:            30, // the literal skips envDefault; 30 at once, 120/h as before ADR-0155
+		UploadRatePerHour:          120,
 		FFmpegPath:                 "ffmpeg", // HEIC conversion: tested when ffmpeg ≥ 7.1 is on PATH
 		FFprobePath:                "ffprobe",
 		StorageDriver:              "fs",

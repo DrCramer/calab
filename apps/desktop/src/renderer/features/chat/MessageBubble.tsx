@@ -9,11 +9,13 @@ import { thumbnailPath } from '../../lib/api/endpoints';
 import { THUMB_LARGE, thumbWidthPath, wantsLargeThumb } from '../../lib/thumbs';
 import { fmt, toDate, useTimeFormat } from '../../lib/format';
 import { Markdown } from '../../lib/markdown/Markdown';
+import { hasTable } from '../../lib/markdown/table';
+import { RichBody } from './RichBody';
 import { firstLink, isEmojiOnly, parseMarkdown } from '../../lib/markdown/parse';
 import { filePreview } from '../../lib/filePreview';
 import { officeOpens } from '../disk/office/bridge';
 import { isImageAttachment } from '../../lib/imageAttachment';
-import type { LightboxImage } from '../../lib/lightbox';
+import { chatGallery, type LightboxImage } from '../../lib/lightbox';
 import { AttachmentImg } from '../../components/AttachmentImg';
 import { downloadFile, openAttachment } from '../../services/files';
 import { can } from '../../lib/permissions';
@@ -205,7 +207,7 @@ export function RowAvatar({ workspaceId, userId, name, fileId, former, show, cla
 }
 
 /** The author line on the first bubble of someone else's group: coloured name, badges, «через бота». */
-export function AuthorLine({ workspaceId, userId, name, bot, via }: { workspaceId: string; userId: string; name: string; bot: boolean; via?: string | undefined }): ReactNode {
+export function AuthorLine({ workspaceId, userId, name, bot, via, mcp = false }: { workspaceId: string; userId: string; name: string; bot: boolean; via?: string | undefined; mcp?: boolean }): ReactNode {
   return (
     <div className="truncate px-3 pt-1.5 text-body font-semibold leading-[18px]" style={{ color: `var(--name-${userColorIndex(userId) + 1})` }} title={name}>
       <AuthorTarget workspaceId={workspaceId} userId={userId} name={name} className="max-w-full truncate hover:underline">
@@ -214,7 +216,7 @@ export function AuthorLine({ workspaceId, userId, name, bot, via }: { workspaceI
       <MemberBadge workspaceId={workspaceId} userId={userId} className="ml-1.5 inline-block align-[-3px]" />
       <FormerChip workspaceId={workspaceId} userId={userId} className="ml-1.5 align-[1px]" />
       {bot ? <BotBadge className="ml-1.5 align-[1px]" /> : null}
-      {via ? <ViaBot botId={via} className="ml-1.5 text-caption text-[color:var(--bubble-meta)]" /> : null}
+      {via || mcp ? <ViaBot botId={via} mcp={mcp} className="ml-1.5 text-caption text-[color:var(--bubble-meta)]" /> : null}
     </div>
   );
 }
@@ -372,6 +374,7 @@ function Bubble({
   const nodes = useMemo(() => parseMarkdown(m.content), [m.content]);
   // A leading bot command (ADR-0031) reads as inline code; the message stays ordinary text.
   const shown = useMemo(() => highlightCommand(m.content), [m.content]);
+  const tabled = useMemo(() => hasTable(m.content), [m.content]);
   const authorBot = useWorkspaces((s) => s.users[m.authorId]?.isBot ?? false);
   // In-room search: 0 = not a hit, 1 = hit, 2 = the current hit (primitive → no extra renders).
   const hit = useChatView((s) => (s.searchHits?.roomId === roomId && s.searchHits.ids.has(m.id) ? (s.searchHits.current === m.id ? 2 : 1) : 0));
@@ -418,9 +421,10 @@ function Bubble({
   const fwd = m.forward;
   const sticker = hasText && !fwd && !images.length && !files.length && !uploads.length && !m.replyToId && !m.reactions.length && isEmojiOnly(m.content);
   // ADR-0106: a message the author's bot wrote on their behalf keeps its header in my own
-  // bubbles too, as «через бота X» alone.
+  // bubbles too, as «через бота X» alone; so does one written through MCP (ADR-0156).
   const via = m.viaBotId;
-  const showName = (!own || !!via) && meta.first && !sticker;
+  const mcp = m.via === 'mcp';
+  const showName = (!own || !!via || mcp) && meta.first && !sticker;
   const imageOnly = images.length > 0 && !hasText && !files.length && !m.replyToId && !showName && !fwd && !m.reactions.length;
   // A lone voice message carries the time in its own last line (Telegram).
   const voiceOnly = rows.length === 1 && !!rows[0] && isVoice(rows[0]) && c.status === 'sent' && !hasText && !images.length && !videos.length && !m.reactions.length;
@@ -476,10 +480,10 @@ function Bubble({
       <div className="overflow-hidden" style={radius}>
         {showName && own ? (
           <div className="truncate px-3 pt-1.5 text-caption leading-[18px] text-[color:var(--bubble-meta)]">
-            <ViaBot botId={via} bare />
+            <ViaBot botId={via} mcp={mcp} bare />
           </div>
         ) : showName ? (
-          <AuthorLine workspaceId={workspaceId} userId={m.authorId} name={name} bot={authorBot} via={via} />
+          <AuthorLine workspaceId={workspaceId} userId={m.authorId} name={name} bot={authorBot} via={via} mcp={mcp} />
         ) : null}
         {fwd ? (
           <ForwardLine
@@ -492,7 +496,7 @@ function Bubble({
         ) : null}
         {m.replyToId ? <ReplyQuote roomId={roomId} workspaceId={workspaceId} replyToId={m.replyToId} padTop={!showName} /> : null}
         {images.length ? (
-          <ImageGrid files={images} padTop={showName || !!m.replyToId || !!fwd} overlay={imageOnly ? metaNode : null} />
+          <ImageGrid files={images} roomId={roomId} padTop={showName || !!m.replyToId || !!fwd} overlay={imageOnly ? metaNode : null} />
         ) : null}
         {videos.length ? (
           <div className={cx('flex flex-col gap-0.5', (showName || !!m.replyToId || !!fwd || images.length > 0) && 'pt-1.5')}>
@@ -504,7 +508,7 @@ function Bubble({
         {uploads.length ? <Uploads uploads={uploads} /> : null}
         {hasText ? (
           <div className={cx(BUBBLE_TEXT, fwd ? 'pt-0.5' : 'pt-1.5')}>
-            <Markdown text={shown} mention={mention} highlight={highlight} />
+            {tabled ? <RichBody workspaceId={workspaceId} text={m.content} /> : <Markdown text={shown} mention={mention} highlight={highlight} />}
             {!link && !files.length && !m.reactions.length ? (
               // Reserve room for the time on the last line (it is drawn absolutely, Telegram-style).
               <span className="invisible ml-2 inline-flex select-none" aria-hidden>
@@ -918,14 +922,26 @@ function Thumb({ f, boxW, boxH, onGone }: { f: FileMeta; boxW: number; boxH: num
 /** The Lightbox list of a message's images. */
 const lightboxImages = (files: FileMeta[]): LightboxImage[] => files.map((g) => ({ fileId: g.id, name: g.name, mime: g.mime, width: g.width, height: g.height }));
 
-function ImageGrid({ files, padTop, overlay }: { files: FileMeta[]; padTop: boolean; overlay: ReactNode }): ReactNode {
+/** The pictures of the room's loaded, sent messages, oldest first (the store holds them ascending). */
+function chatImageFiles(roomId: string): FileMeta[][] {
+  const items = useMessages.getState().rooms[roomId]?.items ?? [];
+  const out: FileMeta[][] = [];
+  for (const c of items) {
+    if (c.status !== 'sent') continue;
+    const pics = c.msg.attachments.filter(isImage);
+    if (pics.length) out.push(pics);
+  }
+  return out;
+}
+
+function ImageGrid({ files, roomId, padTop, overlay }: { files: FileMeta[]; roomId: string; padTop: boolean; overlay: ReactNode }): ReactNode {
   const single = files.length === 1 ? files[0] : undefined;
   const boxPx = single ? imageBoxPx(files) : (IMAGE_MAX - 2) / 2; // grid: square cells, gap-0.5
   const boxH = single ? (single.width && single.height ? (boxPx * single.height) / single.width : boxPx * 0.75) : boxPx;
   return (
     <div className={cx('relative grid gap-0.5', files.length > 1 && 'grid-cols-2', padTop && 'pt-1.5')} style={{ width: '100%' }}>
-      {files.map((f, index) => (
-        <ImageTile key={f.id} f={f} files={files} index={index} single={!!single} boxW={boxPx} boxH={boxH} />
+      {files.map((f) => (
+        <ImageTile key={f.id} f={f} files={files} roomId={roomId} single={!!single} boxW={boxPx} boxH={boxH} />
       ))}
       {overlay ? (
         <span className="pointer-events-none absolute bottom-1.5 right-1.5 rounded-full bg-[rgb(0_0_0/50%)] px-1.5 py-1 [--bubble-meta:var(--color-on-accent)]">{overlay}</span>
@@ -939,7 +955,7 @@ function ImageGrid({ files, padTop, overlay }: { files: FileMeta[]; padTop: bool
  * click opens the Lightbox over the message's pictures. A file whose preview does not load at all
  * (not a picture after all) stays in its box as a file: icon, name, a click downloads.
  */
-function ImageTile({ f, files, index, single, boxW, boxH }: { f: FileMeta; files: FileMeta[]; index: number; single: boolean; boxW: number; boxH: number }): ReactNode {
+function ImageTile({ f, files, roomId, single, boxW, boxH }: { f: FileMeta; files: FileMeta[]; roomId: string; single: boolean; boxW: number; boxH: number }): ReactNode {
   const open = useUi((s) => s.openDialog);
   const [gone, setGone] = useState(false);
   const onGone = useCallback(() => setGone(true), []);
@@ -948,7 +964,15 @@ function ImageTile({ f, files, index, single, boxW, boxH }: { f: FileMeta; files
     <button
       type="button"
       aria-label={gone ? `${t('chat.download')} ${f.name}` : t('chat.openImage', { name: f.name })}
-      onClick={() => (gone ? downloadFile(f) : open({ kind: 'image', images: lightboxImages(files), index }))}
+      onClick={() => {
+        if (gone) {
+          downloadFile(f);
+          return;
+        }
+        // The viewer pages through the chat's loaded photos (board #118), read once at the click.
+        const g = chatGallery(chatImageFiles(roomId), f.id, files);
+        open({ kind: 'image', images: lightboxImages(g.files), index: g.index });
+      }}
       {...dragOutAttrs(f)}
       {...dragOutHandlers}
       className="block overflow-hidden bg-[color-mix(in_srgb,var(--bubble-accent)_10%,transparent)] focus-visible:outline-offset-[-2px]"
@@ -992,6 +1016,20 @@ function FileRow({ f }: { f: FileMeta }): ReactNode {
         </div>
         <div className="text-caption text-[color:var(--bubble-meta)]">{fmt.size(f.size)}</div>
       </div>
+      {/* A file that opens in a viewer / the editor on click: «Скачать» saves it without opening (hover on the desktop, always on the phone). */}
+      {pdf ? (
+        <Tip label={t('chat.download')}>
+          <button
+            type="button"
+            onClick={() => downloadFile(f)}
+            aria-label={`${t('chat.download')} ${f.name}`}
+            className="grid size-8 shrink-0 place-items-center rounded-full text-[color:var(--bubble-meta)] hover:text-[color:var(--bubble-chip-fg)] focus-visible:opacity-100 mobile:size-11 opacity-0 group-hover/file:opacity-100 mobile:opacity-100"
+            data-testid="file-download"
+          >
+            <Download className="size-4" aria-hidden />
+          </button>
+        </Tip>
+      ) : null}
     </div>
   );
 }

@@ -95,7 +95,7 @@ WITH RECURSIVE up (id, parent_id, depth) AS (
     UNION ALL
     SELECT p.id, p.parent_id, up.depth + 1 FROM canvas_items p JOIN up ON p.id = up.parent_id WHERE up.depth < 64
 )
-SELECT wp.id, wp.workspace_id, wp.parent_id, wp.kind, wp.name, wp.position, wp.owner_id, wp.restricted, wp.preview, wp.doc_size, wp.next_seq, wp.updated_by, wp.created_at, wp.updated_at, wp.trashed_at, wp.trashed_by, wp.trashed_root, up.depth::int AS depth
+SELECT wp.id, wp.workspace_id, wp.parent_id, wp.kind, wp.name, wp.position, wp.owner_id, wp.restricted, wp.preview, wp.doc_size, wp.next_seq, wp.updated_by, wp.created_at, wp.updated_at, wp.trashed_at, wp.trashed_by, wp.trashed_root, wp.emoji, up.depth::int AS depth
 FROM up JOIN canvas_item_heads wp ON wp.id = up.id
 ORDER BY up.depth DESC
 `
@@ -134,6 +134,7 @@ func (q *Queries) CanvasItemPath(ctx context.Context, id uuid.UUID) ([]CanvasIte
 			&i.CanvasItemHead.TrashedAt,
 			&i.CanvasItemHead.TrashedBy,
 			&i.CanvasItemHead.TrashedRoot,
+			&i.CanvasItemHead.Emoji,
 			&i.Depth,
 		); err != nil {
 			return nil, err
@@ -152,7 +153,7 @@ WITH RECURSIVE up (leaf, id, parent_id, depth) AS (
     UNION ALL
     SELECT up.leaf, p.id, p.parent_id, up.depth + 1 FROM canvas_items p JOIN up ON p.id = up.parent_id WHERE up.depth < 64
 )
-SELECT up.leaf::uuid AS leaf, wp.id, wp.workspace_id, wp.parent_id, wp.kind, wp.name, wp.position, wp.owner_id, wp.restricted, wp.preview, wp.doc_size, wp.next_seq, wp.updated_by, wp.created_at, wp.updated_at, wp.trashed_at, wp.trashed_by, wp.trashed_root, up.depth::int AS depth
+SELECT up.leaf::uuid AS leaf, wp.id, wp.workspace_id, wp.parent_id, wp.kind, wp.name, wp.position, wp.owner_id, wp.restricted, wp.preview, wp.doc_size, wp.next_seq, wp.updated_by, wp.created_at, wp.updated_at, wp.trashed_at, wp.trashed_by, wp.trashed_root, wp.emoji, up.depth::int AS depth
 FROM up JOIN canvas_item_heads wp ON wp.id = up.id
 ORDER BY up.leaf, up.depth DESC
 `
@@ -193,6 +194,7 @@ func (q *Queries) CanvasItemPaths(ctx context.Context, ids []uuid.UUID) ([]Canva
 			&i.CanvasItemHead.TrashedAt,
 			&i.CanvasItemHead.TrashedBy,
 			&i.CanvasItemHead.TrashedRoot,
+			&i.CanvasItemHead.Emoji,
 			&i.Depth,
 		); err != nil {
 			return nil, err
@@ -370,7 +372,7 @@ const createCanvasItem = `-- name: CreateCanvasItem :one
 INSERT INTO canvas_items (workspace_id, parent_id, kind, name, owner_id, updated_by, position)
 VALUES ($1, $2, $3, $4, $5,
         $5, $6)
-RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, plain_text, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root
+RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, plain_text, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root, emoji
 `
 
 type CreateCanvasItemParams struct {
@@ -412,6 +414,7 @@ func (q *Queries) CreateCanvasItem(ctx context.Context, arg CreateCanvasItemPara
 		&i.TrashedAt,
 		&i.TrashedBy,
 		&i.TrashedRoot,
+		&i.Emoji,
 	)
 	return i, err
 }
@@ -494,7 +497,7 @@ func (q *Queries) DetachCanvasItem(ctx context.Context, arg DetachCanvasItemPara
 }
 
 const getCanvasItem = `-- name: GetCanvasItem :one
-SELECT id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root FROM canvas_item_heads WHERE id = $1
+SELECT id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root, emoji FROM canvas_item_heads WHERE id = $1
 `
 
 func (q *Queries) GetCanvasItem(ctx context.Context, id uuid.UUID) (CanvasItemHead, error) {
@@ -518,12 +521,13 @@ func (q *Queries) GetCanvasItem(ctx context.Context, id uuid.UUID) (CanvasItemHe
 		&i.TrashedAt,
 		&i.TrashedBy,
 		&i.TrashedRoot,
+		&i.Emoji,
 	)
 	return i, err
 }
 
 const getCanvasItemForUpdate = `-- name: GetCanvasItemForUpdate :one
-SELECT id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root FROM canvas_item_heads WHERE id = $1 FOR UPDATE
+SELECT id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root, emoji FROM canvas_item_heads WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetCanvasItemForUpdate(ctx context.Context, id uuid.UUID) (CanvasItemHead, error) {
@@ -547,12 +551,13 @@ func (q *Queries) GetCanvasItemForUpdate(ctx context.Context, id uuid.UUID) (Can
 		&i.TrashedAt,
 		&i.TrashedBy,
 		&i.TrashedRoot,
+		&i.Emoji,
 	)
 	return i, err
 }
 
 const getCanvasItemText = `-- name: GetCanvasItemText :one
-SELECT id, workspace_id, parent_id, kind, name, position, owner_id, restricted, plain_text, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root FROM canvas_items WHERE id = $1
+SELECT id, workspace_id, parent_id, kind, name, position, owner_id, restricted, plain_text, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root, emoji FROM canvas_items WHERE id = $1
 `
 
 // The item with its text (the export of plain text, a version's check).
@@ -578,6 +583,7 @@ func (q *Queries) GetCanvasItemText(ctx context.Context, id uuid.UUID) (CanvasIt
 		&i.TrashedAt,
 		&i.TrashedBy,
 		&i.TrashedRoot,
+		&i.Emoji,
 	)
 	return i, err
 }
@@ -836,7 +842,7 @@ func (q *Queries) LastCanvasVersion(ctx context.Context, canvasID uuid.UUID) (La
 }
 
 const listCanvasFolderChildren = `-- name: ListCanvasFolderChildren :many
-SELECT p.id, p.workspace_id, p.parent_id, p.kind, p.name, p.position, p.owner_id, p.restricted, p.preview, p.doc_size, p.next_seq, p.updated_by, p.created_at, p.updated_at, p.trashed_at, p.trashed_by, p.trashed_root,
+SELECT p.id, p.workspace_id, p.parent_id, p.kind, p.name, p.position, p.owner_id, p.restricted, p.preview, p.doc_size, p.next_seq, p.updated_by, p.created_at, p.updated_at, p.trashed_at, p.trashed_by, p.trashed_root, p.emoji,
     EXISTS (SELECT 1 FROM canvas_items c WHERE c.parent_id = p.id AND c.trashed_at IS NULL)::boolean AS has_children
 FROM canvas_item_heads p
 WHERE p.workspace_id = $1::uuid
@@ -894,6 +900,7 @@ func (q *Queries) ListCanvasFolderChildren(ctx context.Context, arg ListCanvasFo
 			&i.CanvasItemHead.TrashedAt,
 			&i.CanvasItemHead.TrashedBy,
 			&i.CanvasItemHead.TrashedRoot,
+			&i.CanvasItemHead.Emoji,
 			&i.HasChildren,
 		); err != nil {
 			return nil, err
@@ -953,7 +960,7 @@ func (q *Queries) ListCanvasItemActivity(ctx context.Context, arg ListCanvasItem
 }
 
 const listCanvasItemsByIDs = `-- name: ListCanvasItemsByIDs :many
-SELECT id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root FROM canvas_item_heads WHERE id = ANY($1::uuid[])
+SELECT id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root, emoji FROM canvas_item_heads WHERE id = ANY($1::uuid[])
 `
 
 func (q *Queries) ListCanvasItemsByIDs(ctx context.Context, ids []uuid.UUID) ([]CanvasItemHead, error) {
@@ -983,6 +990,7 @@ func (q *Queries) ListCanvasItemsByIDs(ctx context.Context, ids []uuid.UUID) ([]
 			&i.TrashedAt,
 			&i.TrashedBy,
 			&i.TrashedRoot,
+			&i.Emoji,
 		); err != nil {
 			return nil, err
 		}
@@ -1086,7 +1094,7 @@ func (q *Queries) ListCanvasPermissionsForItems(ctx context.Context, ids []uuid.
 const listCanvasRootChildren = `-- name: ListCanvasRootChildren :many
 
 
-SELECT p.id, p.workspace_id, p.parent_id, p.kind, p.name, p.position, p.owner_id, p.restricted, p.preview, p.doc_size, p.next_seq, p.updated_by, p.created_at, p.updated_at, p.trashed_at, p.trashed_by, p.trashed_root,
+SELECT p.id, p.workspace_id, p.parent_id, p.kind, p.name, p.position, p.owner_id, p.restricted, p.preview, p.doc_size, p.next_seq, p.updated_by, p.created_at, p.updated_at, p.trashed_at, p.trashed_by, p.trashed_root, p.emoji,
     EXISTS (SELECT 1 FROM canvas_items c WHERE c.parent_id = p.id AND c.trashed_at IS NULL)::boolean AS has_children
 FROM canvas_item_heads p
 WHERE p.workspace_id = $1::uuid
@@ -1153,6 +1161,7 @@ func (q *Queries) ListCanvasRootChildren(ctx context.Context, arg ListCanvasRoot
 			&i.CanvasItemHead.TrashedAt,
 			&i.CanvasItemHead.TrashedBy,
 			&i.CanvasItemHead.TrashedRoot,
+			&i.CanvasItemHead.Emoji,
 			&i.HasChildren,
 		); err != nil {
 			return nil, err
@@ -1171,7 +1180,7 @@ WITH RECURSIVE down (id, depth) AS (
     UNION ALL
     SELECT c.id, down.depth + 1 FROM canvas_items c JOIN down ON c.parent_id = down.id WHERE down.depth < 64
 )
-SELECT wp.id, wp.workspace_id, wp.parent_id, wp.kind, wp.name, wp.position, wp.owner_id, wp.restricted, wp.preview, wp.doc_size, wp.next_seq, wp.updated_by, wp.created_at, wp.updated_at, wp.trashed_at, wp.trashed_by, wp.trashed_root, down.depth::int AS depth
+SELECT wp.id, wp.workspace_id, wp.parent_id, wp.kind, wp.name, wp.position, wp.owner_id, wp.restricted, wp.preview, wp.doc_size, wp.next_seq, wp.updated_by, wp.created_at, wp.updated_at, wp.trashed_at, wp.trashed_by, wp.trashed_root, wp.emoji, down.depth::int AS depth
 FROM down JOIN canvas_item_heads wp ON wp.id = down.id
 ORDER BY down.depth, wp.id
 `
@@ -1211,6 +1220,7 @@ func (q *Queries) ListCanvasSubtree(ctx context.Context, id uuid.UUID) ([]ListCa
 			&i.CanvasItemHead.TrashedAt,
 			&i.CanvasItemHead.TrashedBy,
 			&i.CanvasItemHead.TrashedRoot,
+			&i.CanvasItemHead.Emoji,
 			&i.Depth,
 		); err != nil {
 			return nil, err
@@ -1261,7 +1271,7 @@ func (q *Queries) ListCanvasSweepWorkspaces(ctx context.Context, now time.Time) 
 }
 
 const listCanvasTrash = `-- name: ListCanvasTrash :many
-SELECT id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root FROM canvas_item_heads
+SELECT id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root, emoji FROM canvas_item_heads
 WHERE workspace_id = $1::uuid AND trashed_root
   AND (trashed_at, id) < ($2::timestamptz, $3::uuid)
 ORDER BY trashed_at DESC, id DESC
@@ -1310,6 +1320,7 @@ func (q *Queries) ListCanvasTrash(ctx context.Context, arg ListCanvasTrashParams
 			&i.TrashedAt,
 			&i.TrashedBy,
 			&i.TrashedRoot,
+			&i.Emoji,
 		); err != nil {
 			return nil, err
 		}
@@ -1322,7 +1333,7 @@ func (q *Queries) ListCanvasTrash(ctx context.Context, arg ListCanvasTrashParams
 }
 
 const listCanvasTrashRootsAll = `-- name: ListCanvasTrashRootsAll :many
-SELECT id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root FROM canvas_item_heads WHERE workspace_id = $1 AND trashed_root ORDER BY trashed_at, id
+SELECT id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root, emoji FROM canvas_item_heads WHERE workspace_id = $1 AND trashed_root ORDER BY trashed_at, id
 `
 
 // Every trash root of a workspace («Очистить корзину»: the caller deletes those they may).
@@ -1353,6 +1364,7 @@ func (q *Queries) ListCanvasTrashRootsAll(ctx context.Context, workspaceID uuid.
 			&i.TrashedAt,
 			&i.TrashedBy,
 			&i.TrashedRoot,
+			&i.Emoji,
 		); err != nil {
 			return nil, err
 		}
@@ -1365,7 +1377,7 @@ func (q *Queries) ListCanvasTrashRootsAll(ctx context.Context, workspaceID uuid.
 }
 
 const listCanvasTrashRootsBefore = `-- name: ListCanvasTrashRootsBefore :many
-SELECT id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root FROM canvas_item_heads
+SELECT id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq, updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root, emoji FROM canvas_item_heads
 WHERE workspace_id = $1 AND trashed_root AND trashed_at < $2::timestamptz
 ORDER BY trashed_at, id
 LIMIT $3
@@ -1405,6 +1417,7 @@ func (q *Queries) ListCanvasTrashRootsBefore(ctx context.Context, arg ListCanvas
 			&i.TrashedAt,
 			&i.TrashedBy,
 			&i.TrashedRoot,
+			&i.Emoji,
 		); err != nil {
 			return nil, err
 		}
@@ -1634,7 +1647,7 @@ UPDATE canvas_items SET
     updated_at = now()
 WHERE id = $4
 RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq,
-    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root
+    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root, emoji
 `
 
 type MoveCanvasItemParams struct {
@@ -1662,6 +1675,7 @@ type MoveCanvasItemRow struct {
 	TrashedAt   *time.Time
 	TrashedBy   *uuid.UUID
 	TrashedRoot bool
+	Emoji       string
 }
 
 // A move (under LockCanvasTree): the item goes under parent_id (NULL = the top level) at position
@@ -1693,6 +1707,7 @@ func (q *Queries) MoveCanvasItem(ctx context.Context, arg MoveCanvasItemParams) 
 		&i.TrashedAt,
 		&i.TrashedBy,
 		&i.TrashedRoot,
+		&i.Emoji,
 	)
 	return i, err
 }
@@ -1880,7 +1895,7 @@ UPDATE canvas_items SET
     updated_at = now()
 WHERE id = $5 AND kind = 'canvas'
 RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq,
-    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root
+    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root, emoji
 `
 
 type SetCanvasContentParams struct {
@@ -1909,6 +1924,7 @@ type SetCanvasContentRow struct {
 	TrashedAt   *time.Time
 	TrashedBy   *uuid.UUID
 	TrashedRoot bool
+	Emoji       string
 }
 
 // After a snapshot (ADR-0126 §3 SNAPSHOT_POST): the text for search, the preview and the size;
@@ -1940,6 +1956,7 @@ func (q *Queries) SetCanvasContent(ctx context.Context, arg SetCanvasContentPara
 		&i.TrashedAt,
 		&i.TrashedBy,
 		&i.TrashedRoot,
+		&i.Emoji,
 	)
 	return i, err
 }
@@ -2089,16 +2106,18 @@ func (q *Queries) UpdateCanvasActivityAfter(ctx context.Context, arg UpdateCanva
 const updateCanvasItem = `-- name: UpdateCanvasItem :one
 UPDATE canvas_items SET
     name       = coalesce($1, name),
-    restricted = coalesce($2, restricted),
-    updated_by = $3,
+    emoji      = coalesce($2, emoji),
+    restricted = coalesce($3, restricted),
+    updated_by = $4,
     updated_at = now()
-WHERE id = $4
+WHERE id = $5
 RETURNING id, workspace_id, parent_id, kind, name, position, owner_id, restricted, preview, doc_size, next_seq,
-    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root
+    updated_by, created_at, updated_at, trashed_at, trashed_by, trashed_root, emoji
 `
 
 type UpdateCanvasItemParams struct {
 	Name       *string
+	Emoji      *string
 	Restricted *bool
 	UpdatedBy  *uuid.UUID
 	ID         uuid.UUID
@@ -2122,12 +2141,14 @@ type UpdateCanvasItemRow struct {
 	TrashedAt   *time.Time
 	TrashedBy   *uuid.UUID
 	TrashedRoot bool
+	Emoji       string
 }
 
-// Rename (name) and the restricted switch.
+// Rename (name), the emoji and the restricted switch.
 func (q *Queries) UpdateCanvasItem(ctx context.Context, arg UpdateCanvasItemParams) (UpdateCanvasItemRow, error) {
 	row := q.db.QueryRow(ctx, updateCanvasItem,
 		arg.Name,
+		arg.Emoji,
 		arg.Restricted,
 		arg.UpdatedBy,
 		arg.ID,
@@ -2151,6 +2172,7 @@ func (q *Queries) UpdateCanvasItem(ctx context.Context, arg UpdateCanvasItemPara
 		&i.TrashedAt,
 		&i.TrashedBy,
 		&i.TrashedRoot,
+		&i.Emoji,
 	)
 	return i, err
 }

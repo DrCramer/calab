@@ -40,6 +40,7 @@ vi.mock('../../../../services/canvasComments', async (orig) => {
 const { CommentPins } = await import('./CommentPins');
 const { CommentsPanel } = await import('./CommentsPanel');
 const { CommentInput } = await import('./CommentInput');
+const { CommentsLayer } = await import('./CommentsLayer');
 
 const W = 'ws';
 const CV = 'cv';
@@ -69,7 +70,7 @@ beforeEach(() => {
   named.calls = [];
   access.see = new Set();
   access.asked = [];
-  useCanvasComments.setState({ byId: {}, threads: {}, replies: {}, loaded: {}, panel: false, active: null, draft: null, focus: null, filterOpen: false });
+  useCanvasComments.setState({ byId: {}, threads: {}, replies: {}, loaded: {}, panel: false, active: null, pinOpen: false, draft: null, focus: null, filterOpen: false });
   useSession.setState({ me: { user: { id: 'me' } } } as never);
 });
 
@@ -113,7 +114,7 @@ describe('the «Комментарий» tool (engine, ADR-0127 wave 4)', () => 
 
 describe('pins (a DOM layer over the canvas, ADR-0127 wave 4)', () => {
   function pins(r: Rig): HTMLElement {
-    const el = mount(createElement(CommentPins, { engine: r.engine, canvasId: CV, workspaceId: W }));
+    const el = mount(createElement(CommentPins, { engine: r.engine, canvasId: CV, workspaceId: W, onPick: () => {}, layer: { current: null } }));
     return el.querySelector<HTMLElement>('[data-testid="canvas-comment-pins"]') as HTMLElement;
   }
 
@@ -149,7 +150,7 @@ describe('pins (a DOM layer over the canvas, ADR-0127 wave 4)', () => {
     expect(els[0]?.hidden).toBe(true);
   });
 
-  it('a comment event re-renders its own pin only; resolved threads leave the canvas', () => {
+  it('a comment event re-renders its own pin only; a resolved thread stays as a tick, gone with «Только открытые»', () => {
     const r = rig();
     act(() => useCanvasComments.getState().setCanvas(CV, [comment('a'), comment('b', { authorId: 'bob' })]));
     const layer = pins(r);
@@ -157,7 +158,12 @@ describe('pins (a DOM layer over the canvas, ADR-0127 wave 4)', () => {
     act(() => useCanvasComments.getState().upsert(comment('b', { authorId: 'bob', body: 'changed' })));
     expect(named.calls).toEqual(['bob']);
     act(() => useCanvasComments.getState().upsert(comment('a', { resolved: true })));
-    expect([...layer.querySelectorAll<HTMLElement>('[data-testid="canvas-comment-pin"]')].map((e) => e.dataset['commentId'])).toEqual(['b']);
+    const ids = (): (string | undefined)[] => [...layer.querySelectorAll<HTMLElement>('[data-testid="canvas-comment-pin"]')].map((e) => e.dataset['commentId']);
+    expect(ids()).toEqual(['a', 'b']);
+    expect(layer.querySelector('[data-comment-id="a"] [data-testid="canvas-comment-pin-resolved"]')).not.toBeNull();
+    act(() => useCanvasComments.getState().setFilterOpen(true));
+    expect(ids()).toEqual(['b']);
+    act(() => useCanvasComments.getState().setFilterOpen(false));
   });
 });
 
@@ -259,5 +265,50 @@ describe('the @ list of the input (ADR-0127 wave 4)', () => {
       await Promise.resolve();
     });
     expect(sent).toEqual(['hi @alice']);
+  });
+});
+
+describe('a thread in its own window at the pin (desktop, owner 30.10)', () => {
+  const sync = { getStatus: () => 'synced' as const, subscribe: () => () => {} };
+  const setup = (): { r: Rig; el: HTMLElement } => {
+    const r = rig();
+    act(() => useCanvasComments.getState().setCanvas(CV, [comment('a', { authorId: 'me', x: 40, y: 40 }), comment('b', { x: 400, y: 40 })]));
+    const el = mount(createElement(CommentsLayer, { engine: r.engine, sync, canvasId: CV, workspaceId: W, bits: CANVAS_BITS.VIEW | CANVAS_BITS.WRITE }));
+    return { r, el };
+  };
+  const pin = (id: string): HTMLElement => document.querySelector<HTMLElement>(`[data-testid="canvas-comment-pin"][data-comment-id="${id}"]`) as HTMLElement;
+  const popover = (): HTMLElement | null => document.querySelector<HTMLElement>('[data-testid="canvas-comment-popover"]');
+
+  it('a pin opens its thread there (the panel stays shut), with «Решено» and the reply field; another pin moves it', () => {
+    setup();
+    act(() => pin('a').click());
+    expect(popover()).not.toBeNull();
+    expect(useCanvasComments.getState().panel).toBe(false);
+    expect(popover()?.querySelectorAll('[data-testid="canvas-comment"]')).toHaveLength(1);
+    expect(popover()?.querySelector('[data-testid="canvas-comment-input"]')).not.toBeNull();
+    act(() => pin('b').click());
+    expect(useCanvasComments.getState().active).toBe('b');
+    expect(popover()?.textContent).toContain('text b');
+    act(() => popover()?.querySelector<HTMLElement>('[data-testid="canvas-comment-popover-close"]')?.click());
+    expect(popover()).toBeNull();
+    expect(useCanvasComments.getState().active).toBeNull();
+  });
+
+  it('a click of the «Комментарий» tool opens the new thread\'s field in the popover, not the panel', () => {
+    const { r } = setup();
+    r.key('c', { altKey: true, code: 'KeyC' });
+    r.click(300, 300);
+    expect(useCanvasComments.getState().draft).not.toBeNull();
+    expect(useCanvasComments.getState().panel).toBe(false);
+    expect(popover()?.querySelector('[data-testid="canvas-comment-input"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="canvas-comment-draft"]')).toBeNull();
+  });
+
+  it('a pan or zoom closes it (it would float off its pin)', () => {
+    const { r } = setup();
+    act(() => pin('a').click());
+    expect(popover()).not.toBeNull();
+    act(() => r.engine.setCamera({ tx: 50, ty: 0, scale: 1 }));
+    expect(popover()).toBeNull();
   });
 });

@@ -5,6 +5,7 @@ import { handlePointRot, rotateHandlePoint } from '../../../lib/canvas/geometry'
 import { anchorOf } from '../../../lib/canvas/route';
 import { isBox, type BoxRec } from '../../../lib/canvas/types';
 import { drawObject, drawObjects } from './draw';
+import { createScale } from './gestures';
 import { defaultPalette } from './palette';
 import { destroyRigs, rig, type Rig } from './testRig';
 import { fakeCtx } from './testing';
@@ -386,7 +387,7 @@ describe('groups', () => {
     r.drag([f.rect.x + f.rect.w, f.rect.y + f.rect.h], [f.rect.x + f.rect.w + 80, f.rect.y + f.rect.h + 80]);
     expect(rec(r, b).w).toBe(w0);
   });
-  it('a double-click steps into the group and selects one member; Esc leaves it with the group selected', () => {
+  it('a double-click steps into the group and edits the member at once; Esc leaves it with the group selected', () => {
     const r = rig();
     const [a, b] = pair2(r);
     r.engine.setSelection([a, b]);
@@ -396,14 +397,17 @@ describe('groups', () => {
     r.canvas.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: 150, clientY: 150 }));
     expect([...r.engine.selection]).toEqual([a]);
     expect(r.engine.enteredGroup).not.toBeNull();
-    expect(r.engine.getState().editing).toBe(false);
+    // Owner 30.10: one double-click on a sticky writes in it, grouped or not.
+    expect(r.engine.getState().editing).toBe(true);
+    r.engine.editor.cancel();
+    r.canvas.focus();
     // Inside: a click picks a member alone, and it can be moved alone.
     r.click(350, 150);
     expect([...r.engine.selection]).toEqual([b]);
     r.drag([350, 150], [350, 250]);
     expect(snap(r, b)).toMatchObject({ y: 200 });
     expect(snap(r, a)).toMatchObject({ y: 100 });
-    // A second double-click edits the member's text.
+    // A double-click on another member edits its text.
     r.canvas.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: 350, clientY: 250 }));
     expect(r.engine.getState().editing).toBe(true);
     r.engine.editor.cancel();
@@ -653,3 +657,136 @@ describe('drawing and export of rotated objects', () => {
     expect(box?.w).toBeGreaterThan(100);
   });
 });
+
+describe('sticky pads (owner 30.10)', () => {
+  const pad = (r: Rig): string => {
+    const [id] = r.make({ init: { kind: 'sticky', x: 100, y: 100, w: 160, h: 160, color: 'pink', text: 'Ирина', pad: true } });
+    r.engine.doc.checkpoint();
+    return id ?? '';
+  };
+
+  it('a drag pulls a new empty sticky of its colour off the pad, in one undo step; the pad stays', () => {
+    const r = rig();
+    const p = pad(r);
+    const steps = r.engine.doc.undo.undoStack.length;
+    r.drag([180, 180], [580, 380]);
+    expect(snap(r, p)).toMatchObject({ x: 100, y: 100, pad: true, text: 'Ирина' });
+    const made = [...r.engine.selection];
+    expect(made).toHaveLength(1);
+    expect(made[0]).not.toBe(p);
+    expect(snap(r, made[0])).toMatchObject({ kind: 'sticky', x: 500, y: 300, w: 160, h: 160, color: 'pink', text: '' });
+    expect(snap(r, made[0])?.pad).toBeUndefined();
+    expect(r.engine.doc.undo.undoStack.length).toBe(steps + 1);
+    r.engine.undo();
+    expect(r.engine.scene.has(made[0] ?? '')).toBe(false);
+  });
+
+  it('Alt-drag moves the pad itself; a locked pad still hands out stickies', () => {
+    const r = rig();
+    const p = pad(r);
+    r.drag([180, 180], [280, 180], { altKey: true });
+    expect(snap(r, p)).toMatchObject({ x: 200, y: 100 });
+    expect(r.engine.scene.size).toBe(1);
+    r.engine.doc.patch(p, { locked: true });
+    r.engine.clearSelection();
+    r.drag([280, 180], [280, 580]);
+    expect(r.engine.scene.size).toBe(2);
+    expect(snap(r, p)).toMatchObject({ x: 200, y: 100 });
+  });
+
+  it('is not written on: a double-click or a text edit does not open it', () => {
+    const r = rig();
+    const p = pad(r);
+    r.canvas.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: 180, clientY: 180 }));
+    expect(r.engine.getState().editing).toBe(false);
+    expect(r.engine.startTextEdit(p)).toBe(false);
+  });
+
+  it('the pointer over it: a hand, the corner lifts over a few frames and settles when it leaves', () => {
+    const r = rig({ reducedMotion: false });
+    pad(r);
+    r.raf.flush();
+    r.move(180, 180);
+    expect(r.canvas.style.cursor).toBe('grab');
+    let frames = 0;
+    for (let i = 0; i < 20; i++) {
+      r.clock.t += 16;
+      if (r.raf.pending === 0) break;
+      r.raf.flush();
+      frames++;
+    }
+    // A short animation, then no more frames at rest.
+    expect(frames).toBeGreaterThan(2);
+    expect(r.raf.pending).toBe(0);
+    r.move(900, 700);
+    r.clock.t += 400;
+    r.raf.flush();
+    r.raf.flush();
+    expect(r.raf.pending).toBe(0);
+    // With reduced motion the corner just lifts: one repaint, no animation.
+    const still = rig();
+    pad(still);
+    still.raf.flush();
+    still.move(180, 180);
+    still.raf.flush();
+    expect(still.raf.pending).toBe(0);
+  });
+
+  it('the flag is stored, copied and patched like any field', () => {
+    const r = rig();
+    const p = pad(r);
+    expect(serialize(r.engine.scene, r.engine.doc, [p])).toContain('"pad":true');
+    r.engine.doc.patch(p, { pad: false });
+    expect(snap(r, p)?.pad).toBeUndefined();
+  });
+});
+
+describe('new objects sized for the zoom (owner 30.10)', () => {
+  it('createScale: about one screen size, in tidy steps', () => {
+    expect(createScale(1)).toBe(1);
+    expect(createScale(4)).toBe(4);
+    expect(createScale(5.2)).toBe(6);
+    expect(createScale(100)).toBe(8);
+    expect(createScale(0.1)).toBe(0.5);
+  });
+  it('a sticky placed zoomed out at 25% is four times bigger, its text too', () => {
+    const r = rig();
+    r.engine.setCamera({ tx: 0, ty: 0, scale: 0.25 });
+    r.key('s');
+    r.click(200, 200);
+    const id = [...r.engine.selection][0];
+    expect(snap(r, id)).toMatchObject({ kind: 'sticky', w: 640, h: 640, x: 480, y: 480 });
+    expect(snap(r, id)?.fontPx).toBe(72);
+  });
+});
+
+describe('review fixes (30.10)', () => {
+  it('a hovered «continue» dot animates over several painted frames, then stops', () => {
+    const r = rig({ reducedMotion: false });
+    const [a] = r.make({ init: { kind: 'sticky', x: 100, y: 100, w: 160, h: 160 } });
+    r.engine.setSelection([a ?? '']);
+    r.raf.flush();
+    const before = r.engine.renderer.stats.frames;
+    r.engine.hoverQuick('right');
+    for (let i = 0; i < 20 && r.raf.pending > 0; i++) {
+      r.clock.t += 16;
+      r.raf.flush();
+    }
+    expect(r.engine.renderer.stats.frames - before).toBeGreaterThan(3);
+    expect(r.raf.pending).toBe(0);
+  });
+
+  it('«continue» inside a frame places the copy beside the source, inside the frame', () => {
+    const r = rig();
+    const [, a] = r.make(
+      { init: { kind: 'frame', x: 0, y: 0, w: 960, h: 540, title: 'F' } },
+      { init: { kind: 'sticky', x: 40, y: 40, w: 160, h: 160 } },
+    );
+    r.engine.setSelection([a ?? '']);
+    r.engine.quickCreate('right');
+    const made = [...r.engine.selection].find((id) => id !== a);
+    expect(snap(r, made)).toMatchObject({ kind: 'sticky', y: 40 });
+    expect(Number(snap(r, made)?.x)).toBeLessThan(960 - 160);
+  });
+});
+

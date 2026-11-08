@@ -6,14 +6,18 @@
  * engine's view callback, each pin holds its world point in `--wx` / `--wy`; a pin on an object is moved
  * when the scene reports that object changed (`placePin`). In idle nothing runs (no frame, no timer).
  */
-import { MessageCircle } from 'lucide-react';
-import { memo, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import { Check, MessageCircle, MessageCirclePlus } from 'lucide-react';
+import { timestampMs } from '@bufbuild/protobuf/wkt';
+import { memo, useCallback, useLayoutEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { cx } from '../../../../components/ui';
+import { Tip, cx } from '../../../../components/ui';
 import { t } from '../../../../i18n';
 import { pinWorld } from '../../../../lib/canvas/comments';
+import { fmt } from '../../../../lib/format';
 import { useCanvasComments, type CommentDraft } from '../../../../stores/canvasComments';
 import { memberName } from '../../../../stores/workspaces';
+import { MemberAvatar } from '../../../boards/menus';
+import { previewText } from '../../../chat/mentionText';
 import type { CanvasEngine } from '../../engine';
 
 const EMPTY: readonly string[] = [];
@@ -39,43 +43,110 @@ const PIN_STYLE: CSSProperties = {
   transform: 'translate(calc(var(--wx) * var(--s) * 1px), calc(var(--wy) * var(--s) * 1px)) translate(-4px, -100%)',
 };
 
-const Pin = memo(function Pin({ id, workspaceId, engine }: { id: string; workspaceId: string; engine: CanvasEngine }): ReactNode {
+/** Comments the hover card shows: the first one and the latest ones; the rest is a line pointing to the panel. */
+const CARD_LATEST = 4;
+
+/** One comment of the hover card; the author line only where the author changes. */
+function CardRow({ id, workspaceId, head }: { id: string; workspaceId: string; head: boolean }): ReactNode {
+  const c = useCanvasComments((s) => s.byId[id]);
+  if (!c) return null;
+  const ms = c.createdAt ? timestampMs(c.createdAt) : 0;
+  return (
+    <span className={cx('flex items-start gap-2', head && 'pt-1')}>
+      <span className="w-6 shrink-0">{head ? <MemberAvatar workspaceId={workspaceId} userId={c.authorId} size={24} /> : null}</span>
+      <span className="flex min-w-0 flex-col gap-0.5">
+        {head ? (
+          <span className="flex items-baseline gap-2">
+            <span className="truncate font-semibold text-fg">{memberName(workspaceId, c.authorId)}</span>
+            {ms ? <span className="shrink-0 text-faint">{fmt.relative(new Date(ms))}</span> : null}
+          </span>
+        ) : null}
+        <span className="line-clamp-3 break-words text-fg">{previewText(workspaceId, c.body)}</span>
+      </span>
+    </span>
+  );
+}
+
+/**
+ * The hover card of a pin (Miro-style): the thread as a short dialogue — who wrote what and when. Mounted only while
+ * shown; a long thread shows its first comment and the latest ones.
+ */
+function PinCard({ id, workspaceId }: { id: string; workspaceId: string }): ReactNode {
+  const ids = useCanvasComments(useShallow((s) => [id, ...(s.replies[id] ?? EMPTY)]));
+  const authors = useCanvasComments(useShallow((s) => ids.map((k) => s.byId[k]?.authorId ?? '')));
+  const skipped = Math.max(0, ids.length - 1 - CARD_LATEST);
+  const shown = skipped > 0 ? [0, ...ids.slice(-CARD_LATEST).map((_, i) => ids.length - CARD_LATEST + i)] : ids.map((_, i) => i);
+  return (
+    <span className="flex max-w-64 flex-col gap-1.5 py-1" data-testid="canvas-comment-pin-card">
+      {shown.map((i, n) => {
+        const prev = n > 0 ? shown[n - 1] : undefined;
+        // After the gap the author is named again.
+        const head = prev === undefined || prev !== i - 1 || authors[prev] !== authors[i];
+        return (
+          <span key={ids[i]} className="contents">
+            {n === 1 && skipped > 0 ? <span className="pl-8 text-faint">{t('canvasComments.cardMore', { n: skipped })}</span> : null}
+            <CardRow id={ids[i] ?? ''} workspaceId={workspaceId} head={head} />
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+const Pin = memo(function Pin({ id, workspaceId, engine, onPick }: { id: string; workspaceId: string; engine: CanvasEngine; onPick: (id: string) => void }): ReactNode {
   const c = useCanvasComments((s) => s.byId[id]);
   const replies = useCanvasComments((s) => s.replies[id]?.length ?? 0);
   const active = useCanvasComments((s) => s.active === id);
-  const el = useRef<HTMLButtonElement>(null);
+  const el = useRef<HTMLButtonElement | null>(null);
+  // A callback ref as well: the hover card's lazy tooltip remounts the button on first hover, and the new node needs
+  // its world point too.
+  const attach = useCallback(
+    (node: HTMLButtonElement | null) => {
+      el.current = node;
+      if (node) placePin(node, engine);
+    },
+    [engine],
+  );
   useLayoutEffect(() => {
     if (el.current) placePin(el.current, engine);
   }, [engine, c?.objectId, c?.x, c?.y]);
   if (!c) return null;
   const author = memberName(workspaceId, c.authorId);
   return (
-    <button
-      ref={el}
-      type="button"
-      data-testid="canvas-comment-pin"
-      data-comment-id={id}
-      data-object-id={c.objectId || undefined}
-      data-ox={c.x}
-      data-oy={c.y}
-      aria-label={t('canvasComments.pinLabel', { name: author })}
-      aria-pressed={active}
-      title={author}
-      style={PIN_STYLE}
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={() => {
-        const st = useCanvasComments.getState();
-        st.setActive(id);
-        st.setPanel(true);
-      }}
-      className={cx(
-        'pointer-events-auto absolute left-0 top-0 flex h-7 min-w-7 items-center gap-0.5 rounded-full rounded-bl-none border px-1.5 text-caption font-medium shadow-sm',
-        active ? 'border-accent bg-accent-strong text-accent-fg' : c.resolved ? 'border-line bg-main text-muted' : 'border-line bg-main text-fg',
-      )}
-    >
-      <MessageCircle className="size-3.5 shrink-0" strokeWidth={2} aria-hidden />
-      {replies > 0 ? <span>{replies + 1}</span> : null}
-    </button>
+    <Tip label={<PinCard id={id} workspaceId={workspaceId} />} side="right">
+      <button
+        ref={attach}
+        type="button"
+        data-testid="canvas-comment-pin"
+        data-comment-id={id}
+        data-object-id={c.objectId || undefined}
+        data-ox={c.x}
+        data-oy={c.y}
+        // The visible count is part of the name (a screen reader hears what is shown).
+        aria-label={c.resolved ? `${t('canvasComments.pinLabel', { name: author })} · ${t('canvasComments.resolved')}` : `${replies + 1} · ${t('canvasComments.pinLabel', { name: author })}`}
+        aria-pressed={active}
+        style={PIN_STYLE}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={() => onPick(id)}
+        className={cx(
+          'pointer-events-auto absolute left-0 top-0 flex h-7 min-w-7 items-center gap-0.5 rounded-full rounded-bl-none border px-1.5 text-caption font-medium shadow-sm',
+          // The thread open in the panel: filled, with a halo and above the other pins — the one pin that is «here».
+          active
+            ? 'z-[1] border-accent bg-accent-strong text-accent-fg shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-accent)_35%,transparent)]'
+            : 'border-line bg-main text-fg',
+        )}
+      >
+        {/* A resolved thread stays where it was, as a tick; an open one always shows its count, «1» included. */}
+        {c.resolved ? (
+          <Check className="size-4 shrink-0" strokeWidth={2.25} aria-hidden data-testid="canvas-comment-pin-resolved" />
+        ) : (
+          <>
+            <MessageCircle className="size-3.5 shrink-0" strokeWidth={2} aria-hidden />
+            <span>{replies + 1}</span>
+          </>
+        )}
+      </button>
+    </Tip>
   );
 });
 
@@ -93,18 +164,28 @@ function DraftPin({ draft, engine }: { draft: CommentDraft; engine: CanvasEngine
       data-ox={draft.x}
       data-oy={draft.y}
       style={PIN_STYLE}
-      className="absolute left-0 top-0 grid size-7 place-items-center rounded-full rounded-bl-none border border-accent bg-accent-strong text-accent-fg shadow-sm"
+      // A new thread not yet sent: dashed and unfilled, so it never reads as the selected thread.
+      className="absolute left-0 top-0 grid size-7 place-items-center rounded-full rounded-bl-none border border-dashed border-accent bg-main text-accent-text shadow-sm"
     >
-      <MessageCircle className="size-3.5" strokeWidth={2} aria-hidden />
+      <MessageCirclePlus className="size-3.5" strokeWidth={2} aria-hidden />
     </div>
   );
 }
 
-/** Pins of the open threads (a resolved one only while it is the active thread) and the draft's. */
-export const CommentPins = memo(function CommentPins({ engine, canvasId, workspaceId }: { engine: CanvasEngine; canvasId: string; workspaceId: string }): ReactNode {
-  const ids = useCanvasComments(useShallow((s) => (s.threads[canvasId] ?? EMPTY).filter((id) => !s.byId[id]?.resolved || s.active === id)));
+/** Pins of the threads (resolved ones as ticks; with «Только открытые» only the open ones and the active one) and the draft's. */
+export const CommentPins = memo(function CommentPins({
+  engine, canvasId, workspaceId, onPick, layer,
+}: {
+  engine: CanvasEngine;
+  canvasId: string;
+  workspaceId: string;
+  /** A pin clicked: its thread opens (a popover at the pin on the desktop, the panel on the phone). Stable. */
+  onPick: (id: string) => void;
+  /** The layer element, for the popover's anchor. */
+  layer: RefObject<HTMLDivElement | null>;
+}): ReactNode {
+  const ids = useCanvasComments(useShallow((s) => (s.threads[canvasId] ?? EMPTY).filter((id) => !s.filterOpen || !s.byId[id]?.resolved || s.active === id)));
   const draft = useCanvasComments((s) => (s.draft?.canvasId === canvasId ? s.draft : null));
-  const layer = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = layer.current;
     if (!el) return undefined;
@@ -121,11 +202,11 @@ export const CommentPins = memo(function CommentPins({ engine, canvasId, workspa
       offView();
       offScene();
     };
-  }, [engine]);
+  }, [engine, layer]);
   return (
     <div ref={layer} className="pointer-events-none absolute left-0 top-0 z-[5] size-0 overflow-visible" data-testid="canvas-comment-pins">
       {ids.map((id) => (
-        <Pin key={id} id={id} workspaceId={workspaceId} engine={engine} />
+        <Pin key={id} id={id} workspaceId={workspaceId} engine={engine} onPick={onPick} />
       ))}
       {draft ? <DraftPin draft={draft} engine={engine} /> : null}
     </div>

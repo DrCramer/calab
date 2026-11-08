@@ -16,7 +16,8 @@ import { useCanvas } from '../../stores/canvas';
 import { useCanvasUi } from '../../stores/canvasUi';
 import { myUserId } from '../../stores/session';
 import { menuBox, menuItem } from '../shell/menu';
-import { ItemContextMenu, RenameField } from './ItemMenu';
+import { ItemContextMenu, ItemEmojiPicker, ItemRowMenu, RenameField } from './ItemMenu';
+import { PrivateLock } from './PrivateLock';
 
 /**
  * The tree column of «Холст» (ADR-0126 §5, docs/08): the name filter and «+» (Новый холст / Новая
@@ -74,7 +75,7 @@ function TreeColumn({ workspaceId, canCreate }: { workspaceId: string; canCreate
         {canCreate ? <CreateMenu workspaceId={workspaceId} /> : null}
       </div>
       <nav className="scrollbar-thin flex min-h-0 flex-1 flex-col overflow-y-auto px-1.5 py-1.5" aria-label={t('canvas.tree')} data-testid="canvas-tree">
-        {query.trim() ? <SearchResults workspaceId={workspaceId} query={query} /> : <ChildList workspaceId={workspaceId} parentId={TOP} depth={0} />}
+        {query.trim() ? <SearchResults workspaceId={workspaceId} query={query} /> : <ChildList workspaceId={workspaceId} parentId={TOP} depth={0} canCreate={canCreate} />}
       </nav>
       <div className="shrink-0 border-t border-line px-1.5 pt-1.5" style={{ paddingBottom: 'calc(var(--island-height, 0px) + 20px)' }}>
         <button
@@ -115,7 +116,7 @@ function CreateMenu({ workspaceId }: { workspaceId: string }): ReactNode {
 }
 
 /** The children of a folder (or the top level), loaded when first shown. */
-const ChildList = memo(function ChildList({ workspaceId, parentId, depth }: { workspaceId: string; parentId: string; depth: number }): ReactNode {
+const ChildList = memo(function ChildList({ workspaceId, parentId, depth, canCreate = false }: { workspaceId: string; parentId: string; depth: number; canCreate?: boolean }): ReactNode {
   const key = childKey(workspaceId, parentId);
   const ids = useCanvas(useShallow((s) => s.lists[key] ?? EMPTY));
   const loaded = useCanvas((s) => !!s.lists[key]);
@@ -131,6 +132,20 @@ const ChildList = memo(function ChildList({ workspaceId, parentId, depth }: { wo
     );
   }
   if (!ids.length) {
+    // The top level, empty: the same dashed «create the first one» as the boards list (BoardsList).
+    if (depth === 0 && canCreate) {
+      return (
+        <button
+          type="button"
+          onClick={() => void createItem(workspaceId, TOP, CanvasItemKind.CANVAS)}
+          className="mt-1 flex w-full items-center gap-2.5 rounded-[var(--radius-row)] border border-dashed border-line px-2 py-2 text-left text-caption text-muted hover:bg-hover hover:text-fg"
+          data-testid="canvas-empty-create"
+        >
+          <Plus className="size-4 shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1">{t('canvas.emptyTreeCreate')}</span>
+        </button>
+      );
+    }
     return depth === 0 ? (
       <p className="px-2 py-3 text-caption text-muted">{t('canvas.emptyTree')}</p>
     ) : (
@@ -148,8 +163,10 @@ const ChildList = memo(function ChildList({ workspaceId, parentId, depth }: { wo
   );
 });
 
-/** The icon of a row: a folder (open when expanded) or a canvas. */
-function ItemIcon({ folder, open }: { folder: boolean; open?: boolean }): ReactNode {
+/** The icon of a row: the item's emoji, else a folder (open when expanded) or a canvas. */
+function ItemIcon({ id, folder, open }: { id: string; folder: boolean; open?: boolean }): ReactNode {
+  const emoji = useCanvas((s) => s.items[id]?.emoji ?? '');
+  if (emoji) return <span className="text-[15px] leading-none">{emoji}</span>;
   const I = folder ? (open ? FolderOpen : Folder) : Shapes;
   return <I className="size-4 text-muted" strokeWidth={1.75} aria-hidden />;
 }
@@ -157,7 +174,7 @@ function ItemIcon({ folder, open }: { folder: boolean; open?: boolean }): ReactN
 const TreeNode = memo(function TreeNode({ workspaceId, id, depth }: { workspaceId: string; id: string; depth: number }): ReactNode {
   const name = useCanvas((s) => s.items[id]?.name ?? '');
   const folder = useCanvas((s) => s.items[id]?.kind === CanvasItemKind.FOLDER);
-  const hasChildren = useCanvas((s) => !!s.items[id]?.hasChildren || (s.lists[childKey(workspaceId, id)]?.length ?? 0) > 0);
+  const hasChildren =useCanvas((s) => !!s.items[id]?.hasChildren || (s.lists[childKey(workspaceId, id)]?.length ?? 0) > 0);
   const writable = useCanvas((s) => canWrite(s.items[id]?.myBits ?? 0n));
   const movable = useCanvas((s) => {
     const i = s.items[id];
@@ -187,7 +204,7 @@ const TreeNode = memo(function TreeNode({ workspaceId, id, depth }: { workspaceI
           ref={ref}
           {...drag.listeners}
           className={cx(
-            'group relative flex h-8 items-center gap-1 rounded-[var(--radius-row)] pr-1 text-body has-[button:focus-visible]:ring-2 has-[button:focus-visible]:ring-inset has-[button:focus-visible]:ring-accent',
+            'group relative flex h-8 items-center gap-1 rounded-[var(--radius-row)] pr-1 text-body',
             active ? 'bg-active text-fg' : 'text-fg hover:bg-hover',
             drag.isDragging && 'opacity-40',
             zone === 'inside' && 'bg-hover ring-2 ring-inset ring-accent',
@@ -215,7 +232,7 @@ const TreeNode = memo(function TreeNode({ workspaceId, id, depth }: { workspaceI
           {renaming ? (
             <>
               <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
-                <ItemIcon folder={folder} open={expanded} />
+                <ItemIcon id={id} folder={folder} open={expanded} />
               </span>
               <RenameField itemId={id} className="h-6 flex-1" />
             </>
@@ -228,13 +245,16 @@ const TreeNode = memo(function TreeNode({ workspaceId, id, depth }: { workspaceI
                 else if (e.key === 'ArrowLeft' && folder && expanded) toggle();
               }}
               aria-current={active ? 'page' : undefined}
-              className="flex h-full min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] text-left outline-none"
+              className="flex h-full min-w-0 flex-1 items-center gap-1 rounded-[var(--radius-row)] text-left focus-visible:outline-offset-[-2px]"
               data-testid="canvas-node-open"
             >
-              <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
-                <ItemIcon folder={folder} open={expanded} />
-              </span>
+              <ItemEmojiPicker id={id} at="tree">
+                <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
+                  <ItemIcon id={id} folder={folder} open={expanded} />
+                </span>
+              </ItemEmojiPicker>
               <span className={cx('min-w-0 flex-1 truncate', !name && 'text-muted')}>{name || t('canvas.untitled')}</span>
+              <PrivateLock id={id} />
             </button>
           )}
           {folder && writable && !renaming ? (
@@ -250,6 +270,7 @@ const TreeNode = memo(function TreeNode({ workspaceId, id, depth }: { workspaceI
               <Plus className="size-3.5" aria-hidden />
             </IconButton>
           ) : null}
+          {renaming ? null : <ItemRowMenu itemId={id} />}
         </div>
       </ItemContextMenu>
       {folder && expanded ? <ChildList workspaceId={workspaceId} parentId={id} depth={depth + 1} /> : null}
@@ -263,7 +284,7 @@ export function DragChip({ id }: { id: string }): ReactNode {
   const folder = useCanvas((s) => s.items[id]?.kind === CanvasItemKind.FOLDER);
   return (
     <div className="mat-popover flex h-8 max-w-64 items-center gap-2 rounded-[var(--radius-row)] px-2.5 text-body shadow-[var(--shadow-popover)]">
-      <ItemIcon folder={folder} />
+      <ItemIcon id={id} folder={folder} />
       <span className="truncate">{name || t('canvas.untitled')}</span>
     </div>
   );
@@ -323,7 +344,7 @@ function SearchResults({ workspaceId, query }: { workspaceId: string; query: str
           data-testid="canvas-search-hit"
         >
           <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
-            <ItemIcon folder={false} />
+            <ItemIcon id={r.id} folder={false} />
           </span>
           <span className="min-w-0 flex-1 truncate">{r.name || t('canvas.untitled')}</span>
         </button>
@@ -359,9 +380,10 @@ const ResultRow = memo(function ResultRow({ workspaceId, id }: { workspaceId: st
       data-testid="canvas-search-row"
     >
       <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
-        <ItemIcon folder={folder} />
+        <ItemIcon id={id} folder={folder} />
       </span>
       <span className="min-w-0 flex-1 truncate">{name || t('canvas.untitled')}</span>
+      <PrivateLock id={id} />
     </button>
   );
 });
@@ -428,10 +450,10 @@ const TrashRow = memo(function TrashRow({ workspaceId, id }: { workspaceId: stri
             if (!folder) useCanvasUi.getState().openItem(workspaceId, id);
           }}
           aria-current={active ? 'page' : undefined}
-          className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-row)] pl-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-row)] pl-2 text-left focus-visible:outline-offset-[-2px]"
         >
           <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
-            <ItemIcon folder={folder} />
+            <ItemIcon id={id} folder={folder} />
           </span>
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="truncate text-body">{name || t('canvas.untitled')}</span>

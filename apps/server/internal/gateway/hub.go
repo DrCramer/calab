@@ -74,6 +74,7 @@ type Hub struct {
 	identityWorkspaces   func(context.Context, uuid.UUID) ([]uuid.UUID, error)
 	checkPrincipal       func(context.Context, auth.Identity) (identitypolicy.Principal, time.Time, error)
 	checkAdmissionPolicy func(context.Context, uuid.UUID) (int64, error)
+	readyMember          func(context.Context, uuid.UUID, uuid.UUID) (perm.Member, error) // tests: READY's member read
 	closing              atomic.Bool
 	nSockets             atomic.Int64
 	// botSeen: when a bot's REST activity was last recorded here (TouchBot throttle).
@@ -685,8 +686,10 @@ func (h *Hub) routeLocked(st *wsState, wid, id uuid.UUID, ev *v1.DispatchEvent) 
 				s.dispatchEnc(id, shared)
 			}
 		}
-	case *v1.DispatchEvent_WorkspaceBanAdd, *v1.DispatchEvent_WorkspaceBanRemove:
-		// Bans are shown to those who manage members (item 32; MANAGE_MEMBERS, ADR-0048).
+	case *v1.DispatchEvent_WorkspaceBanAdd, *v1.DispatchEvent_WorkspaceBanRemove,
+		*v1.DispatchEvent_WorkspaceReportCreate, *v1.DispatchEvent_WorkspaceReportUpdate:
+		// Bans and reports (ADR-0154) are shown to those who manage members (item 32;
+		// MANAGE_MEMBERS, ADR-0048).
 		for _, s := range sessions {
 			if st.members[s.user].Workspace().Has(perm.ManageMembers) && st.role(s.user) != perm.RoleGuest { // as REST (requireBit)
 				s.dispatchEnc(id, shared)

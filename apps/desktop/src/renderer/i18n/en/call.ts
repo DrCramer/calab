@@ -52,6 +52,8 @@ export const enCall: DictShape<typeof ruCall> = {
   'call.sipParkedLeave': 'Leave the room',
   'call.sipParkedAfter': 'You will join the room after the call',
   'call.onPhone': 'On a phone call',
+  // a voice seat kept after a lost connection (ADR-0150)
+  'call.connectionLost': 'No connection',
   // transfer of a phone call (ADR-0132)
   'call.sipTransfer': 'Transfer',
   'call.sipTransferPick': 'Transfer the call to',

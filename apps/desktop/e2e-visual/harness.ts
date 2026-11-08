@@ -436,3 +436,74 @@ export async function expectAssigneeStacks(page: Page): Promise<void> {
   expect(new Set(boxes.map((b) => b.h)).size, JSON.stringify(boxes)).toBe(1);
   expect(new Set(boxes.map((b) => b.right)).size, JSON.stringify(boxes)).toBe(1);
 }
+
+/** Board #115: CAL-3 made by the «Погода» bot, which asks me (an assignee) to act on my behalf. Call after open(). */
+export function seedBotAuthoredTask(mock: MockServer): void {
+  mock.seedBots();
+  const t = mock.boards.taskByKey('CAL-3');
+  if (!t) throw new Error('no CAL-3');
+  t.task.createdBy = IDS.bots.weather;
+}
+
+/**
+ * ADR-0156: CAL-3 worked on through MCP — in the history the description edit by Анна through
+ * «Погода» and the title by «Деплой» itself; three comments: Борис through «Погода», «Деплой»
+ * itself, mine through «Погода» (the bots must be seeded: mock.seedBots()).
+ */
+export function seedViaMcp(mock: MockServer): void {
+  const t = mock.boards.taskByKey('CAL-3');
+  if (!t) throw new Error('no CAL-3');
+  const acts = mock.boards.activity.filter((a) => a.taskId === t.task.id);
+  const desc = acts.find((a) => a.kind === 'description');
+  const title = acts.find((a) => a.kind === 'title');
+  if (!desc || !title) throw new Error('no CAL-3 history');
+  desc.viaBotId = IDS.bots.weather;
+  desc.via = 'mcp';
+  title.actorId = IDS.bots.deploy;
+  title.via = 'mcp';
+  const say = (authorId: string, content: string, viaBotId: string): void => {
+    mock.injectMessage({ roomId: t.task.roomId, authorId, content, viaBotId, via: 'mcp' });
+  };
+  say(IDS.users.boris, 'Взял в работу — разберу логи эха до вечера.', IDS.bots.weather);
+  say(IDS.bots.deploy, 'Ветка fix/echo-cancel привязана, сборка 3.2.2 собрана.', '');
+  say(IDS.users.anna, 'Поставила срок на пятницу.', IDS.bots.weather);
+}
+
+/**
+ * Board #148: CAL-3's comments with a picture and pipe tables (a narrow one, a wide one that must scroll
+ * sideways inside the bubble). Returns the wide table's author text marker for the spec to find it.
+ */
+export function seedRichComments(mock: MockServer): void {
+  const t = mock.boards.taskByKey('CAL-3');
+  if (!t) throw new Error('no CAL-3');
+  const room = t.task.roomId;
+  mock.injectMessage({ roomId: room, authorId: IDS.users.vera, content: 'Скриншот ошибки', attachments: [IDS.files.portrait] });
+  mock.injectMessage({ roomId: room, authorId: IDS.users.anna, content: 'Итоги замеров:\n\n| Сборка | CPU, % | Эхо |\n| --- | --- | --- |\n| 3.2.1 | 4.8 | да |\n| 3.2.2 | 2.1 | нет |' });
+  const wide = ['Окружение', 'Версия клиента', 'Версия ОС', 'Процессор', 'Память, ГБ', 'Сеть', 'Комментарий'];
+  mock.injectMessage({ roomId: room, authorId: IDS.users.boris, content: `Широкая таблица:\n\n| ${wide.join(' | ')} |\n| ${wide.map(() => '---').join(' | ')} |\n| ${wide.map((w) => `${w} — значение`).join(' | ')} |` });
+}
+
+/**
+ * Board #117: every visible control of a toolbar (buttons, fields, segmented controls) is one
+ * height - `--control-h-bar` - within 0.5 px, and sits centred on the toolbar's midline.
+ */
+export async function expectToolbarHeights(bar: Locator, name: string): Promise<void> {
+  const rows = await bar.evaluate((root) => {
+    const rb = root.getBoundingClientRect();
+    const out: Array<{ what: string; h: number; mid: number }> = [];
+    root.querySelectorAll<HTMLElement>('button, input, select, [role=radiogroup]').forEach((el) => {
+      const inner = el.parentElement?.getBoundingClientRect().height ?? 0;
+      if (el.getAttribute('role') !== 'radiogroup' && Math.abs(inner - el.getBoundingClientRect().height - 4) < 0.6 && el.parentElement?.matches('div, span')) return; // a segment inside its 2 px padded track
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0 || getComputedStyle(el).visibility === 'hidden') return;
+      out.push({ what: el.getAttribute('data-testid') ?? el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 20) ?? el.tagName, h: r.height, mid: r.top + r.height / 2 - (rb.top + rb.height / 2) });
+    });
+    return out;
+  });
+  expect(rows.length, `${name}: controls found`).toBeGreaterThan(2);
+  const target = rows.find((r) => r.what === 'new-task')?.h ?? rows[0]?.h ?? 0;
+  for (const r of rows) {
+    expect(Math.abs(r.h - target), `${name}: ${r.what} is ${r.h}px, expected ${target}px`).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(r.mid), `${name}: ${r.what} is off the bar's midline by ${r.mid}px`).toBeLessThanOrEqual(1);
+  }
+}

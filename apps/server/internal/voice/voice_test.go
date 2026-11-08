@@ -107,6 +107,28 @@ func TestNames(t *testing.T) {
 	}
 }
 
+// The companion connection (ADR-0149 §3) has its own identity: ParseIdentity never takes it for
+// a device (voice state, grace, cues and grants skip it), ParseCompanion gives its device.
+func TestCompanionIdentity(t *testing.T) {
+	u, s := uuid.New(), uuid.New()
+	c := CompanionIdentity(u, s)
+	if c != Identity(u, s)+":web" {
+		t.Fatalf("companion identity %q", c)
+	}
+	if _, _, ok := ParseIdentity(c); ok {
+		t.Fatal("ParseIdentity accepted a companion identity")
+	}
+	gu, gs, ok := ParseCompanion(c)
+	if !ok || gu != u || gs != s {
+		t.Fatal("companion identity round trip")
+	}
+	for _, bad := range []string{Identity(u, s), Identity(u, s) + ":web:web", Identity(u, s) + ":WEB", "x:web", ":web", u.String() + ":web", "sip:" + s.String()} {
+		if _, _, ok := ParseCompanion(bad); ok {
+			t.Errorf("ParseCompanion(%q) accepted", bad)
+		}
+	}
+}
+
 func TestDMRoomName(t *testing.T) {
 	ws, room := uuid.New(), uuid.New()
 	if n := RoomName(room, room); n != "dm:"+room.String() || !IsDMRoomName(n) {
@@ -166,5 +188,35 @@ func TestAggregateOnPhone(t *testing.T) {
 	}
 	if Aggregate(ws, uuid.New(), sessions).GetOnPhone() {
 		t.Fatal("a user without sessions is not on the phone")
+	}
+}
+
+func TestAggregateConnectionLost(t *testing.T) {
+	ws, u, r1 := uuid.New(), uuid.New(), uuid.New()
+	sessions := []SessionState{
+		{UserID: u, SessionID: uuid.New(), RoomID: r1, Lost: true, Hold: 5000, JoinedAt: 100},
+		{UserID: u, SessionID: uuid.New(), RoomID: r1, JoinedAt: 200},
+	}
+	mixed := Aggregate(ws, u, sessions)
+	if mixed.GetConnectionLost() || mixed.GetRoomId() != r1.String() {
+		t.Fatalf("a connected device keeps the user connected: %v", mixed)
+	}
+	sessions[1].Lost = true
+	lost := Aggregate(ws, u, sessions)
+	if !lost.GetConnectionLost() || lost.GetRoomId() != r1.String() || Equal(mixed, lost) {
+		t.Fatalf("every device lost: still in the room, marked, and the flip is a change: %v", lost)
+	}
+	// The seat keeps its place: joined_at does not move with the mark.
+	if !lost.GetJoinedAt().AsTime().Equal(mixed.GetJoinedAt().AsTime()) {
+		t.Fatalf("joined_at moved: %v -> %v", mixed.GetJoinedAt(), lost.GetJoinedAt())
+	}
+	// Hold alone (a seat taken back by /join, not reconnected yet) is not shown as lost.
+	sessions[0].Lost, sessions[1].Lost = false, false
+	sessions[1].Hold = 9000
+	if Aggregate(ws, u, sessions).GetConnectionLost() {
+		t.Fatal("a held seat without the mark is shown as lost")
+	}
+	if !occupied([]SessionState{{RoomID: r1, Lost: true}}, r1) {
+		t.Fatal("a lost seat ends the call")
 	}
 }

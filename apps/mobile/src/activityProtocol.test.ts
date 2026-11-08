@@ -2,7 +2,7 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
 import { parseHostActivityMessage } from '../../desktop/src/shared/hostActivity';
 import { parseCallsState } from '../../desktop/src/shared/hostCalls';
-import { ActivityProtocol, activityBootstrap, activityReady, linkEvent } from './activityProtocol';
+import { ActivityProtocol, activityBootstrap, activityReady, linkEvent, mediaSessionEvent } from './activityProtocol';
 
 const document = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
@@ -60,9 +60,21 @@ describe('bounded host activity contract', () => {
     for (const platform of ['ios', 'android'] as const) {
       const top: Record<string, unknown> = { ReactNativeWebView: { postMessage: vi.fn() }, crypto: { randomUUID: () => document } };
       top.top = top;
-      runInNewContext(activityBootstrap(3, false, platform), { window: top, crypto: top.crypto });
+      runInNewContext(activityBootstrap(3, { platform }), { window: top, crypto: top.crypto });
       expect(top.CalabHostActivity).toMatchObject({ version: 1, host: 3, platform });
     }
+  });
+  it('offers regular links and calendar navigation together without enabling widgets in old hosts', () => {
+    const top: Record<string, unknown> = { ReactNativeWebView: { postMessage: vi.fn() }, crypto: { randomUUID: () => document } };
+    top.top = top;
+    runInNewContext(activityBootstrap(3, { platform: 'ios', nativeAudio: true, calendarWidget: true }), { window: top, crypto: top.crypto });
+    expect(top.CalabHostActivity).toMatchObject({ calendarWidgetVersion: 1, callsAudioVersion: 1, mediaPermissionsVersion: 1, platform: 'ios' });
+    const dispatchEvent = vi.fn();
+    class CustomEvent { constructor(readonly type: string, readonly init: { detail: unknown }) {} }
+    runInNewContext(activityReady(3, document, false, false, true), { window: { dispatchEvent }, CustomEvent });
+    const event = dispatchEvent.mock.calls[0]?.[0] as CustomEvent;
+    expect(event.init.detail).toMatchObject({ host: 3, document, links: 1, calendarWidget: 1 });
+    expect(activityReady(3, document)).not.toContain('"calendarWidget"');
   });
 });
 
@@ -94,6 +106,47 @@ it('validates optional microphone sync and bounded native mute actions under the
  const action={binding:document,eventId:other,expiresAt:Date.now()+10000,actionId:document,action:'mute'};
  expect(parseCallsState({supported:true,actions:[action]})).toMatchObject({actions:[action]});
  expect(parseCallsState({supported:true,actions:[{...action,muted:'yes'}]})).toBeNull();
+});
+
+describe('native room audio bridge (ADR-0149)', () => {
+  const connectionId = '33333333-3333-4333-8333-333333333333';
+  const value = { v: 1, type: 'roomAudio', host: 0, document, seq: 1, request: 2, operation: 'disconnect', connectionId };
+  const send = (protocol: ActivityProtocol, change: object = {}) => protocol.accept(JSON.stringify({ ...value, ...change }));
+  it('accepts only the current document in sequence and hands native the operation alone', () => {
+    const p = new ActivityProtocol(0);
+    expect(send(p)).toBeNull();
+    p.accept(hello());
+    expect(send(p)).toEqual({ type: 'roomAudio', document, request: 2, operation: { operation: 'disconnect', connectionId } });
+    expect(send(p)).toBeNull();
+    expect(send(p, { seq: 2, document: other })).toBeNull();
+    expect(send(p, { seq: 2, host: 1 })).toBeNull();
+    expect(send(p, { seq: 2, request: 0 })).toBeNull();
+    expect(send(p, { seq: 2, token: 'secret' })).toBeNull();
+    expect(send(p, { seq: 2, operation: 'nativeLogin' })).toBeNull();
+    expect(send(p, { seq: 2 })?.type).toBe('roomAudio');
+    expect(p.accept(JSON.stringify({ v: 1, type: 'revoke', host: 0, document, seq: 3 }))).toEqual({ type: 'end' });
+    expect(send(p, { seq: 4 })).toBeNull();
+  });
+  it('advertises the capability only when iOS native reports support', () => {
+    const bridge = (nativeAudio: boolean, platform: 'ios' | 'android', roomAudio?: boolean) => {
+      const top: Record<string, unknown> = { ReactNativeWebView: { postMessage: vi.fn() }, crypto: { randomUUID: () => document } };
+      top.top = top;
+      runInNewContext(activityBootstrap(3, { nativeAudio, platform, ...(roomAudio === undefined ? {} : { roomAudio }) }), { window: top, crypto: top.crypto });
+      return top.CalabHostActivity as Record<string, unknown>;
+    };
+    expect(bridge(true, 'ios').roomAudioVersion).toBeUndefined();
+    expect(bridge(true, 'ios', false).roomAudioVersion).toBeUndefined();
+    expect(bridge(false, 'ios', true).roomAudioVersion).toBe(1);
+    expect(bridge(false, 'android', true).roomAudioVersion).toBeUndefined();
+    expect(activityBootstrap(3)).not.toContain('roomAudioVersion');
+  });
+  it('leaves the bootstrap of a build without room audio byte-identical', () => {
+    const line = (calls: string) => `value: Object.freeze({version: 1,  notificationsVersion: 1, notificationsTestVersion: 1, mediaPermissionsVersion: 1, callsVersion: 1, callsMuteVersion: 1, callsAnswerVersion: 1, ${calls} platform: 'ios', host: 3, get document() { return documentId; },`;
+    expect(activityBootstrap(3, { platform: 'ios' })).toContain(line(''));
+    expect(activityBootstrap(3, { platform: 'ios', nativeAudio: true })).toContain(line('callsAudioVersion: 1,'));
+    expect(activityBootstrap(3, { platform: 'ios', nativeAudio: true, roomAudio: false })).toBe(activityBootstrap(3, { platform: 'ios', nativeAudio: true }));
+    expect(activityBootstrap(3, { platform: 'ios', nativeAudio: true, roomAudio: true })).toContain(line('callsAudioVersion: 1, roomAudioVersion: 1,'));
+  });
 });
 
 describe('host link event (ADR-0142)', () => {
@@ -130,14 +183,52 @@ describe('Android host channel (DEV-5033, ADR-0070 Android)', () => {
   it('advertises only notifications and links, so the web keeps its own permission and call paths', () => {
     const top: Record<string, unknown> = { ReactNativeWebView: { postMessage: vi.fn() }, crypto: { randomUUID: () => document } };
     top.top = top;
-    runInNewContext(activityBootstrap(3, true, 'android'), { window: top, crypto: top.crypto });
+    runInNewContext(activityBootstrap(3, { platform: 'android', nativeAudio: true, calendarWidget: true }), { window: top, crypto: top.crypto });
     const bridge = top.CalabHostActivity as Record<string, unknown>;
     expect(bridge).toMatchObject({ version: 1, notificationsVersion: 1, notificationsTestVersion: 1, platform: 'android' });
-    for (const key of ['mediaPermissionsVersion', 'callsVersion', 'callsMuteVersion', 'callsAnswerVersion', 'callsAudioVersion']) expect(bridge[key]).toBeUndefined();
+    for (const key of ['mediaPermissionsVersion', 'callsVersion', 'callsMuteVersion', 'callsAnswerVersion', 'callsAudioVersion', 'calendarWidgetVersion']) expect(bridge[key]).toBeUndefined();
     expect(activityBootstrap(3)).toContain('callsVersion: 1');
-    const ready = activityReady(3, document, false, true);
+    const ready = activityReady(3, document, false, true, true);
     expect(ready).toContain('"links":1');
     expect(ready).not.toContain('"calls"');
     expect(ready).not.toContain('"permissions"');
+    expect(ready).not.toContain('"calendarWidget"');
+    expect(ready).not.toContain('"mediaSession"');
+    expect(bridge.mediaSessionVersion).toBeUndefined();
+  });
+});
+
+describe('Android media session (board #141)', () => {
+  const media = (fields: Record<string, unknown> = {}, seq = 1) => JSON.stringify({ v: 1, type: 'media', host: 0, document, seq, session: 'room', language: 'ru', ...fields });
+  it('parses room/call/none strictly: no unknown fields, sessions or languages', () => {
+    for (const session of ['room', 'call', 'none']) expect(parseHostActivityMessage(media({ session }))).toMatchObject({ type: 'media', session });
+    for (const raw of [media({ session: 'stream' }), media({ language: 'de' }), media({ roomId: 'private' }), media({ seq: 0 }),
+      JSON.stringify({ v: 1, type: 'media', host: 0, document, seq: 1, session: 'room' })]) expect(parseHostActivityMessage(raw)).toBeNull();
+  });
+  it('only for the current document, in order, after the handshake', () => {
+    const p = new ActivityProtocol(0);
+    expect(p.accept(media())).toBeNull();
+    p.accept(hello());
+    expect(p.accept(media({ session: 'call' }))).toEqual({ type: 'media', document, session: 'call', language: 'ru' });
+    expect(p.accept(media({ session: 'none' }, 1))).toBeNull();
+    expect(p.accept(media({ document: other }, 2))).toBeNull();
+    expect(p.accept(media({ session: 'none' }, 2))).toEqual({ type: 'media', document, session: 'none', language: 'ru' });
+  });
+  it('is advertised by the Android host with the module only, never by iOS', () => {
+    const top: Record<string, unknown> = { ReactNativeWebView: { postMessage: vi.fn() }, crypto: { randomUUID: () => document } };
+    top.top = top;
+    runInNewContext(activityBootstrap(3, { platform: 'android', mediaSession: true }), { window: top, crypto: top.crypto });
+    expect((top.CalabHostActivity as Record<string, unknown>).mediaSessionVersion).toBe(1);
+    expect(activityBootstrap(3, { platform: 'ios', nativeAudio: true, calendarWidget: true, mediaSession: true })).not.toContain('mediaSessionVersion');
+    expect(activityReady(3, document, false, true, false, true)).toContain('"mediaSession":1');
+    expect(activityReady(3, document, true, false, true, true)).not.toContain('"mediaSession"');
+  });
+  it('the leave event names the current host and document only', () => {
+    const dispatchEvent = vi.fn();
+    class Event { constructor(readonly type: string, readonly init: { detail: unknown }) {} }
+    runInNewContext(mediaSessionEvent(3, document), { window: { dispatchEvent }, CustomEvent: Event });
+    const event = dispatchEvent.mock.calls[0]?.[0] as Event;
+    expect(event.type).toBe('calab-host-media');
+    expect(event.init.detail).toEqual({ v: 1, host: 3, document, action: 'leave' });
   });
 });

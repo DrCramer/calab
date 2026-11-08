@@ -48,6 +48,8 @@ export interface SessionOptions {
   editorHost: HTMLElement;
   /** The text editor's accessible name (read at every open, so it follows the UI language). */
   editorLabel?: () => string;
+  /** A new frame's title in the UI language. */
+  frameTitle?: (n: number) => string;
   deps: CanvasViewDeps;
   palette: CanvasPalette;
   /** No CANVAS_WRITE. */
@@ -100,6 +102,7 @@ export function openCanvasSession(o: SessionOptions): CanvasSession {
     ...(o.touch ? { touch: true } : {}),
     editorHost: o.editorHost,
     ...(o.editorLabel ? { editorLabel: o.editorLabel } : {}),
+    ...(o.frameTitle ? { frameTitle: o.frameTitle } : {}),
     ...(o.deps.clipboard ? { clipboard: o.deps.clipboard } : {}),
     ...(o.onRefused ? { onRefused: o.onRefused } : {}),
     imageUrl: (src) => builtinStickerSrc(src) ?? o.deps.mediaUrl?.(src) ?? null,

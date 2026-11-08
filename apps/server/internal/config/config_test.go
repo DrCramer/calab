@@ -177,3 +177,28 @@ func TestSIPRegAgentTokenDiffers(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestVoiceLostGrace(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x@localhost/x")
+	t.Setenv("REDIS_URL", "redis://localhost:6379/0")
+	t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.VoiceLostGrace != time.Minute {
+		t.Fatalf("default VOICE_LOST_GRACE = %v, want 1m (ADR-0150)", c.VoiceLostGrace)
+	}
+	for in, want := range map[string]time.Duration{"0": 0, "0s": 0, "90s": 90 * time.Second, "10m": 10 * time.Minute} {
+		t.Setenv("VOICE_LOST_GRACE", in)
+		if c, err = Load(); err != nil || c.VoiceLostGrace != want {
+			t.Fatalf("VOICE_LOST_GRACE=%s: %v, %v", in, c.VoiceLostGrace, err)
+		}
+	}
+	for _, bad := range []string{"-1s", "11m"} {
+		t.Setenv("VOICE_LOST_GRACE", bad)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "VOICE_LOST_GRACE") {
+			t.Fatalf("VOICE_LOST_GRACE=%s accepted: %v", bad, err)
+		}
+	}
+}

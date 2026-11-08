@@ -1,16 +1,19 @@
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { CanvasItemKind } from '@calaba/protocol';
-import { FilePlus2, FileImage, FolderInput, FolderPlus, History, Pencil, RotateCcw, Send, Shapes, Trash2, Users } from 'lucide-react';
+import { Ellipsis, FilePlus2, FileImage, FolderInput, FolderPlus, History, Link2, Pencil, RotateCcw, Send, Shapes, Smile, Trash2, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { cx } from '../../components/ui';
 import { t } from '../../i18n';
 import { canStructure, canWrite, isFolder } from '../../lib/canvas/tree';
-import { createItem, deleteForever, openCanvas, renameItem, restoreItem, trashItem } from '../../services/canvas';
+import { createItem, deleteForever, openCanvas, renameItem, restoreItem, setItemEmoji, trashItem } from '../../services/canvas';
+import { canvasUrl } from '../../services/links';
+import { toast } from '../../stores/toasts';
 import { myUserId } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useCanvas } from '../../stores/canvas';
 import { useCanvasUi } from '../../stores/canvasUi';
+import { EmojiPicker } from '../chat/EmojiPicker';
 import { menuBox, menuItem, menuLabel, menuSeparator } from '../shell/menu';
 // Not from './view': that barrel pulls the engine into the main chunk.
 import { getCanvasViewHandle } from './view/handle';
@@ -58,10 +61,11 @@ export function ItemMenuEntries({
   const write = canWrite(item.myBits);
   const structure = canStructure(item, myUserId());
   const ws = item.workspaceId;
+  const link = !folder && !trashed ? canvasUrl(itemId) : null;
   const exportHandle = withExport && !folder && !trashed ? getCanvasViewHandle(itemId) : null;
   const ic = (I: typeof FolderInput): ReactNode => <I className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />;
-  const row = (icon: ReactNode, label: string, run: () => void, testId: string, danger = false): ReactNode => (
-    <Item className={cx(menuItem, danger && 'text-danger-text')} onSelect={run} data-testid={testId}>
+  const row = (icon: ReactNode, label: string, run: () => void, testId: string, danger = false, extra?: string): ReactNode => (
+    <Item className={cx(menuItem, danger && 'text-danger-text', extra)} onSelect={run} data-testid={testId}>
       {icon}
       {label}
     </Item>
@@ -77,9 +81,15 @@ export function ItemMenuEntries({
       {folder && write && !trashed ? row(ic(FilePlus2), t('canvas.newCanvas'), () => void createItem(ws, itemId, CanvasItemKind.CANVAS), 'canvas-menu-new-canvas') : null}
       {folder && write && !trashed ? row(ic(FolderPlus), t('canvas.newFolder'), () => void createItem(ws, itemId, CanvasItemKind.FOLDER), 'canvas-menu-new-folder') : null}
       {structure && !trashed ? row(ic(Pencil), t('canvas.rename'), onRename, 'canvas-menu-rename') : null}
+      {/* The picker opens at the tree row / the header title once the menu is gone (a phone has neither: not offered there). */}
+      {structure && !trashed
+        ? row(ic(Smile), t('canvas.emoji'), () => setTimeout(() => ui.setEmojiFor({ id: itemId, at: hideOpen ? 'header' : 'tree' }), 0), 'canvas-menu-emoji', false, 'mobile:hidden')
+        : null}
+      {structure && !trashed && item.emoji ? row(ic(X), t('canvas.emojiClear'), () => void setItemEmoji(itemId, ''), 'canvas-menu-emoji-clear') : null}
       {structure && !trashed ? row(ic(FolderInput), t('canvas.move'), () => ui.openDialog({ kind: 'move', itemId }), 'canvas-menu-move') : null}
       {structure && !trashed ? row(ic(Users), t('canvas.access'), () => ui.openDialog({ kind: 'share', itemId }), 'canvas-menu-access') : null}
       {!folder && !trashed ? row(ic(Send), t('canvas.sendToChat'), () => useUi.getState().openDialog({ kind: 'canvas-send', itemId }), 'canvas-menu-send') : null}
+      {link ? row(ic(Link2), t('canvas.copyLink'), () => copyLink(link), 'canvas-menu-copy-link') : null}
       {!folder && !trashed ? row(ic(History), t('canvas.versions'), () => ui.openDialog({ kind: 'versions', itemId }), 'canvas-menu-versions') : null}
       {exportHandle ? row(ic(FileImage), t('canvas.exportPng'), () => void exportHandle.exportPng({ area: 'all', name: item.name }), 'canvas-menu-export') : null}
       {exportHandle ? row(ic(FileImage), t('canvas.exportPngVisible'), () => void exportHandle.exportPng({ area: 'visible', name: item.name }), 'canvas-menu-export-visible') : null}
@@ -100,6 +110,60 @@ export function ItemMenuEntries({
       {structure && trashed ? row(ic(RotateCcw), t('canvas.restore'), () => void restoreItem(itemId), 'canvas-menu-restore') : null}
       {structure && trashed ? row(ic(Trash2), t('canvas.deleteForever'), () => void deleteForever(itemId), 'canvas-menu-delete', true) : null}
     </>
+  );
+}
+
+/** Wraps the item's icon at `at`: while «Иконка» is on for it there, the emoji picker opens on it. */
+export function ItemEmojiPicker({ id, at, children }: { id: string; at: 'tree' | 'header'; children: ReactNode }): ReactNode {
+  const on = useCanvasUi((s) => s.emojiFor?.id === id && s.emojiFor.at === at);
+  if (!on) return children;
+  return (
+    <EmojiPicker
+      label={t('canvas.emoji')}
+      defaultOpen
+      closeOnPick
+      onOpenChange={(open) => {
+        if (!open) useCanvasUi.getState().setEmojiFor(null);
+      }}
+      onPick={(e) => void setItemEmoji(id, e)}
+    >
+      {children}
+    </EmojiPicker>
+  );
+}
+
+/** «Копировать ссылку»: the in-app address `/canvas/<id>` (opens for whoever may view it, as a board's link). */
+function copyLink(link: string): void {
+  navigator.clipboard.writeText(link).then(
+    () => toast.success(t('canvas.linkCopied')),
+    (e: unknown) => toast.fail(e),
+  );
+}
+
+/** The «⋯» of a tree row (shown on hover / focus / while open, as on a board row): the same entries as the right click. */
+export function ItemRowMenu({ itemId }: { itemId: string }): ReactNode {
+  const [open, setOpen] = useState(false);
+  return (
+    <Dropdown.Root modal={false} open={open} onOpenChange={setOpen}>
+      <Dropdown.Trigger asChild>
+        <button
+          type="button"
+          aria-label={t('canvas.moreMenu')}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-icon)] text-muted opacity-0 hover:bg-active hover:text-fg focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+          data-testid="canvas-node-menu"
+        >
+          <Ellipsis className="size-4" aria-hidden />
+        </button>
+      </Dropdown.Trigger>
+      <Dropdown.Portal>
+        {open ? (
+          <Dropdown.Content className={cx(menuBox, 'min-w-56')} sideOffset={4} align="start" collisionPadding={16} onCloseAutoFocus={(e) => e.preventDefault()} data-testid="canvas-item-menu">
+            <ItemMenuEntries itemId={itemId} parts={DROP} onRename={() => useCanvasUi.getState().setRenaming(itemId)} />
+          </Dropdown.Content>
+        ) : null}
+      </Dropdown.Portal>
+    </Dropdown.Root>
   );
 }
 

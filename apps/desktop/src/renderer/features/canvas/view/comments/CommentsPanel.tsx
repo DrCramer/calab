@@ -8,8 +8,8 @@
  * row subscribed to its own ids.
  */
 import { timestampMs } from '@bufbuild/protobuf/wkt';
-import { Check, MapPin, MessageCirclePlus, RotateCcw, X } from 'lucide-react';
-import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
+import { Check, LocateFixed, MessageCirclePlus, RotateCcw, X } from 'lucide-react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { confirmAction } from '../../../../components/Confirm';
 import { ALT, Button, IconButton, Toggle, cx } from '../../../../components/ui';
@@ -28,7 +28,7 @@ import { CommentInput } from './CommentInput';
 
 const EMPTY: readonly string[] = [];
 
-interface Ctx {
+export interface Ctx {
   canvasId: string;
   workspaceId: string;
   rights: CommentRights;
@@ -61,9 +61,11 @@ const Item = memo(function Item({ id, meta, ctx, editing, onEdit, onDelete }: { 
   );
 });
 
-const Thread = memo(function Thread({ id, ctx }: { id: string; ctx: Ctx }): ReactNode {
-  const resolved = useCanvasComments((s) => !!s.byId[id]?.resolved);
-  const active = useCanvasComments((s) => s.active === id);
+/**
+ * A thread's comments and its field (a reply, or the edit of one of its comments): shared by the panel's card and the
+ * popover at the pin. `reply` shows the reply field; an edit shows it anyway.
+ */
+export const ThreadBody = memo(function ThreadBody({ id, ctx, reply, autoFocus = false, scroll = false }: { id: string; ctx: Ctx; reply: boolean; autoFocus?: boolean; scroll?: boolean }): ReactNode {
   // The grouping's input as one primitive: an edit or a resolve does not re-group the thread.
   const shape = useCanvasComments((s) =>
     [id, ...(s.replies[id] ?? EMPTY)]
@@ -76,7 +78,6 @@ const Thread = memo(function Thread({ id, ctx }: { id: string; ctx: Ctx }): Reac
   );
   // The thread's day is in its header: no date pill over the first row of every card.
   const { items, metas } = useCommentGroups(shape, false);
-  const startMs = items[0]?.ms ?? 0;
   const [editId, setEditId] = useState<string | null>(null);
   const editBody = useCanvasComments((s) => (editId ? s.byId[editId]?.body : undefined));
   // The edited comment went away (deleted elsewhere): the field goes back to a reply.
@@ -103,6 +104,39 @@ const Thread = memo(function Thread({ id, ctx }: { id: string; ctx: Ctx }): Reac
   );
   const cancelEdit = useCallback(() => setEditId(null), []);
   const submit = useCallback((wire: string, eid?: string) => (eid ? editComment(eid, wire) : replyTo(ctx.canvasId, id, wire)), [ctx.canvasId, id]);
+  return (
+    <>
+      {/* `scroll`: the comments scroll in a bounded box (the popover) and the field stays below them. */}
+      <div className={cx('pb-2 pt-1', scroll && 'min-h-0 flex-1 overflow-y-auto bg-feed')} onClick={() => useCanvasComments.getState().setActive(id)} role="presentation">
+        {items.map((it, i) => (
+          <Item key={it.key} id={it.key} meta={metas[i] as RowMeta} ctx={ctx} editing={editing?.id === it.key} onEdit={onEdit} onDelete={onDelete} />
+        ))}
+      </div>
+      {(reply && ctx.rights.write) || editing ? (
+        <CommentInput
+          canvasId={ctx.canvasId}
+          workspaceId={ctx.workspaceId}
+          placeholder={t('canvasComments.replyPlaceholder')}
+          editing={editing}
+          onCancelEdit={cancelEdit}
+          onSubmit={submit}
+          autoFocus={autoFocus}
+          className="border-t border-line bg-main px-2 pb-2 pt-2"
+        />
+      ) : null}
+    </>
+  );
+});
+
+const Thread = memo(function Thread({ id, ctx }: { id: string; ctx: Ctx }): ReactNode {
+  const resolved = useCanvasComments((s) => !!s.byId[id]?.resolved);
+  const active = useCanvasComments((s) => s.active === id);
+  // Open in its popover at the pin: the field is there, not here.
+  const inPopover = useCanvasComments((s) => s.active === id && s.pinOpen);
+  const startMs = useCanvasComments((s) => {
+    const c = s.byId[id];
+    return c?.createdAt ? timestampMs(c.createdAt) : 0;
+  });
 
   const show = (): void => {
     const st = useCanvasComments.getState();
@@ -111,50 +145,48 @@ const Thread = memo(function Thread({ id, ctx }: { id: string; ctx: Ctx }): Reac
     const p = c ? pinWorld(c, (o) => ctx.engine.scene.get(o)) : null;
     if (p) ctx.engine.centerOn(p);
   };
-  const composer = (active && ctx.rights.write) || !!editing;
+  // A pin picked on the canvas brings its thread into view here.
+  const li = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (active) li.current?.scrollIntoView({ block: 'nearest' });
+  }, [active]);
   return (
     <li
+      ref={li}
+      aria-current={active || undefined}
       className={cx('overflow-hidden rounded-[var(--radius-card)] border bg-feed', active ? 'border-accent' : 'border-line')}
       data-testid="canvas-comment-thread"
       data-thread-id={id}
       data-resolved={resolved || undefined}
     >
-      <div className="flex h-8 items-center gap-1 border-b border-line bg-main px-1">
-        <Button variant="ghost" size="sm" className="min-w-0 text-muted hover:text-fg" onClick={show} data-testid="canvas-comment-show"
-          aria-label={resolved ? `${t('canvasComments.resolved')} · ${t('canvasComments.showPin')}` : undefined}
-        >
-          {resolved ? <Check className="size-3.5 shrink-0 text-success" aria-hidden /> : <MapPin className="size-3.5 shrink-0" aria-hidden />}
-          <span className="truncate">{resolved ? t('canvasComments.resolved') : t('canvasComments.showPin')}</span>
-        </Button>
+      <div className={cx('flex h-8 items-center gap-1 border-b border-line px-1', active ? 'bg-[color-mix(in_srgb,var(--color-accent)_16%,var(--color-main))]' : 'bg-main')}>
+        {/* A crosshair, named by its tooltip: the header keeps room for the day and the resolve button. */}
+        <IconButton size="sm" label={t('canvasComments.showPin')} onClick={show} data-testid="canvas-comment-show">
+          <LocateFixed className="size-4" aria-hidden />
+        </IconButton>
+        {resolved ? (
+          <span className="flex min-w-0 items-center gap-1 text-caption text-success" data-testid="canvas-comment-resolved">
+            <Check className="size-3.5 shrink-0" aria-hidden />
+            <span className="truncate">{t('canvasComments.resolved')}</span>
+          </span>
+        ) : null}
         <span className="flex-1" />
         {startMs ? <span className="shrink-0 px-1 text-caption text-muted">{fmt.dayLabel(new Date(startMs))}</span> : null}
         {ctx.rights.write || ctx.rights.moderate ? (
-          <IconButton
+          // Named, not a bare tick: closing a thread is the card's main action.
+          <Button
+            variant={resolved ? 'ghost' : 'secondary'}
             size="sm"
-            label={resolved ? t('canvasComments.reopen') : t('canvasComments.resolve')}
+            className="shrink-0"
             onClick={() => void resolveThread(id, !resolved)}
             data-testid="canvas-comment-resolve"
           >
-            {resolved ? <RotateCcw className="size-4" aria-hidden /> : <Check className="size-4" aria-hidden />}
-          </IconButton>
+            {resolved ? <RotateCcw className="size-3.5" aria-hidden /> : <Check className="size-3.5" aria-hidden />}
+            {resolved ? t('canvasComments.reopen') : t('canvasComments.resolve')}
+          </Button>
         ) : null}
       </div>
-      <div className="pb-2 pt-1" onClick={() => useCanvasComments.getState().setActive(id)} role="presentation">
-        {items.map((it, i) => (
-          <Item key={it.key} id={it.key} meta={metas[i] as RowMeta} ctx={ctx} editing={editing?.id === it.key} onEdit={onEdit} onDelete={onDelete} />
-        ))}
-      </div>
-      {composer ? (
-        <CommentInput
-          canvasId={ctx.canvasId}
-          workspaceId={ctx.workspaceId}
-          placeholder={t('canvasComments.replyPlaceholder')}
-          editing={editing}
-          onCancelEdit={cancelEdit}
-          onSubmit={submit}
-          className="border-t border-line bg-main px-2 pb-2 pt-2"
-        />
-      ) : null}
+      <ThreadBody id={id} ctx={ctx} reply={active && !inPopover} />
     </li>
   );
 });
@@ -253,7 +285,8 @@ export const CommentsPanel = memo(function CommentsPanel({
           </ul>
         )}
       </div>
-      {rights.write ? <Draft ctx={ctx} /> : null}
+      {/* On the desktop a new thread is written in its popover at the pin. */}
+      {rights.write && phone ? <Draft ctx={ctx} /> : null}
     </aside>
   );
 });

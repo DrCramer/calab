@@ -1,13 +1,15 @@
-import { MessageSquarePlus, MousePointer2, Plus, Redo2, Spline, StickyNote, Type, Undo2, Vote, Timer as TimerIcon, type LucideIcon } from 'lucide-react';
-import { memo, useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Eraser, Highlighter, MessageSquarePlus, MousePointer2, Pencil, Plus, Redo2, Spline, Type, Undo2, Vote, Timer as TimerIcon, type LucideIcon } from 'lucide-react';
+import { StickyIcon } from './StickyIcon';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import { TEMPLATE_IDS, type TemplateId } from '../../../lib/canvas/templates';
 import { TIMER_PRESETS_MIN } from '../../../lib/canvas/timer';
 import { VOTE_DEFAULT } from '../../../lib/canvas/votes';
-import type { CanvasEngine, Tool } from '../engine';
+import { resolveColor, type CanvasEngine, type CanvasPalette, type Tool } from '../engine';
 import { ACTIVE_TOOL, PANEL, keepFocus } from './chrome';
 import { useEngineValue } from './hooks';
+import { PhoneInkSheet } from './PhoneInk';
 import { PhoneMenu } from './PhoneMenu';
 import { ShapeIcon } from './ShapeIcon';
 import { SHAPE_DEFS } from './model';
@@ -22,20 +24,24 @@ import type { TimerStore } from './timerStore';
  */
 
 const ICON = 'size-[22px]';
-const BTN = 'grid size-11 shrink-0 place-items-center rounded-[var(--radius-control)] text-fg active:bg-active disabled:opacity-40 disabled:active:bg-transparent';
+const BTN = 'grid shrink-0 place-items-center rounded-[var(--radius-control)] text-fg active:bg-active disabled:opacity-40 disabled:active:bg-transparent';
+const SQUARE = 'size-11';
+const IN_BAR = 'h-11 min-w-0 max-w-11 flex-1';
 /** The sheets above the bar: popover material, square at the bottom, scroll inside when the content is taller than the screen allows. */
 export const SHEET = 'mat-popover pointer-events-auto max-h-[min(55vh,420px)] overflow-y-auto overscroll-contain rounded-t-[var(--radius-card)] border-x-0 border-b-0';
 
-type SheetKind = 'shapes' | 'plus';
+type SheetKind = 'shapes' | 'plus' | 'ink';
 
 export function PhoneBtn({
-  label, active, disabled, onClick, testId, children,
+  label, active, disabled, onClick, testId, bar, children,
 }: {
   label: string;
   active?: boolean;
   disabled?: boolean;
   onClick: () => void;
   testId?: string;
+  /** In the tool bar: shares the row (at most 44 px wide, narrower on a 375 px phone with nine buttons), still 44 px tall. */
+  bar?: boolean;
   children: ReactNode;
 }): ReactNode {
   return (
@@ -50,7 +56,7 @@ export function PhoneBtn({
       // prevented, so a prevented pointerdown would make every phone button dead.
       onMouseDown={keepFocus}
       onClick={onClick}
-      className={cx(BTN, active && ACTIVE_TOOL)}
+      className={cx(BTN, bar ? IN_BAR : SQUARE, active && ACTIVE_TOOL)}
       data-testid={testId}
     >
       {children}
@@ -63,7 +69,7 @@ const HistoryBtn = memo(function HistoryBtn({ engine, redo }: { engine: CanvasEn
   const can = useEngineValue(engine, (s) => (redo ? s.canRedo : s.canUndo));
   const Icon = redo ? Redo2 : Undo2;
   return (
-    <PhoneBtn label={t(redo ? 'canvasBoard.redo' : 'canvasBoard.undo')} disabled={!can} onClick={() => (redo ? engine.redo() : engine.undo())} testId={redo ? 'canvas-redo' : 'canvas-undo'}>
+    <PhoneBtn bar label={t(redo ? 'canvasBoard.redo' : 'canvasBoard.undo')} disabled={!can} onClick={() => (redo ? engine.redo() : engine.undo())} testId={redo ? 'canvas-redo' : 'canvas-undo'}>
       <Icon className={ICON} strokeWidth={1.75} aria-hidden />
     </PhoneBtn>
   );
@@ -71,7 +77,7 @@ const HistoryBtn = memo(function HistoryBtn({ engine, redo }: { engine: CanvasEn
 
 const TOOLS: readonly { tool: Tool; Icon: LucideIcon | null }[] = [
   { tool: 'select', Icon: MousePointer2 },
-  { tool: 'sticky', Icon: StickyNote },
+  { tool: 'sticky', Icon: StickyIcon },
   { tool: 'text', Icon: Type },
   { tool: 'shape', Icon: null },
   { tool: 'connector', Icon: Spline },
@@ -91,9 +97,10 @@ function ArmedHint({ tool }: { tool: Tool }): ReactNode {
 const TOP_INSET = 64;
 
 export const PhoneEditBar = memo(function PhoneEditBar({
-  engine, timer, focusCanvas, children,
+  engine, timer, palette, focusCanvas, children,
 }: {
   engine: CanvasEngine;
+  palette: CanvasPalette;
   timer: TimerStore;
   focusCanvas: () => void;
   /** The properties sheet (when something is selected): above the tool bar, below the open sheet. */
@@ -103,7 +110,11 @@ export const PhoneEditBar = memo(function PhoneEditBar({
   const tool = useEngineValue(engine, (s) => s.tool);
   const shapeKind = useEngineValue(engine, (s) => s.shapeKind);
   const editing = useEngineValue(engine, (s) => s.editing);
+  const inkMarker = useEngineValue(engine, (s) => s.inkMarker);
+  const inkColor = useEngineValue(engine, (s) => s.inkColor);
   const [sheet, setSheet] = useState<SheetKind | null>(null);
+  const [lastInk, setLastInk] = useState<'pen' | 'eraser'>('pen');
+  if ((tool === 'pen' || tool === 'eraser') && tool !== lastInk) setLastInk(tool);
   const close = useCallback(() => setSheet(null), []);
   const dock = useRef<HTMLDivElement>(null);
   /** A primitive that changes when the selection does (another object, a different count). */
@@ -129,6 +140,17 @@ export const PhoneEditBar = memo(function PhoneEditBar({
     if (editing || selKey !== '') setSheet(null);
   }
 
+  // A touch on the canvas puts the ink sheet away (the stroke still draws; the tool stays armed), so it never covers
+  // the drawing area. One listener while the sheet is open, nothing at rest.
+  useEffect(() => {
+    if (sheet !== 'ink') return undefined;
+    const away = (e: PointerEvent): void => {
+      if (!(e.target instanceof Node) || !dock.current?.contains(e.target)) setSheet(null);
+    };
+    document.addEventListener('pointerdown', away, true);
+    return () => document.removeEventListener('pointerdown', away, true);
+  }, [sheet]);
+
   if (editing) return null;
   const openTemplates = (): void => setSheet('plus');
   const pick = (next: Tool): void => {
@@ -141,16 +163,18 @@ export const PhoneEditBar = memo(function PhoneEditBar({
     <div ref={dock} className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col" data-testid="canvas-phone-dock">
       <ArmedHint tool={tool} />
       {sheet === 'shapes' ? <ShapesSheet engine={engine} shapeKind={shapeKind} onDone={close} /> : null}
+      {sheet === 'ink' ? <PhoneInkSheet engine={engine} palette={palette} /> : null}
       {sheet === 'plus' ? <PlusSheet engine={engine} timer={timer} focusCanvas={focusCanvas} onDone={close} /> : null}
       {sheet === null ? children : null}
       <div
         role="toolbar"
         aria-label={t('canvasPhone.tools')}
         data-testid="canvas-phone-toolbar"
-        className="mat-popover pointer-events-auto flex items-center justify-between rounded-none border-x-0 border-b-0 px-1 pt-1 pb-[max(4px,var(--safe-bottom,0px))]"
+        className="mat-popover pointer-events-auto flex items-center justify-between rounded-none border-x-0 border-b-0 px-0.5 pt-1 pb-[max(4px,var(--safe-bottom,0px))]"
       >
         {TOOLS.map(({ tool: id, Icon }) => (
           <PhoneBtn
+            bar
             key={id}
             label={t(`canvasBoard.tool.${id}`)}
             active={tool === id}
@@ -166,7 +190,23 @@ export const PhoneEditBar = memo(function PhoneEditBar({
             {Icon ? <Icon className={ICON} strokeWidth={1.75} aria-hidden /> : <ShapeIcon kind={shapeKind} className={ICON} />}
           </PhoneBtn>
         ))}
-        <PhoneBtn label={t('canvasPhone.plus')} active={sheet === 'plus'} onClick={() => setSheet(sheet === 'plus' ? null : 'plus')} testId="canvas-phone-plus">
+        <PhoneBtn
+          bar
+          label={t('canvasBoard.tool.pen')}
+          active={tool === 'pen' || tool === 'eraser'}
+          onClick={() => {
+            // Arms the last of pen / eraser used and offers the ink; a second tap puts the sheet away, the tool stays armed.
+            if (tool !== 'pen' && tool !== 'eraser') engine.setTool(lastInk);
+            setSheet(sheet === 'ink' ? null : 'ink');
+          }}
+          testId="canvas-tool-pen"
+        >
+          <span className="relative grid place-items-center">
+            {tool === 'eraser' ? <Eraser className={ICON} strokeWidth={1.75} aria-hidden /> : inkMarker ? <Highlighter className={ICON} strokeWidth={1.75} aria-hidden /> : <Pencil className={ICON} strokeWidth={1.75} aria-hidden />}
+            <span aria-hidden className="absolute -bottom-0.5 -right-0.5 size-[7px] rounded-full ring-1 ring-[var(--color-separator)]" style={{ background: resolveColor(palette, inkColor) ?? palette.ink }} />
+          </span>
+        </PhoneBtn>
+        <PhoneBtn bar label={t('canvasPhone.plus')} active={sheet === 'plus'} onClick={() => setSheet(sheet === 'plus' ? null : 'plus')} testId="canvas-phone-plus">
           <Plus className={ICON} strokeWidth={1.75} aria-hidden />
         </PhoneBtn>
         <HistoryBtn engine={engine} />

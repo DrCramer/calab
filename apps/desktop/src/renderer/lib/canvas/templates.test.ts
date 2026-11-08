@@ -7,16 +7,20 @@ import { MAX_OBJECTS, isConnector } from './types';
 
 const tr = (key: TemplateKey, p?: Record<string, string | number>): string => (p ? `${key}:${JSON.stringify(p)}` : key);
 const COUNTS: Record<TemplateId, { objects: number; connectors: number; stickies: number }> = {
-  kanban: { objects: 12, connectors: 0, stickies: 6 },
-  retro: { objects: 12, connectors: 0, stickies: 6 },
-  swot: { objects: 8, connectors: 0, stickies: 0 },
-  mindmap: { objects: 9, connectors: 4, stickies: 0 },
-  flow: { objects: 5, connectors: 2, stickies: 0 },
+  kanban: { objects: 17, connectors: 0, stickies: 7 },
+  retro: { objects: 17, connectors: 0, stickies: 8 },
+  swot: { objects: 17, connectors: 0, stickies: 6 },
+  mindmap: { objects: 26, connectors: 12, stickies: 1 },
+  flow: { objects: 13, connectors: 6, stickies: 0 },
+  matrix: { objects: 17, connectors: 2, stickies: 4 },
+  roadmap: { objects: 19, connectors: 1, stickies: 0 },
+  meeting: { objects: 13, connectors: 0, stickies: 3 },
 };
+const shapeTexts = (id: TemplateId): string[] => buildTemplate(id, { x: 0, y: 0 }, tr, ids('t')).flatMap((i) => (i.init.kind === 'shape' && i.init.text ? [i.init.text] : []));
 
 describe('templates', () => {
-  it('there are five', () => {
-    expect([...TEMPLATE_IDS]).toEqual(['kanban', 'retro', 'swot', 'mindmap', 'flow']);
+  it('there are eight', () => {
+    expect([...TEMPLATE_IDS]).toEqual(['kanban', 'retro', 'swot', 'mindmap', 'flow', 'matrix', 'roadmap', 'meeting']);
   });
   it.each(TEMPLATE_IDS)('%s: the expected objects, connectors glued to existing shapes, localized texts', (id) => {
     const items = buildTemplate(id, { x: 0, y: 0 }, tr, ids('t'));
@@ -28,30 +32,44 @@ describe('templates', () => {
     expect(known.size).toBe(items.length);
     for (const i of items) {
       if (i.init.kind !== 'connector') continue;
-      expect('id' in i.init.from && known.has(i.init.from.id)).toBe(true);
-      expect('id' in i.init.to && known.has(i.init.to.id)).toBe(true);
+      // A glued end refers to an object of the template; free ends are the matrix axes and the roadmap's release line.
+      for (const e of [i.init.from, i.init.to]) if ('id' in e) expect(known.has(e.id)).toBe(true);
     }
     // Every visible text comes through `tr` (a key, not a hard-coded phrase).
-    const texts = items.flatMap((i) => (i.init.kind !== 'connector' && i.init.kind !== 'image' && i.init.text ? [i.init.text] : []));
+    const texts = items.flatMap((i) => (i.init.kind !== 'connector' && i.init.kind !== 'image' && i.init.kind !== 'ink' && i.init.kind !== 'frame' && i.init.text ? [i.init.text] : []));
     expect(texts.length).toBeGreaterThan(0);
-    for (const x of texts) expect(x).toMatch(/^(kanban|retro|swot|mindmap|flow)\.[a-z]+(:\{.*\})?$/);
+    for (const x of texts) expect(x).toMatch(new RegExp(`^${id}\\.[a-z0-9]+$`));
+    // The areas under the stickies are locked soft-tone shapes; nothing else is locked.
+    for (const i of items) if (i.init.locked) expect(i.init.kind === 'shape' && i.init.fill?.startsWith('soft:') && !i.init.text).toBe(true);
   });
-  it('the headers of the column boards are the three wanted titles; SWOT is 2×2', () => {
-    const texts = (id: TemplateId): string[] => buildTemplate(id, { x: 0, y: 0 }, tr, ids('t')).flatMap((i) => (i.init.kind === 'shape' && i.init.text ? [i.init.text] : []));
-    expect(texts('kanban')).toEqual(['kanban.todo', 'kanban.doing', 'kanban.done']);
-    expect(texts('retro')).toEqual(['retro.good', 'retro.bad', 'retro.try']);
-    const swot = buildTemplate('swot', { x: 0, y: 0 }, tr, ids('t')).flatMap((i) => (i.init.kind === 'shape' && i.init.text ? [i.init] : []));
+  it('the column boards have their four heads; SWOT is 2×2 with conclusions below', () => {
+    expect(shapeTexts('kanban')).toEqual(['kanban.backlog', 'kanban.doing', 'kanban.review', 'kanban.done']);
+    expect(shapeTexts('retro')).toEqual(['retro.good', 'retro.bad', 'retro.try', 'retro.actions']);
+    const swot = buildTemplate('swot', { x: 0, y: 0 }, tr, ids('t')).flatMap((i) => (i.init.kind === 'shape' && i.init.text && i.init.text !== 'swot.outcome' ? [i.init] : []));
     expect(new Set(swot.map((s) => s.x)).size).toBe(2);
     expect(new Set(swot.map((s) => s.y)).size).toBe(2);
   });
-  it('the flow chart has three steps and arrows between them; the mind map wires its center to four branches', () => {
+  it('the flow chart branches yes / no and loops back; the mind map wires its center to four branches of two ideas', () => {
     const flow = buildTemplate('flow', { x: 0, y: 0 }, tr, ids('t'));
     const arrows = flow.flatMap((i) => (i.init.kind === 'connector' ? [i.init] : []));
-    expect(arrows.map((a) => a.arrow)).toEqual(['end', 'end']);
+    expect(arrows.every((a) => a.arrow === 'end')).toBe(true);
+    expect(arrows.flatMap((a) => (a.label ? [a.label] : []))).toEqual(['flow.yes', 'flow.no']);
     const map = buildTemplate('mindmap', { x: 0, y: 0 }, tr, ids('t'));
     const centerId = map[0]?.id;
     const wires = map.flatMap((i) => (i.init.kind === 'connector' ? [i.init] : []));
-    expect(wires.every((w) => 'id' in w.from && w.from.id === centerId)).toBe(true);
+    expect(wires.filter((w) => 'id' in w.from && w.from.id === centerId)).toHaveLength(4);
+    expect(wires.every((w) => w.route === 'curve')).toBe(true);
+  });
+  it('the matrix axes move with the template (free connector ends)', () => {
+    const a = buildTemplate('matrix', { x: 0, y: 0 }, tr, ids('a')).flatMap((i) => (i.init.kind === 'connector' ? [i.init] : []));
+    const b = buildTemplate('matrix', { x: 500, y: 300 }, tr, ids('b')).flatMap((i) => (i.init.kind === 'connector' ? [i.init] : []));
+    expect(a).toHaveLength(2);
+    a.forEach((w, n) => {
+      const v = b[n];
+      if (!v || 'id' in w.from || 'id' in v.from) throw new Error('free ends expected');
+      expect(v.from.x - w.from.x).toBeCloseTo(500);
+      expect(v.from.y - w.from.y).toBeCloseTo(300);
+    });
   });
   it.each(TEMPLATE_IDS)('%s is centered on the requested point', (id) => {
     const items = buildTemplate(id, { x: 1000, y: -400 }, tr, ids('t'));

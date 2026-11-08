@@ -4,6 +4,11 @@ import type { TextBoxRec } from './types';
 
 export const LINE_HEIGHT = 1.3;
 export const STICKY_PAD = 14;
+/**
+ * A sticky's text inset: a tenth of its shorter side, at least STICKY_PAD (owner 30.10: more air left and right, and a
+ * sticky made big when zoomed out keeps the same proportions).
+ */
+export const stickyPad = (o: { w: number; h: number }): number => Math.max(STICKY_PAD, Math.min(o.w, o.h) * 0.1);
 export const SHAPE_PAD = 10;
 export const TEXT_PAD = 4;
 export const STICKY_TEXT_SIZE = 18;

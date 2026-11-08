@@ -2,6 +2,7 @@ import * as Popover from '@radix-ui/react-popover';
 import { Pause, Play, RotateCcw, Timer as TimerIcon } from 'lucide-react';
 import { memo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Button, IconButton, cx } from '../../../components/ui';
+import { ToolHint } from './ToolHint';
 import { t, useLocale } from '../../../i18n';
 import { TIMER_MAX_MINUTES, TIMER_MIN_MINUTES, TIMER_PRESETS_MIN, clampMinutes, mmss, type TimerPhase } from '../../../lib/canvas/timer';
 import type { CanvasEngine } from '../engine';
@@ -84,11 +85,13 @@ export const TimerButton = memo(function TimerButton({ store, focusCanvas }: { s
   };
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <IconButton label={t('canvasBoard.timer.button')} active={phase !== 'none'} onMouseDown={keepFocus} data-testid="canvas-timer-button">
-          <TimerIcon className={ICON} strokeWidth={1.75} aria-hidden />
-        </IconButton>
-      </Popover.Trigger>
+      <ToolHint id="timer" title={t('canvasBoard.timer.button')} suppress={open}>
+        <Popover.Trigger asChild>
+          <IconButton label={t('canvasBoard.timer.button')} tip={false} active={phase !== 'none'} onMouseDown={keepFocus} data-testid="canvas-timer-button">
+            <TimerIcon className={ICON} strokeWidth={1.75} aria-hidden />
+          </IconButton>
+        </Popover.Trigger>
+      </ToolHint>
       <Popover.Portal>
         <Popover.Content
           side="right"

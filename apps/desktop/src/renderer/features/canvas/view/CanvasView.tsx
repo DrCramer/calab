@@ -22,12 +22,14 @@ import type { CanvasPalette, RefusedWhy } from '../engine';
 import { CanvasMenu, type MenuMode } from './CanvasMenu';
 import { CommentsLayer, CommentsToggle } from './comments/CommentsLayer';
 import { ZoomBar } from './Controls';
+import { FramesPanel } from './FramesPanel';
 import { MiniMap } from './MiniMap';
 import { PhoneEditBar } from './PhoneEditBar';
 import { PhoneFormatBar } from './PhoneFormatBar';
 import { PhoneProps } from './PhoneProps';
 import { PhoneEditHint, PhoneNote, PhoneOthers } from './PhoneChrome';
 import { Presence } from './PresenceBar';
+import { QuickDropMenu } from './QuickDropMenu';
 import { PropsPanel } from './PropsPanel';
 import { SelectionAnnouncer } from './SelectionAnnouncer';
 import { StatusBanner, ViewerStatus } from './StatusBanner';
@@ -151,6 +153,7 @@ export function CanvasView({ canvasId, workspaceId, bits, onOpenHistory, onShare
       remoteCanvas: remote.current,
       editorHost: host,
       editorLabel: () => t('canvasBoard.textEditor'),
+      frameTitle: (n) => t('canvasBoard.frame.default', { n }),
       deps: live.current.deps,
       palette: live.current.palette,
       readOnly: !live.current.canWrite,
@@ -379,7 +382,7 @@ function ViewerChrome({ session, focusCanvas, gone, phone }: { session: CanvasSe
   const [helpOpen, setHelpOpen] = useState(false);
   return (
     <>
-      <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={false} helpOpen={helpOpen} onHelpOpenChange={setHelpOpen} phone={phone} minimap={false} />
+      <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={false} helpOpen={helpOpen} onHelpOpenChange={setHelpOpen} phone={phone} minimap={false} frames={false} />
       <ViewerStatus engine={engine} sync={sync} timer={timer} gone={gone} />
       <SelectionAnnouncer engine={engine} />
     </>
@@ -422,7 +425,7 @@ function Chrome({
         {canWrite && editable ? <PhoneEditHint /> : null}
         {canWrite && editable ? <PhoneFormatBar engine={engine} /> : null}
         {canWrite && editable ? (
-          <PhoneEditBar engine={engine} timer={timer} focusCanvas={focusCanvas}>
+          <PhoneEditBar engine={engine} timer={timer} palette={palette} focusCanvas={focusCanvas}>
             <PhoneProps engine={engine} palette={palette} focusCanvas={focusCanvas} />
           </PhoneEditBar>
         ) : null}
@@ -435,9 +438,10 @@ function Chrome({
     <>
       {editable ? (
         <>
-          <Toolbar engine={engine} timer={timer} focusCanvas={focusCanvas} workspaceId={workspaceId} />
+          <Toolbar engine={engine} timer={timer} palette={palette} focusCanvas={focusCanvas} workspaceId={workspaceId} />
           <HistoryBar engine={engine} focusCanvas={focusCanvas} />
           <PropsPanel engine={engine} palette={palette} focusCanvas={focusCanvas} />
+          <QuickDropMenu engine={engine} focusCanvas={focusCanvas} />
           <TextFormatBar engine={engine} />
           <TemplatesCard engine={engine} sync={sync} focusCanvas={focusCanvas} />
         </>
@@ -445,6 +449,7 @@ function Chrome({
       {comments}
       <ZoomBar engine={engine} focusCanvas={focusCanvas} canWrite={canWrite} helpOpen={helpOpen} onHelpOpenChange={onHelpOpenChange} comments={commentsToggle} />
       <MiniMap engine={engine} palette={palette} focusCanvas={focusCanvas} />
+      <FramesPanel engine={engine} palette={palette} editable={editable} focusCanvas={focusCanvas} />
       <Presence store={presence} engine={engine} />
       <StatusBanner engine={engine} sync={sync} timer={timer} canWrite={canWrite} gone={gone} onRetry={onRetry} />
       <SelectionAnnouncer engine={engine} />

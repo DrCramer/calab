@@ -3,8 +3,8 @@ import { rectUnion, rectsIntersect, type Rect } from '../../../lib/canvas/geomet
 import type { Scene, SceneChange } from '../../../lib/canvas/scene';
 import { visualBounds } from '../../../lib/canvas/scene';
 import { AwarenessLayer } from './awareness';
-import { drawBackground, drawObjects, type Ctx2D, type DrawEnv } from './draw';
-import { drawOverlay, type OverlayState } from './overlay';
+import { drawBackground, drawObjects, releaseScratch, type Ctx2D, type DrawEnv } from './draw';
+import { drawOverlay, overlayBounds, type OverlayState } from './overlay';
 import type { ImageSource } from './images';
 import type { CanvasPalette } from './palette';
 
@@ -23,6 +23,8 @@ export interface RendererOptions {
   awareness: AwarenessLayer;
   /** Vote badges: the book while a vote exists (open or finished), null otherwise (ADR-0127). */
   getVotes?: () => DrawEnv['votes'];
+  /** A sticky pad's hover lift (0…1), see DrawEnv.padLift. */
+  getPadLift?: (id: string) => number;
   /** Decoded pictures (absent: pictures are plaques). */
   images?: ImageSource;
   /** Max device-pixel ratio; 1 in the low-power mode. */
@@ -55,9 +57,32 @@ export interface FrameStats {
   regions: number;
   /** Objects drawn in the last frame's content passes. */
   drawn: number;
+  /** Frames that composited only a piece of the overlay (the pen's stroke). */
+  partial: number;
+  /** Frames that placed a lifted drag sprite (`liftObjects`). */
+  sprite: number;
 }
 
 const MAX_REGIONS = 8;
+/** Damage over more than this share of the canvas is composited whole (cheaper than clipping that much). */
+const PARTIAL_MAX_SHARE = 0.6;
+/** A drag sprite no larger than this per side, device px, and than this share of the canvas (else the drag paints as before). */
+const SPRITE_MAX_SIDE = 4096;
+const SPRITE_MAX_SHARE = 1.5;
+
+/** Objects lifted out of the content layer while a drag moves them (`liftObjects`). */
+interface Lift {
+  ids: ReadonlySet<string>;
+  /** One lifted box and where it was at the lift: its position now gives the sprite's offset. */
+  ref: string;
+  start: { x: number; y: number };
+  /** World rect the sprite covers at the lift, and the camera scale it was painted at. */
+  box: Rect;
+  scale: number;
+  canvas: LayerCanvas;
+  /** Last known visual bounds of the connectors glued to lifted objects (they re-route each frame: old + new are dirty). */
+  known: Map<string, Rect>;
+}
 
 /**
  * Canvas 2D renderer, on demand (ADR-0126 §4): a frame is scheduled only when something is dirty or a
@@ -74,6 +99,20 @@ export class Renderer {
   private rctx: Ctx2D | null = null;
   /** The main canvas needs a frame (content, camera, overlay); false = only the remote layer does. */
   private mainDirty = true;
+  /**
+   * Only this world rect of the overlay changed since the last frame (the pen's stroke growing): the frame composites
+   * just that part of the screen.
+   */
+  private overlayDirty: Rect | null = null;
+  /** A frame request (not only the pen's tail) since the last frame: the tail-only composite would miss its overlay change. */
+  private frameRequested = false;
+  /** Composite everything on the next frame: the first one, and any frame request without a remote layer. */
+  private compositeAll = true;
+  /** The overlay's world box at the last frame (`overlayBounds`): where its old pixels are, to repaint on the next one. */
+  private lastOverlay: Rect | null = null;
+  private lift: Lift | null = null;
+  /** The drag sprite's world box at the last frame (where to repaint once it moved on or was dropped). */
+  private lastSprite: Rect | null = null;
   private remoteDirty = true;
   /** Device-pixel box the remote layer painted last (what to clear next), and the camera it was painted for. */
   private remoteBox: Rect | null = null;
@@ -93,7 +132,7 @@ export class Renderer {
   private hiddenText: string | null = null;
   private palette: CanvasPalette;
   private readonly off: () => void;
-  readonly stats: FrameStats = { frames: 0, remote: 0, full: 0, scrolled: 0, regions: 0, drawn: 0 };
+  readonly stats: FrameStats = { frames: 0, remote: 0, full: 0, scrolled: 0, regions: 0, drawn: 0, partial: 0, sprite: 0 };
   /** Frame callback for the owner (e.g. to keep the text editor aligned). */
   onFrame: (() => void) | null = null;
 
@@ -120,6 +159,7 @@ export class Renderer {
     this.off();
     if (this.raf) (this.o.cancelRaf ?? cancelAnimationFrame)(this.raf);
     this.raf = 0;
+    releaseScratch();
   }
 
   private makeLayer(w: number, h: number): LayerCanvas {
@@ -165,6 +205,7 @@ export class Renderer {
       (this.o.cancelRaf ?? cancelAnimationFrame)(this.raf);
       this.raf = 0;
     }
+    if (!on) releaseScratch();
   }
 
   setHiddenText(id: string | null): void {
@@ -212,9 +253,103 @@ export class Renderer {
   // ── invalidation ───────────────────────────────────────────────────────────
 
   private onSceneChange(c: SceneChange): void {
+    if (this.lift && this.liftedChange(c, this.lift)) {
+      this.requestFrame();
+      return;
+    }
     if (c.full) this.fullDirty = true;
     else for (const r of c.dirty) this.dirty.push(r);
     this.requestFrame();
+  }
+
+  /**
+   * A change during a lifted drag: the lifted objects only move the sprite (nothing to repaint), their glued connectors
+   * repaint where they were and are. True when handled; false (anything else changed) falls back to the change's rects.
+   */
+  private liftedChange(c: SceneChange, lift: Lift): boolean {
+    const rects: Rect[] = [];
+    for (const id of c.ids) {
+      if (lift.ids.has(id)) continue;
+      const was = lift.known.get(id);
+      if (!was) return false;
+      rects.push(was);
+      const o = this.o.scene.get(id);
+      if (o) {
+        const now = visualBounds(o);
+        rects.push(now);
+        lift.known.set(id, now);
+      }
+    }
+    for (const r of rects) this.dirty.push(r);
+    return true;
+  }
+
+  /**
+   * Lifts `ids` out of the content layer for a drag: painted once into a sprite, the layer repainted once without them;
+   * each frame then only places the sprite where they are now, instead of repainting all they cover (a frame and its
+   * contents) twice. Connectors stay in the layer (glued ones re-route). False — the drag paints as before — when there
+   * is nothing to lift or the sprite would be too large.
+   */
+  liftObjects(ids: Iterable<string>): boolean {
+    this.dropLift();
+    if (this.cssW === 0) return false;
+    const scene = this.o.scene;
+    const want = new Set<string>();
+    const known = new Map<string, Rect>();
+    for (const id of ids) {
+      const o = scene.get(id);
+      // A moving connector stays in the layer and repaints where it was and is, like a glued one.
+      if (o?.kind === 'connector') known.set(id, visualBounds(o));
+      else if (o) want.add(id);
+    }
+    if (want.size === 0) return false;
+    const recs = scene.orderedIds().filter((id) => want.has(id)).map((id) => scene.get(id)).filter((o): o is NonNullable<typeof o> => !!o);
+    let box: Rect | null = null;
+    for (const o of recs) box = box ? rectUnion(box, visualBounds(o)) : visualBounds(o);
+    const first = recs[0];
+    if (!box || !first || first.kind === 'connector') return false;
+    const cam = snapCamera(this.o.getCamera(), this.dpr);
+    const s = this.dpr * cam.scale;
+    const w = Math.ceil(box.w * s) + 2;
+    const h = Math.ceil(box.h * s) + 2;
+    if (w > SPRITE_MAX_SIDE || h > SPRITE_MAX_SIDE || w * h > SPRITE_MAX_SHARE * this.canvas.width * this.canvas.height) return false;
+    const canvas = this.makeLayer(w, h);
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return false;
+    ctx.setTransform(s, 0, 0, s, 1 - box.x * s, 1 - box.y * s);
+    drawObjects(ctx, recs, box, { ...this.env(cam.scale), skip: undefined });
+    for (const id of want) for (const cid of scene.connectorsOf(id)) {
+      const c = scene.get(cid);
+      if (c) known.set(cid, visualBounds(c));
+    }
+    this.lift = { ids: want, ref: first.id, start: { x: first.x, y: first.y }, box, scale: cam.scale, canvas, known };
+    // The layer without them.
+    this.invalidate(box);
+    return true;
+  }
+
+  /** Ends a lift: the objects go back into the layer where they are now. */
+  dropLift(): void {
+    const lift = this.lift;
+    if (!lift) return;
+    this.lift = null;
+    for (const id of lift.ids) {
+      const o = this.o.scene.get(id);
+      if (o) this.dirty.push(visualBounds(o));
+    }
+    this.dirty.push(lift.box);
+    lift.canvas.width = 0;
+    lift.canvas.height = 0;
+    this.requestFrame();
+  }
+
+  /** Where the lifted sprite is now (its box moved by the reference object's travel), or null. */
+  private spriteBox(lift: Lift): Rect | null {
+    const ref = this.o.scene.get(lift.ref);
+    if (!ref || ref.kind === 'connector') return null;
+    return { x: lift.box.x + ref.x - lift.start.x, y: lift.box.y + ref.y - lift.start.y, w: lift.box.w, h: lift.box.h };
   }
 
   /** World rect to repaint. */
@@ -228,9 +363,23 @@ export class Renderer {
     this.requestFrame();
   }
 
-  /** Only the overlay/camera changed (selection, guides, pan): a frame, no content repaint beyond the scroll. */
+  /**
+   * Only the overlay/camera changed (selection, guides, pan): a frame, no content repaint beyond the scroll. What it
+   * composites is worked out by the frame (the changed content and the overlay's old and new box, or everything after
+   * a scroll or zoom).
+   */
   requestFrame(): void {
     this.mainDirty = true;
+    this.frameRequested = true;
+    // Without a remote layer the peers are painted on this canvas too, and nothing tracks where: composite it all.
+    if (!this.remote) this.compositeAll = true;
+    this.schedule();
+  }
+
+  /** Only `r` (world) of the overlay changed: the next frame repaints just that part of the screen, unless more comes up. */
+  requestOverlayRect(r: Rect): void {
+    this.mainDirty = true;
+    this.overlayDirty = this.overlayDirty ? rectUnion(this.overlayDirty, r) : r;
     this.schedule();
   }
 
@@ -255,7 +404,7 @@ export class Renderer {
   // ── frame ──────────────────────────────────────────────────────────────────
 
   private env(scale: number): DrawEnv {
-    return { palette: this.palette, layouter: this.o.scene.text, scale, hiddenText: this.hiddenText, votes: this.o.getVotes?.(), images: this.o.images };
+    return { palette: this.palette, layouter: this.o.scene.text, scale, hiddenText: this.hiddenText, votes: this.o.getVotes?.(), images: this.o.images, skip: this.lift?.ids, padLift: this.o.getPadLift };
   }
 
   frame(): void {
@@ -269,6 +418,8 @@ export class Renderer {
     const cam = snapCamera(this.o.getCamera(), dpr);
     const W = this.canvas.width;
     const H = this.canvas.height;
+    // A zoom during a lifted drag: the sprite's pixels no longer fit; the objects go back into the layer.
+    if (this.lift && this.lift.scale !== cam.scale) this.dropLift();
     this.stats.frames++;
     this.stats.drawn = 0;
 
@@ -283,6 +434,33 @@ export class Renderer {
     const dirty = this.dirty;
     this.dirty = [];
     this.fullDirty = false;
+    const ov = this.o.getOverlay();
+    const ovBox = overlayBounds(ov, cam.scale);
+    const lastOv = this.lastOverlay;
+    this.lastOverlay = ovBox;
+    const lift = this.lift;
+    const sprite = lift ? this.spriteBox(lift) : null;
+    const lastSprite = this.lastSprite;
+    this.lastSprite = sprite;
+    // What changed on screen: the changed content, and the overlay where it was and where it is now (a dragged sticky,
+    // its frame and handles). Only that is composited; a scroll, a zoom, peers drawn on this canvas (no remote layer)
+    // or a change over most of the screen composite everything. The pen's stroke growing: just its tail.
+    let partial: Rect[] | null = null;
+    if (!this.compositeAll && !full && dx === 0 && dy === 0) {
+      if (dirty.length === 0 && this.overlayDirty && !this.frameRequested) partial = [this.overlayDirty];
+      else if (this.remote) {
+        const boxes = [...dirty];
+        if (lastOv) boxes.push(lastOv);
+        if (ovBox) boxes.push(ovBox);
+        if (lastSprite) boxes.push(lastSprite);
+        if (sprite) boxes.push(sprite);
+        if (this.overlayDirty) boxes.push(this.overlayDirty);
+        partial = boxes;
+      }
+    }
+    this.compositeAll = false;
+    this.frameRequested = false;
+    this.overlayDirty = null;
 
     if (full) {
       this.paintDevice(cam, { x: 0, y: 0, w: W, h: H });
@@ -309,12 +487,43 @@ export class Renderer {
     // Composite: content, then overlay + remote layer (world transform).
     const c = this.ctx;
     c.setTransform(1, 0, 0, 1, 0, 0);
-    c.drawImage(this.layer as unknown as CanvasImageSource, 0, 0);
+    let parts = partial ? this.toDeviceRegions(partial, cam, W, H) : null;
+    // One rect around all of it: a rectangular clip is a plain scissor on the GPU, several rects need a mask.
+    if (parts && parts.length > 1) parts = [parts.reduce((u, r) => rectUnion(u, r))];
+    // Most of the screen anyway: one plain composite is cheaper than clipping.
+    if (parts && parts.reduce((a, r) => a + r.w * r.h, 0) > PARTIAL_MAX_SHARE * W * H) parts = null;
+    if (parts) {
+      // Nothing on screen changed (e.g. the change is off screen); peers' cursors may have.
+      if (parts.length === 0) {
+        if (this.remoteDirty) this.remoteFrame(cam);
+        this.onFrame?.();
+        return;
+      }
+      this.stats.partial++;
+      c.save();
+      c.beginPath();
+      for (const r of parts) c.rect(r.x, r.y, r.w, r.h);
+      c.clip();
+      for (const r of parts) c.drawImage(this.layer as unknown as CanvasImageSource, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
+    } else c.drawImage(this.layer as unknown as CanvasImageSource, 0, 0);
+    if (lift && sprite) {
+      // The lifted objects above the layer, at whole device pixels (the sprite's 1 px margin included).
+      const s = dpr * cam.scale;
+      this.stats.sprite++;
+      c.drawImage(lift.canvas as unknown as CanvasImageSource, Math.round(sprite.x * s + cam.tx * dpr) - 1, Math.round(sprite.y * s + cam.ty * dpr) - 1);
+    }
     c.setTransform(dpr * cam.scale, 0, 0, dpr * cam.scale, dpr * cam.tx, dpr * cam.ty);
-    const ov = this.o.getOverlay();
     drawOverlay(c, ov, this.palette, cam.scale);
     if (!this.remote) this.o.awareness.draw(c, cam, this.o.scene, this.palette, (this.o.now ?? Date.now)());
     c.setTransform(1, 0, 0, 1, 0, 0);
+    if (parts) c.restore();
+    // Peers' selections follow the objects (the remote layer is redrawn below when content changed).
+    if (parts && !(contentChanged && this.o.awareness.hasSelections)) {
+      // Peers' cursors moved meanwhile (a drag, the pen, a hover): their layer too, or it freezes until the end.
+      if (this.remoteDirty) this.remoteFrame(cam);
+      this.onFrame?.();
+      return;
+    }
     if (this.remote) {
       const rc = this.remoteCam;
       // The remote layer is in screen space: it follows the camera, and peers' selections follow the objects.

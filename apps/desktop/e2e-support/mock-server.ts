@@ -197,6 +197,8 @@ import {
   AdminSearchWorkspacesResponseSchema,
   AdminSetPlanRequestSchema,
   AdminSetSuspensionRequestSchema,
+  AdminSetUploadLimitsRequestSchema,
+  AdminSetUploadLimitsResponseSchema,
   AdminSetSuspensionResponseSchema,
   CreateBanRequestSchema,
   CreateBanResponseSchema,
@@ -345,6 +347,12 @@ import {
   GetBotResponseSchema,
   InviteBotDelegationRequestSchema,
   ListBlockedBotsResponseSchema,
+  ListBlockedUsersResponseSchema,
+  InboxDismissSchema,
+  CreateReportRequestSchema,
+  CreateReportResponseSchema,
+  ListReportsResponseSchema,
+  UserReportSchema,
   ListBotsResponseSchema,
   ListRoomBotCommandsResponseSchema,
   ReissueBotTokenResponseSchema,
@@ -545,6 +553,7 @@ import {
   CalendarEventSchema,
   CreateCalendarEventRequestSchema,
   EventRepeat,
+  EventScope,
   EventRsvpTokenRequestSchema,
   EventRsvpTokenResponseSchema,
   ListCalendarEventsResponseSchema,
@@ -725,9 +734,15 @@ export interface MockServer {
   dispatch(event: DispatchEvent | EventInit): void;
   /** Rebuilds the fixtures (optionally another scenario) and drops gateway sessions (clients re-IDENTIFY). */
   reset(scenario?: Scenario): void;
+  /**
+   * Board #145: a fresh READY to every identified session that leaves `workspaceId` out and lists
+   * it in `pending_workspace_ids` (its access lease was still pending on the server).
+   */
+  readyPending(workspaceId: string): void;
   /** Creates a message from another user and fans out MESSAGE_CREATE (e.g. to produce a mention badge). */
   /** `attachments`: fixture file ids uploaded by the author (e.g. IDS.files.audio by Вера). */
-  injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string; forward?: MockForward }): Message;
+  /** `viaBotId` / `via` (ADR-0106 / ADR-0156): the message written through a bot or through MCP. */
+  injectMessage(args: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string; forward?: MockForward; viaBotId?: string; via?: string }): Message;
   /** ADR-0057: registers the global built-in «Calab Stikers» pack (workspace-less, `builtin`, usable everywhere); pictures come from the client bundle. */
   addBuiltinStickerPack(manifest: { id: string; name: string; stickers: { id: string; name: string; emoji: string }[] }): StickerPack;
   /**
@@ -740,7 +755,7 @@ export interface MockServer {
    * `joinedAtMs`: VoiceState.joined_at (client clock — a visual test's page clock is fixed); kept
    * within the same room, none by default.
    */
-  setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean; pending?: boolean; joinedAtMs?: number; musician?: boolean; ptt?: boolean; onPhone?: boolean }): void;
+  setVoiceState(args: { userId: string; roomId: string; muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean; pending?: boolean; joinedAtMs?: number; musician?: boolean; ptt?: boolean; onPhone?: boolean; connectionLost?: boolean }): void;
   /** Sets a user's presence and fans out PRESENCE_UPDATE. */
   setPresence(userId: string, status: PresenceStatus): void;
   /**
@@ -1027,6 +1042,7 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     close: () => impl.close(),
     dispatch: (e) => impl.broadcast(create(DispatchEventSchema, e)),
     reset: (sc) => impl.reset(sc ?? impl.state.scenario),
+    readyPending: (w) => impl.readyPending(w),
     injectMessage: (a) => impl.injectMessage(a),
     markRead: (u, roomId, messageId) => impl.markRead(u, roomId, messageId),
     setDmState: (u, roomId, patch) => impl.setDmState(u, roomId, patch),
@@ -1177,6 +1193,12 @@ class HttpError extends Error {
 
 /** Plan contact of the mock (READY.plan_contact; the server's default). */
 export const MOCK_PLAN_CONTACT = 'mailto:support@calab.io';
+
+/** The server's upload defaults (ADR-0155): MAX_FILE_SIZE_MB and the hard cap of an override. */
+const MOCK_MAX_FILE_MB = 1024;
+const MOCK_MAX_FILE_CAP_MB = 4096;
+/** A Disk upload whose name starts with this answers 429 (Retry-After 600 s). */
+export const MOCK_UPLOAD_RATE_LIMITED = 'rate-limited';
 
 /** 429 with Retry-After (seconds), like the server's limits. */
 const tooMany = (what: string, seconds: number): HttpError =>
@@ -2046,6 +2068,19 @@ class MockImpl {
     return { unreadCount: Math.min(after.length, 999), mentionCount: Math.min(mentions.length, 99) };
   }
 
+  readyPending(workspaceId: string): void {
+    for (const c of this.conns) {
+      const u = c.userId ? this.state.users.get(c.userId) : undefined;
+      if (!u) continue;
+      const ev = this.ready(c, u);
+      if (ev.event.case !== 'ready') continue;
+      const r = ev.event.value;
+      r.workspaces = r.workspaces.filter((w) => w.workspace?.id !== workspaceId);
+      r.pendingWorkspaceIds = [workspaceId];
+      this.sendDispatch(c, ev);
+    }
+  }
+
   private ready(conn: Conn, u: UserRec): DispatchEvent {
     const wsIds = this.workspacesOf(u.user.id).sort();
     const reads = this.state.readStates.get(u.user.id) ?? new Map<string, string>();
@@ -2081,6 +2116,8 @@ class MockImpl {
             .sort((a, b) => a.roomId.localeCompare(b.roomId)),
           // Guest accounts have no DMs (ADR-0020).
           dms: u.user.isGuest ? [] : this.dmsOf(u.user.id),
+          // ADR-0151 / ADR-0162: the recipient's own bots.
+          myBotIds: [...this.state.bots.values()].filter((b) => b.ownerUserId === u.user.id).map((b) => b.userId).sort(),
           // Notes shelves (ADR-0039): people only.
           notes: u.user.isGuest || u.user.isBot ? [] : this.notesOf(u.user.id),
           // ADR-0034: the user's ringing / active call.
@@ -2592,7 +2629,7 @@ class MockImpl {
     this.fanout((u) => (u === userId || this.shareWorkspace(u, userId) ? { event: { case: 'presenceUpdate', value: { presence } } } : null));
   }
 
-  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean; camera?: boolean; pending?: boolean; joinedAtMs?: number; musician?: boolean; ptt?: boolean; onPhone?: boolean }): void {
+  setVoice(userId: string, roomId: string, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; serverMuted?: boolean; camera?: boolean; pending?: boolean; joinedAtMs?: number; musician?: boolean; ptt?: boolean; onPhone?: boolean; connectionLost?: boolean }): void {
     const prev = this.state.voiceStates.get(userId);
     const room = roomId ? this.state.rooms.get(roomId) : undefined;
     // ADR-0034: a DM call's voice session — no workspace; its events go to the two participants.
@@ -2618,6 +2655,7 @@ class MockImpl {
       musician: patch.musician ?? (sameRoom ? prev.musician : false),
       ptt: patch.ptt ?? (sameRoom ? prev.ptt : false),
       onPhone: patch.onPhone ?? (sameRoom ? prev.onPhone : false),
+      connectionLost: patch.connectionLost ?? (sameRoom ? prev.connectionLost : false),
       joinedAt: patch.joinedAtMs !== undefined ? timestampFromMs(patch.joinedAtMs) : sameRoom ? prev.joinedAt : undefined,
     });
     // Moving to another workspace's room: tell the old workspace the user left.
@@ -3016,6 +3054,7 @@ class MockImpl {
     attachmentIds: string[],
     sticker?: Sticker,
     forward?: MockForward,
+    via: { viaBotId: string; via: string } = { viaBotId: '', via: '' },
   ): Message {
     const attachments = attachmentIds.map((id) => {
       const f = this.state.files.get(id);
@@ -3035,6 +3074,7 @@ class MockImpl {
       createdAt: tick(this.state),
       ...(sticker ? { sticker } : {}),
       ...(forward ? { forward: forwardOf(forward) } : {}),
+      ...via,
     });
     list.push(msg);
     this.state.messages.set(room.id, list);
@@ -3090,11 +3130,11 @@ class MockImpl {
     return true;
   }
 
-  injectMessage(a: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string; forward?: MockForward }): Message {
+  injectMessage(a: { roomId: string; authorId: string; content: string; replyToId?: string; attachments?: string[]; stickerId?: string; forward?: MockForward; viaBotId?: string; via?: string }): Message {
     const room = this.state.rooms.get(a.roomId);
     if (!room) throw notFound('room not found');
     const sticker = a.stickerId ? (this.findSticker(a.stickerId)?.sticker ?? this.state.deletedStickers.get(a.stickerId)) : undefined;
-    return this.createMessage(room, a.authorId, a.content, a.replyToId ?? '', '', a.attachments ?? [], sticker, a.forward);
+    return this.createMessage(room, a.authorId, a.content, a.replyToId ?? '', '', a.attachments ?? [], sticker, a.forward, { viaBotId: a.viaBotId ?? '', via: a.via ?? '' });
   }
 
   // ------------------------------------------------ sticker packs (ADR-0030)
@@ -4787,11 +4827,12 @@ class MockImpl {
       const limit = Math.min(100, Math.max(1, Number(q.get('limit') ?? '50') || 50));
       const before = q.get('before') ?? '';
       const only = q.get('workspace_id') ?? '';
+      const dismissed = s().dismissedMentions.get(me);
       const hits = [...this.state.rooms.values()]
         .filter((r) => (!only || r.workspaceId === only) && this.member(r.workspaceId, me) && this.canView(r, me))
         .flatMap((r) =>
           (s().messages.get(r.id) ?? []).filter((m) => {
-            if (m.authorId === me || (before && m.id >= before)) return false;
+            if (m.authorId === me || (before && m.id >= before) || dismissed?.has(m.id)) return false;
             const { users, everyone } = parseMentions(m.content);
             return users.includes(me) || (everyone && this.mayMentionAll(r, m.authorId));
           }),
@@ -4801,6 +4842,20 @@ class MockImpl {
         messages: hits.slice(0, limit).map((m) => this.msgOut(m, me)),
         hasMore: hits.length > limit,
       });
+    });
+
+    // CBF-155: the ✕ on «Упоминания» cards — own rows only, INBOX_DISMISS to my sessions.
+    this.route('POST', '/api/me/inbox/dismiss', (c) => {
+      const me = this.uid(c);
+      const b = parseBody(c, InboxDismissSchema);
+      if (!b.messageIds.length && !b.noticeIds.length) throw invalid('messageIds', 'nothing to dismiss');
+      if (b.messageIds.length > 100 || b.noticeIds.length > 100) throw invalid('messageIds', 'too many ids');
+      const set = s().dismissedMentions.get(me) ?? new Set<string>();
+      for (const id of b.messageIds) set.add(id);
+      s().dismissedMentions.set(me, set);
+      this.boards.dismissNotices(me, b.noticeIds);
+      this.toUser(me, { event: { case: 'inboxDismiss', value: { messageIds: b.messageIds, noticeIds: b.noticeIds } } });
+      noContent(c.res);
     });
 
     this.route('PUT', '/api/rooms/:id/notifications', (c) => {
@@ -5343,6 +5398,72 @@ class MockImpl {
     });
     this.route('DELETE', '/api/me/blocked-bots/:id', (c) => {
       s().blockedBots.get(this.uid(c))?.delete(c.params[0] ?? '');
+      noContent(c.res);
+    });
+
+    // ---------------- report and block users (ADR-0154)
+    this.route('GET', '/api/me/blocked-users', (c) => {
+      sendMsg(c.res, 200, ListBlockedUsersResponseSchema, { userIds: [...(s().blockedUsers.get(this.uid(c)) ?? [])] });
+    });
+    this.route('POST', '/api/me/blocked-users/:id', (c) => {
+      const me = this.uid(c);
+      const id = c.params[0] ?? '';
+      const u = s().users.get(id);
+      if (!u) throw notFound('user not found');
+      if (id === me || u.user.isBot) throw invalid('id', 'cannot block this user');
+      const set = s().blockedUsers.get(me) ?? new Set<string>();
+      set.add(id);
+      s().blockedUsers.set(me, set);
+      this.toUser(me, { event: { case: 'userBlocksUpdate', value: { userId: id, blocked: true } } });
+      noContent(c.res);
+    });
+    this.route('DELETE', '/api/me/blocked-users/:id', (c) => {
+      const me = this.uid(c);
+      const id = c.params[0] ?? '';
+      s().blockedUsers.get(me)?.delete(id);
+      this.toUser(me, { event: { case: 'userBlocksUpdate', value: { userId: id, blocked: false } } });
+      noContent(c.res);
+    });
+    this.route('POST', '/api/reports', (c) => {
+      const me = this.uid(c);
+      const b = parseBody(c, CreateReportRequestSchema);
+      const found = b.messageId ? this.findMessage(b.messageId) : undefined;
+      const msg = found?.list[found.index];
+      const room = found?.room;
+      const wsId = room?.workspaceId || b.workspaceId;
+      if (!this.member(wsId, me)) throw notFound('workspace not found');
+      const target = s().users.get(b.userId);
+      if (!target) throw notFound('user not found');
+      const report = create(UserReportSchema, {
+        id: `00000000-0000-7000-8fff-${String((s().reports.get(b.workspaceId)?.length ?? 0) + 1).padStart(12, '0')}`,
+        workspaceId: wsId,
+        reporter: s().users.get(me)?.user,
+        target: target.user,
+        messageId: b.messageId,
+        roomId: msg?.roomId ?? '',
+        messageText: msg?.content.slice(0, 2000) ?? '',
+        reason: b.reason,
+        comment: b.comment.trim(),
+        createdAt: tick(s()),
+      });
+      s().reports.set(wsId, [report, ...(s().reports.get(wsId) ?? [])]);
+      this.toWorkspace(wsId, { event: { case: 'workspaceReportCreate', value: { report } } });
+      sendMsg(c.res, 201, CreateReportResponseSchema, { id: report.id });
+    });
+    this.route('GET', '/api/workspaces/:id/reports', (c) => {
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', this.uid(c));
+      this.requireWsBit(caller, 'MANAGE_MEMBERS');
+      sendMsg(c.res, 200, ListReportsResponseSchema, { reports: s().reports.get(ws.id) ?? [] });
+    });
+    this.route('POST', '/api/workspaces/:id/reports/:rid/resolve', (c) => {
+      const me = this.uid(c);
+      const { ws, m: caller } = this.workspaceFor(c.params[0] ?? '', me);
+      this.requireWsBit(caller, 'MANAGE_MEMBERS');
+      const r = (s().reports.get(ws.id) ?? []).find((x) => x.id === c.params[1]);
+      if (!r) throw notFound('report not found');
+      r.resolvedAt ??= tick(s());
+      r.resolvedBy ||= me;
+      this.toWorkspace(ws.id, { event: { case: 'workspaceReportUpdate', value: { report: r } } });
       noContent(c.res);
     });
 
@@ -5960,6 +6081,24 @@ class MockImpl {
       }
       this.toWorkspace(ws.id, { event: { case: 'workspaceUpdate', value: { workspace: ws } } });
       sendMsg(c.res, 200, AdminSetSuspensionResponseSchema, { workspace: this.adminOut(ws) });
+    });
+    this.route('PUT', '/api/admin/workspaces/:id/upload-limits', (c) => {
+      this.requireSuperadmin(c);
+      const ws = s().workspaces.get(c.params[0] ?? '');
+      if (!ws) throw notFound('workspace not found');
+      const l = parseBody(c, AdminSetUploadLimitsRequestSchema).limits;
+      const check = (v: number | undefined, field: string, max: number): void => {
+        if (v !== undefined && (v < 1 || v > max)) throw invalid(`limits.${field}`, `must be 1..${max}`);
+      };
+      check(l?.burst, 'burst', 10000);
+      check(l?.perHour, 'perHour', 100000);
+      check(l?.maxFileMb, 'maxFileMb', MOCK_MAX_FILE_CAP_MB);
+      s().uploadLimits.set(ws.id, {
+        ...(l?.burst !== undefined ? { burst: l.burst } : {}),
+        ...(l?.perHour !== undefined ? { perHour: l.perHour } : {}),
+        ...(l?.maxFileMb !== undefined ? { maxFileMb: l.maxFileMb } : {}),
+      });
+      sendMsg(c.res, 200, AdminSetUploadLimitsResponseSchema, { workspace: this.adminOut(ws) });
     });
     this.route('GET', '/api/admin/workspaces/:id/plan/log', (c) => {
       this.requireSuperadmin(c);
@@ -8702,6 +8841,13 @@ class MockImpl {
       if ((this.aiState.get(ws) ?? AiState.NO_KEY) !== AiState.READY) throw conflictReason('AI_NOT_READY', 'the AI integration is not connected or not checked');
       const board = b().listBoards(ws, me, false).find((x) => (x.permissions & CREATE_TASKS_BIT) !== 0n);
       if (!board) throw conflictReason('NO_BOARDS', 'no board where you may create tasks');
+      // Bug #152: a text with «таймаут» — no answer in time (the desktop's / proxy's 504), with the
+      // request id the server logged it under; fixed, so the screenshot is stable.
+      if (text.includes('таймаут')) {
+        c.res.writeHead(504, { 'Content-Type': 'application/json', 'X-Request-ID': '7f3c9a1e5b2d4c6f8a0b1c2d' });
+        c.res.end(JSON.stringify({ code: 'ERROR_CODE_UNAVAILABLE', message: 'request timed out' }));
+        return;
+      }
       // CBF-75: a text with «дубль» is declined as a duplicate of CAL-3 (the model's refusal).
       if (text.includes('дубль')) {
         sendMsg(c.res, 200, CreateSmartTaskResponseSchema, { refusal: { reason: 'Похоже на дубль задачи CAL-3: там уже есть оплата этого счёта. Уточните, чем новая задача отличается.', duplicateKey: 'CAL-3' } });
@@ -9075,7 +9221,10 @@ class MockImpl {
       const wsId = p0(c);
       this.workspaceFor(wsId, me);
       const f = await parseMultipartFile(c);
-      if (f.bytes.length > 50 * 1024 * 1024) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, 'file too large');
+      // The upload rate limit (ADR-0155): a file named «rate-limited…» is always refused with a long wait.
+      if (f.name.startsWith(MOCK_UPLOAD_RATE_LIMITED)) throw tooMany('too many uploads', 600);
+      const limitMb = BigInt(this.state.uploadLimits.get(wsId)?.maxFileMb ?? MOCK_MAX_FILE_MB);
+      if (BigInt(f.bytes.length) > limitMb << 20n) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, `file exceeds ${limitMb} MB`, '', { used: 0n, limit: limitMb << 20n });
       const id = this.storeFile(wsId, me, f);
       const meta = this.state.files.get(id)?.meta;
       if (!meta) throw notFound();
@@ -9224,6 +9373,28 @@ class MockImpl {
         const hits = this.canvas.search(q(c, 'scope'), me, q(c, 'q'), limit);
         sendMsg(c.res, 200, SearchResponseSchema, {
           sections: [{ type: SearchType.CANVAS, totalEstimate: hits.length, items: hits.map((h) => ({ snippet: markHit(h.preview || h.name, q(c, 'q')), title: h.name, workspaceId: h.workspaceId, at: h.updatedAt, authorId: h.updatedBy, ref: { case: 'canvas' as const, value: { itemId: h.id, parentId: h.parentId, folder: h.kind === CanvasItemKind.FOLDER, path: this.canvas.ancestorNames(h) } } })) }],
+        });
+        return;
+      }
+      if (type === 'messages' && q(c, 'scope') === 'dms') {
+        // The «Личные» column's search (CBF-159): the messages of my DMs, newest first, the cursor is an offset.
+        const words = q(c, 'q').trim().toLowerCase().split(/\s+/).filter(Boolean);
+        if (words.length === 0) throw invalid('q', 'search query has no words');
+        const start = Number(q(c, 'cursor')) || 0;
+        const found = this.dmsOf(me)
+          .flatMap((d) => this.visibleMessages(me, d.room?.id ?? ''))
+          .filter((m) => words.every((x) => m.content.toLowerCase().includes(x)))
+          .sort((a, b) => (a.id < b.id ? 1 : -1));
+        const page = found.slice(start, start + limit);
+        sendMsg(c.res, 200, SearchResponseSchema, {
+          sections: [
+            {
+              type: SearchType.MESSAGES,
+              totalEstimate: found.length,
+              nextCursor: start + limit < found.length ? String(start + limit) : '',
+              items: page.map((m) => ({ snippet: markHit(m.content, words[0] ?? ''), authorId: m.authorId, ...(m.createdAt ? { at: m.createdAt } : {}), ref: { case: 'message' as const, value: { messageId: m.id, roomId: m.roomId } } })),
+            },
+          ],
         });
         return;
       }
@@ -9586,6 +9757,32 @@ class MockImpl {
       if (!canEdit) throw forbidden('only the organizer or a room manager may change the meeting');
       const b = parseBody(c, UpdateCalendarEventRequestSchema);
       const ev = rec.ev;
+      // ADR-0157 (simplified): «Только эту» — an override (a one-off meeting naming the series); «Всю
+      // серию» from a later occurrence — the series ends before it, a new one starts there.
+      if (b.scope !== EventScope.UNSPECIFIED && b.occurrenceAt) {
+        const at = ms(b.occurrenceAt);
+        const occ = ev.repeat === EventRepeat.UNSPECIFIED ? undefined : occurrences(rec, at, at + 1).find((o) => o.startMs === at);
+        if (!occ) throw invalid('occurrenceAt', 'not a live occurrence of this series');
+        if (b.scope === EventScope.THIS || at !== ms(ev.startsAt)) {
+          const one = b.scope === EventScope.THIS;
+          const created = this.addEvent({
+            workspaceId: ev.workspaceId, organizerId: ev.organizerId, title: b.title ?? ev.title, description: b.description ?? ev.description,
+            startMs: b.startsAt ? ms(b.startsAt) : occ.startMs, endMs: b.endsAt ? ms(b.endsAt) : occ.endMs, allDay: b.allDay ?? ev.allDay, tz: b.tz ?? ev.tz,
+            record: b.record ?? ev.record, roomId: b.roomId ?? ev.roomId, repeat: one ? EventRepeat.UNSPECIFIED : (b.repeat ?? ev.repeat),
+            repeatUntilMs: one ? 0 : ms(ev.repeatUntil),
+            attendees: (b.setAttendees ? b.attendees : ev.attendees).map((x) => ({ userId: x.userId, email: x.email, required: x.required, ...('status' in x ? { status: x.status } : {}) })),
+          });
+          const made = this.calEvents.get(created.id);
+          if (!made) throw notFound('event not found');
+          if (one) {
+            (rec.moved ??= new Set()).add(at);
+            Object.assign(made.ev, { seriesId: ev.id, recurrenceAt: timestampFromMs(at) });
+          } else ev.repeatUntil = timestampFromMs(at - 1000);
+          this.calPublish(rec, 'eventUpdate');
+          sendMsg(c.res, 200, CalendarEventResponseSchema, { event: eventOut(made, null, 'full', me, true) });
+          return;
+        }
+      }
       const next = {
         title: b.title ?? ev.title, description: b.description ?? ev.description,
         startMs: b.startsAt ? ms(b.startsAt) : ms(ev.startsAt), endMs: b.endsAt ? ms(b.endsAt) : ms(ev.endsAt),
@@ -9647,6 +9844,12 @@ class MockImpl {
         const at = Date.parse(occStr);
         const all = rec.ev.repeat === EventRepeat.UNSPECIFIED ? [] : occurrences({ ...rec, exceptions: new Set() }, at, at + 1);
         if (Number.isNaN(at) || !all.some((o) => o.startMs === at)) throw invalid('occurrence', 'not an occurrence of this series');
+        if (c.url.searchParams.get('scope') === 'following' && at !== ms(rec.ev.startsAt)) {
+          rec.ev.repeatUntil = timestampFromMs(at - 1000); // ADR-0157: the series ends before it
+          this.calPublish(rec, 'eventUpdate');
+          noContent(c.res);
+          return;
+        }
         if (!rec.exceptions.has(at)) {
           rec.exceptions.add(at);
           rec.ev.sequence += 1;
@@ -9855,6 +10058,9 @@ class MockImpl {
       ...(meta?.updatedAt ? { planUpdatedAt: meta.updatedAt } : {}),
       suspendedBy: this.state.suspendedBy.get(ws.id) ?? '',
       suspendedByEmail: this.state.users.get(this.state.suspendedBy.get(ws.id) ?? '')?.email ?? '',
+      uploadLimits: this.state.uploadLimits.get(ws.id) ?? {},
+      uploadDefaults: { burst: 50, perHour: 500, maxFileMb: MOCK_MAX_FILE_MB },
+      maxFileMbCap: MOCK_MAX_FILE_CAP_MB,
     });
   }
 

@@ -142,6 +142,7 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 			}
 			n := *cur
 			n.RoomID, n.JoinedAt = dstID, time.Now().UnixMilli()
+			n.Lost, n.Hold = false, 0 // a seat held after a drop (ADR-0150) moves as a new connection
 			// App-level moves (known already) reconnect: pending in the target from the start,
 			// so its call starts with the device's LiveKit connection, not with the move.
 			n.Pending = s.noSFUMove.Load()
@@ -186,6 +187,7 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			moved++
+			s.dropCompanion(ctx, acc.WorkspaceID, srcID, target, st.SessionID) // its seat left the room (ADR-0149 §3)
 			// The device comes back on a new connection: pending in the target (like an
 			// optimistic /join), no camera, no stream. Its webcam is not "stopped" (no
 			// VOICE_CAMERA_STOP); the client requests it again in the target.
@@ -214,6 +216,7 @@ func (s *Service) moveMember(w http.ResponseWriter, r *http.Request) error {
 			continue
 		}
 		moved++
+		s.dropCompanion(ctx, acc.WorkspaceID, srcID, target, st.SessionID) // its seat left the room (ADR-0149 §3)
 		s.publishVoice(ctx, acc.WorkspaceID, c)
 		// Webcams move with the participant too (moderator action: the target's camera_limit
 		// is not applied, like user_limit); carried before the grant so it keeps the camera.

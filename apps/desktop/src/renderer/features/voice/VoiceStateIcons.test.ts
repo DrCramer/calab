@@ -36,4 +36,12 @@ describe('voice state icons (docs/09 #15, Discord)', () => {
     expect(html).toContain('data-voice-icon="on-phone"');
     expect(html).not.toContain('data-voice-icon="muted"');
   });
+
+  it('connection lost (ADR-0150) only «нет связи», over everything else', () => {
+    expect(voiceStateIcons(true, true, true, false, true, true)).toEqual(['connection-lost']);
+    expect(voiceStateIcons(false, false, false, false, false, true)).toEqual(['connection-lost']);
+    const html = renderToStaticMarkup(createElement(VoiceStateIcons, { muted: true, deafened: false, connectionLost: true }));
+    expect(html).toContain('data-voice-icon="connection-lost"');
+    expect(html).not.toContain('data-voice-icon="muted"');
+  });
 });

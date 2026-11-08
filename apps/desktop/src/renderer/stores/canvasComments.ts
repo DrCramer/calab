@@ -47,6 +47,9 @@ interface CanvasCommentsState {
   /** The thread shown expanded (its pin highlighted). */
   active: string | null;
   setActive: (id: string | null) => void;
+  /** The active thread (or the draft) is open in its popover at the pin (desktop; the phone uses the panel). */
+  pinOpen: boolean;
+  setPinOpen: (on: boolean) => void;
   /** A new thread being written (the pin is placed, the input open). */
   draft: CommentDraft | null;
   setDraft: (d: CommentDraft | null) => void;
@@ -136,6 +139,8 @@ export const useCanvasComments = create<CanvasCommentsState>()((set) => ({
   setFilterOpen: (filterOpen) => set({ filterOpen }),
   active: null,
   setActive: (active) => set((s) => (s.active === active ? s : { active })),
+  pinOpen: false,
+  setPinOpen: (pinOpen) => set((s) => (s.pinOpen === pinOpen ? s : { pinOpen })),
   draft: null,
   setDraft: (draft) => set({ draft }),
   focus: null,

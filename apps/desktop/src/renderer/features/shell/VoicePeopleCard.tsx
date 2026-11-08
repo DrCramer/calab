@@ -98,8 +98,11 @@ export function AvatarStack({
 function StackAvatar({ workspaceId, userId, size, ring, overlap }: { workspaceId: string; userId: string; size: number; ring: string; overlap: string }): ReactNode {
   const fileId = useWorkspaces((s) => s.users[userId]?.avatarFileId ?? '');
   const name = useWorkspaces(() => memberName(workspaceId, userId));
+  // Someone else's seat kept after a lost connection (ADR-0150): the avatar dimmed.
+  const lost = useWorkspaces((s) => s.byId[workspaceId]?.voice[userId]?.connectionLost ?? false);
+  const me = useSession((s) => s.me?.user?.id === userId);
   return (
-    <span className={cx('flex rounded-full ring-2', ring, overlap)}>
+    <span className={cx('flex rounded-full ring-2', ring, overlap, lost && !me && 'opacity-50')} data-connection-lost={(lost && !me) || undefined}>
       <Avatar userId={userId} name={name} fileId={fileId || undefined} size={size} />
     </span>
   );
@@ -284,7 +287,9 @@ const VoicePersonRow = memo(function VoicePersonRow({ workspaceId, userId, self 
   const ref = useRef<HTMLButtonElement>(null);
   // Parked for a phone call (ADR-0133): dimmed, a handset, never the speaking ring.
   const onPhone = v?.onPhone ?? false;
-  const talking = speaking && !v?.muted && !connecting && !onPhone;
+  // Someone else's seat kept after a lost connection (ADR-0150): dimmed, «нет связи».
+  const lost = !self && (v?.connectionLost ?? false);
+  const talking = speaking && !v?.muted && !connecting && !onPhone && !lost;
   // A tap opens the member menu (Radix ContextMenu opens on `contextmenu`), as the header's «…».
   const openMenu = (): void => {
     const el = ref.current;
@@ -299,16 +304,23 @@ const VoicePersonRow = memo(function VoicePersonRow({ workspaceId, userId, self 
           ref={ref}
           type="button"
           onClick={openMenu}
-          aria-label={self ? `${name} (${t('dm.you')})` : name}
+          aria-label={self ? `${name} (${t('dm.you')})` : lost ? `${name}, ${t('call.connectionLost')}` : name}
           aria-haspopup="menu"
           data-testid="voice-people-row"
           data-speaking={talking || undefined}
           data-on-phone={onPhone || undefined}
-          title={onPhone ? t('call.onPhone') : undefined}
-          className={cx('flex h-14 w-full min-w-0 select-none items-center gap-3 rounded-[var(--radius-row)] px-2 text-left transition-colors duration-[var(--motion-fast)] active:bg-hover', onPhone && 'opacity-50')}
+          data-connection-lost={lost || undefined}
+          title={lost ? t('call.connectionLost') : onPhone ? t('call.onPhone') : undefined}
+          className={cx(
+            'flex h-14 w-full min-w-0 select-none items-center gap-3 rounded-[var(--radius-row)] px-2 text-left transition-colors duration-[var(--motion-fast)] active:bg-hover',
+            onPhone && 'opacity-50',
+          )}
         >
-          <Avatar userId={userId} name={name} fileId={fileId || undefined} size={40} speaking={talking} connecting={connecting} />
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          {/* A lost seat dims only the person: the «Нет связи» caption stays at full contrast. */}
+          <span className={cx('flex shrink-0', lost && 'opacity-50')}>
+            <Avatar userId={userId} name={name} fileId={fileId || undefined} size={40} speaking={talking} connecting={connecting} />
+          </span>
+          <span className={cx('flex min-w-0 flex-1 items-center gap-1.5', lost && 'opacity-50')}>
             <span className={cx('min-w-0 truncate text-list font-medium leading-5', roleTextClass(role, 'role', look))} style={roleTextStyle(role, 'role', look)}>
               {name}
             </span>
@@ -322,7 +334,7 @@ const VoicePersonRow = memo(function VoicePersonRow({ workspaceId, userId, self 
             {!v ? null : self ? (
               <SelfVoiceStateIcons onPhone={onPhone} />
             ) : (
-              <VoiceStateIcons muted={v.muted} deafened={v.deafened} serverMuted={v.serverMuted} pttIdle={v.ptt && !talking} onPhone={onPhone} />
+              <VoiceStateIcons muted={v.muted} deafened={v.deafened} serverMuted={v.serverMuted} pttIdle={v.ptt && !talking} onPhone={onPhone} connectionLost={lost} lostCaption />
             )}
           </span>
         </button>

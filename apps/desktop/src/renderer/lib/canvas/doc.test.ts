@@ -139,6 +139,19 @@ describe('patching', () => {
     expect(d.snapshot('o1')).not.toHaveProperty('fill');
     expect(d.snapshot('o1')).not.toHaveProperty('arrow');
   });
+  it('stores a soft fill as the plain hue + soft (an older build draws the hue); a plain fill drops it', () => {
+    const d = makeDoc();
+    d.create({ kind: 'shape', x: 0, y: 0, fill: 'soft:green' });
+    expect(d.snapshot('o1')).toMatchObject({ fill: 'green', soft: true });
+    d.patch('o1', { fill: 'soft:blue' });
+    expect(d.snapshot('o1')).toMatchObject({ fill: 'blue', soft: true });
+    d.patch('o1', { fill: 'red' });
+    expect(d.snapshot('o1')).toMatchObject({ fill: 'red' });
+    expect(d.snapshot('o1')).not.toHaveProperty('soft');
+    d.create({ kind: 'sticky', x: 0, y: 0 });
+    d.patch('o2', { fill: 'soft:red' });
+    expect(d.snapshot('o2')).not.toHaveProperty('soft');
+  });
   it('ignores invalid values and unknown ids', () => {
     const d = makeDoc();
     d.create({ kind: 'shape', x: 0, y: 0 });

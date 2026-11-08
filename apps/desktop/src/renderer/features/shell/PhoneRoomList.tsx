@@ -20,6 +20,7 @@ import { TempArchiveButton, useArchiveCount } from '../workspace/TempArchive';
 import { usePreviewParts } from '../chat/mentionText';
 import { PreviewRuns } from '../chat/PreviewRuns';
 import { KnockBadge } from '../guests/KnockBadge';
+import { ROW_SELECTED } from './ColumnHeader';
 import { CallTimer, CategoryDialog, PeoplePill, RoomMenu, WorkspaceHeader } from './Sidebar';
 import { SpeakingStack, VoicePeoplePopover, useRoomPeople } from './VoicePeopleCard';
 
@@ -187,9 +188,12 @@ const PhoneRoomRow = memo(function PhoneRoomRow({
           aria-label={label}
           data-testid="phone-room-row"
           data-room={room.id}
+          data-current={inRoom ? '' : undefined}
           style={shifted ? { marginRight: -swipe.offset } : undefined}
           className={cx(
             'flex h-[68px] min-w-0 flex-1 select-none items-center gap-3 px-3 text-left duration-[var(--motion-fast)] active:bg-hover',
+            // The voice room I am in: the same selected-row tint as the desktop column (primitive selector, only two rows re-render on a switch).
+            inRoom && ROW_SELECTED,
             swipe.dragging ? 'transition-colors' : 'transition-[margin,background-color]',
           )}
         >

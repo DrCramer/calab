@@ -193,7 +193,7 @@ func (q *Queries) GetFeatureEpoch(ctx context.Context, name string) (time.Time, 
 }
 
 const getMessage = `-- name: GetMessage :one
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id FROM messages WHERE id = $1 AND deleted_at IS NULL
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id, via FROM messages WHERE id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) GetMessage(ctx context.Context, id uuid.UUID) (Message, error) {
@@ -221,12 +221,38 @@ func (q *Queries) GetMessage(ctx context.Context, id uuid.UUID) (Message, error)
 		&i.InlineKeyboard,
 		&i.KeyboardRevision,
 		&i.ViaBotID,
+		&i.Via,
 	)
 	return i, err
 }
 
+const getMessageBotOwner = `-- name: GetMessageBotOwner :one
+SELECT b.owner_user_id FROM bots b
+WHERE b.user_id = $1
+  AND CASE WHEN $2::uuid IS NULL
+        THEN EXISTS (SELECT FROM workspace_members hm WHERE hm.workspace_id = b.workspace_id AND hm.user_id = b.owner_user_id)
+        ELSE b.workspace_id = $2::uuid END
+`
+
+type GetMessageBotOwnerParams struct {
+	AuthorID    uuid.UUID
+	WorkspaceID *uuid.UUID
+}
+
+// The current owner of the bot that wrote a message, for the author rule (perm.MessageAuthor,
+// ADR-0162). Only in the bot's home workspace (ADR-0151 §1): a workspace room or task room
+// counts when it is the bot's workspace_id; a DM (workspace_id NULL) when the owner is still a
+// member of the bot's home workspace (where they control the bot, ADR-0106). No row: not a bot,
+// the bot was deleted, or outside its home.
+func (q *Queries) GetMessageBotOwner(ctx context.Context, arg GetMessageBotOwnerParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getMessageBotOwner, arg.AuthorID, arg.WorkspaceID)
+	var owner_user_id uuid.UUID
+	err := row.Scan(&owner_user_id)
+	return owner_user_id, err
+}
+
 const getMessageByNonce = `-- name: GetMessageByNonce :one
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id FROM messages WHERE author_id = $1 AND nonce = $2
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id, via FROM messages WHERE author_id = $1 AND nonce = $2
 `
 
 type GetMessageByNonceParams struct {
@@ -259,12 +285,13 @@ func (q *Queries) GetMessageByNonce(ctx context.Context, arg GetMessageByNoncePa
 		&i.InlineKeyboard,
 		&i.KeyboardRevision,
 		&i.ViaBotID,
+		&i.Via,
 	)
 	return i, err
 }
 
 const getMessageShared = `-- name: GetMessageShared :one
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id FROM messages WHERE id = $1 AND deleted_at IS NULL FOR SHARE
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id, via FROM messages WHERE id = $1 AND deleted_at IS NULL FOR SHARE
 `
 
 // The source of a forward, read under a share lock: what a recording card gets meanwhile (payload,
@@ -294,6 +321,7 @@ func (q *Queries) GetMessageShared(ctx context.Context, id uuid.UUID) (Message, 
 		&i.InlineKeyboard,
 		&i.KeyboardRevision,
 		&i.ViaBotID,
+		&i.Via,
 	)
 	return i, err
 }
@@ -319,7 +347,7 @@ INSERT INTO messages (room_id, author_id, content, sticker_id, embeds_hidden, ki
 VALUES ($1, $2, $3, $4,
     $5, $6, $7,
     $8, $9, $10, $11)
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id, via
 `
 
 type InsertForwardedMessageParams struct {
@@ -375,15 +403,16 @@ func (q *Queries) InsertForwardedMessage(ctx context.Context, arg InsertForwarde
 		&i.InlineKeyboard,
 		&i.KeyboardRevision,
 		&i.ViaBotID,
+		&i.Via,
 	)
 	return i, err
 }
 
 const insertMessage = `-- name: InsertMessage :one
-INSERT INTO messages (room_id, author_id, content, reply_to_id, nonce, sticker_id, inline_keyboard, keyboard_revision, via_bot_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, CASE WHEN $7::jsonb IS NULL THEN 0 ELSE 1 END, $8)
+INSERT INTO messages (room_id, author_id, content, reply_to_id, nonce, sticker_id, inline_keyboard, keyboard_revision, via_bot_id, via)
+VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, CASE WHEN $7::jsonb IS NULL THEN 0 ELSE 1 END, $8, $9)
 ON CONFLICT (author_id, nonce) WHERE nonce IS NOT NULL DO NOTHING
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id, via
 `
 
 type InsertMessageParams struct {
@@ -395,10 +424,12 @@ type InsertMessageParams struct {
 	StickerID      *uuid.UUID
 	InlineKeyboard []byte
 	ViaBotID       *uuid.UUID
+	Via            *string
 }
 
 // Idempotent by (author_id, nonce): no row = a message with this nonce already exists.
 // via_bot_id: the bot that wrote it on behalf of its owner, the author (ADR-0106).
+// via: the channel, 'mcp' through the MCP endpoint (ADR-0156); NULL otherwise.
 func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (Message, error) {
 	row := q.db.QueryRow(ctx, insertMessage,
 		arg.RoomID,
@@ -409,6 +440,7 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (M
 		arg.StickerID,
 		arg.InlineKeyboard,
 		arg.ViaBotID,
+		arg.Via,
 	)
 	var i Message
 	err := row.Scan(
@@ -433,6 +465,7 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (M
 		&i.InlineKeyboard,
 		&i.KeyboardRevision,
 		&i.ViaBotID,
+		&i.Via,
 	)
 	return i, err
 }
@@ -570,7 +603,7 @@ func (q *Queries) ListAttachments(ctx context.Context, ids []uuid.UUID) ([]ListA
 }
 
 const listMessagesAfter = `-- name: ListMessagesAfter :many
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id FROM messages
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id, via FROM messages
 WHERE deleted_at IS NULL
   AND (room_id, id) > ($1::uuid, $2::uuid)
   AND (room_id, id) <= ($1::uuid, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)
@@ -618,6 +651,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.InlineKeyboard,
 			&i.KeyboardRevision,
 			&i.ViaBotID,
+			&i.Via,
 		); err != nil {
 			return nil, err
 		}
@@ -630,7 +664,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 }
 
 const listMessagesBefore = `-- name: ListMessagesBefore :many
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id FROM messages
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id, via FROM messages
 WHERE deleted_at IS NULL
   AND (room_id, id) < ($1::uuid, coalesce($2::uuid, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid))
   AND (room_id, id) > ($1::uuid, coalesce($3::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
@@ -689,6 +723,7 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 			&i.InlineKeyboard,
 			&i.KeyboardRevision,
 			&i.ViaBotID,
+			&i.Via,
 		); err != nil {
 			return nil, err
 		}
@@ -701,7 +736,7 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 }
 
 const listMessagesByIDs = `-- name: ListMessagesByIDs :many
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id FROM messages WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL ORDER BY id DESC
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id, via FROM messages WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL ORDER BY id DESC
 `
 
 // The live messages of ids (a search page, searchq.MessageIDs), newest first; one deleted
@@ -737,6 +772,7 @@ func (q *Queries) ListMessagesByIDs(ctx context.Context, ids []uuid.UUID) ([]Mes
 			&i.InlineKeyboard,
 			&i.KeyboardRevision,
 			&i.ViaBotID,
+			&i.Via,
 		); err != nil {
 			return nil, err
 		}
@@ -789,7 +825,7 @@ func (q *Queries) ListPeerReads(ctx context.Context, arg ListPeerReadsParams) ([
 }
 
 const listPins = `-- name: ListPins :many
-SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id FROM messages
+SELECT id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id, via FROM messages
 WHERE room_id = $1 AND pinned_at IS NOT NULL AND deleted_at IS NULL
 ORDER BY pinned_at DESC
 LIMIT 50
@@ -826,6 +862,7 @@ func (q *Queries) ListPins(ctx context.Context, roomID uuid.UUID) ([]Message, er
 			&i.InlineKeyboard,
 			&i.KeyboardRevision,
 			&i.ViaBotID,
+			&i.Via,
 		); err != nil {
 			return nil, err
 		}
@@ -838,7 +875,7 @@ func (q *Queries) ListPins(ctx context.Context, roomID uuid.UUID) ([]Message, er
 }
 
 const listReactionUsers = `-- name: ListReactionUsers :many
-SELECT u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots, u.calendar_zones
+SELECT u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots, u.calendar_zones, u.deleted_at
 FROM message_reactions mr JOIN users u ON u.id = mr.user_id
 WHERE mr.message_id = $1 AND mr.emoji = $2
   AND mr.user_id > coalesce($3::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
@@ -911,6 +948,7 @@ func (q *Queries) ListReactionUsers(ctx context.Context, arg ListReactionUsersPa
 			&i.User.TaskNotifyOff,
 			&i.User.TaskNotifyBots,
 			&i.User.CalendarZones,
+			&i.User.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1168,7 +1206,7 @@ func (q *Queries) LockMessageReactions(ctx context.Context, id uuid.UUID) error 
 const pinMessage = `-- name: PinMessage :one
 UPDATE messages SET pinned_at = now(), pinned_by = $1
 WHERE id = $2 AND deleted_at IS NULL AND pinned_at IS NULL
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id, via
 `
 
 type PinMessageParams struct {
@@ -1201,6 +1239,7 @@ func (q *Queries) PinMessage(ctx context.Context, arg PinMessageParams) (Message
 		&i.InlineKeyboard,
 		&i.KeyboardRevision,
 		&i.ViaBotID,
+		&i.Via,
 	)
 	return i, err
 }
@@ -1260,7 +1299,7 @@ func (q *Queries) RemoveReaction(ctx context.Context, arg RemoveReactionParams) 
 
 const setEmbedsHidden = `-- name: SetEmbedsHidden :one
 UPDATE messages SET embeds_hidden = $2 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id, via
 `
 
 type SetEmbedsHiddenParams struct {
@@ -1293,6 +1332,7 @@ func (q *Queries) SetEmbedsHidden(ctx context.Context, arg SetEmbedsHiddenParams
 		&i.InlineKeyboard,
 		&i.KeyboardRevision,
 		&i.ViaBotID,
+		&i.Via,
 	)
 	return i, err
 }
@@ -1349,7 +1389,7 @@ func (q *Queries) TopRoomReads(ctx context.Context, roomID uuid.UUID) ([]TopRoom
 const unpinMessage = `-- name: UnpinMessage :one
 UPDATE messages SET pinned_at = NULL, pinned_by = NULL
 WHERE id = $1 AND deleted_at IS NULL AND pinned_at IS NOT NULL
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id, via
 `
 
 func (q *Queries) UnpinMessage(ctx context.Context, id uuid.UUID) (Message, error) {
@@ -1377,6 +1417,7 @@ func (q *Queries) UnpinMessage(ctx context.Context, id uuid.UUID) (Message, erro
 		&i.InlineKeyboard,
 		&i.KeyboardRevision,
 		&i.ViaBotID,
+		&i.Via,
 	)
 	return i, err
 }
@@ -1386,7 +1427,7 @@ UPDATE messages SET content = coalesce($2::text, content), edited_at = now(),
     inline_keyboard = CASE WHEN $3::boolean THEN $4::jsonb ELSE inline_keyboard END,
     keyboard_revision = keyboard_revision + 1
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id
+RETURNING id, room_id, author_id, content, reply_to_id, nonce, created_at, edited_at, deleted_at, pinned_at, pinned_by, embeds_hidden, kind, payload, sticker_id, forwarded_from, forward_author_id, forward_sent_at, inline_keyboard, keyboard_revision, via_bot_id, via
 `
 
 type UpdateMessageContentParams struct {
@@ -1426,6 +1467,7 @@ func (q *Queries) UpdateMessageContent(ctx context.Context, arg UpdateMessageCon
 		&i.InlineKeyboard,
 		&i.KeyboardRevision,
 		&i.ViaBotID,
+		&i.Via,
 	)
 	return i, err
 }

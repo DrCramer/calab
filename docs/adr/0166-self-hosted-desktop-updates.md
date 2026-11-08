@@ -1,4 +1,4 @@
-# ADR-0153: Self-hosted desktop updates from GitHub Releases (2026-10-18)
+# ADR-0166: Self-hosted desktop updates from GitHub Releases (2026-10-18)
 
 ## Context
 

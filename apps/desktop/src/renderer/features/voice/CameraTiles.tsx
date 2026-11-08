@@ -1,5 +1,5 @@
 import * as Dropdown from '../../components/radix/dropdown-menu';
-import { Check, ChevronLeft, ChevronRight, Ellipsis, Maximize2, MessageCircle, Mic, MicOff, Phone, Pin, PinOff, VideoOff } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Ellipsis, Maximize2, MessageCircle, Mic, MicOff, Phone, Pin, PinOff, VideoOff, WifiOff } from 'lucide-react';
 import {
   forwardRef,
   memo,
@@ -151,6 +151,7 @@ function TileName({ userId, wsId, small, className }: { userId: string; wsId: st
   const me = useMe();
   const muted = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.muted ?? false) : false));
   const onPhone = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.onPhone ?? false) : false));
+  const lost = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.connectionLost ?? false) : false)) && userId !== me;
   const live = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.streaming ?? false) : false));
   const label = userId === me ? t('video.you', { name }) : name;
   return (
@@ -161,7 +162,9 @@ function TileName({ userId, wsId, small, className }: { userId: string; wsId: st
         className,
       )}
     >
-      {onPhone ? (
+      {lost ? (
+        <WifiOff className={cx('shrink-0', small ? 'size-3' : 'size-3.5')} aria-label={t('call.connectionLost')} role="img" data-voice-icon="connection-lost" />
+      ) : onPhone ? (
         <Phone className={cx('shrink-0', small ? 'size-3' : 'size-3.5')} aria-label={t('call.onPhone')} role="img" data-voice-icon="on-phone" />
       ) : muted ? (
         <MicOff className={cx('shrink-0', small ? 'size-3' : 'size-3.5')} aria-label={t('shell.mutedState')} role="img" />
@@ -205,8 +208,11 @@ const Tile = memo(
     const name = useMemberName(wsId, userId);
     const speaking = useVoice((s) => s.speaking[userId] ?? false);
     const muted = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.muted ?? false) : false));
-    // Parked for a phone call (ADR-0133): the tile is dimmed.
+    // Parked for a phone call (ADR-0133), or someone else's seat kept after a lost connection
+    // (ADR-0150): the tile is dimmed.
     const onPhone = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.onPhone ?? false) : false));
+    const me = useMe();
+    const lost = useWorkspaces((s) => (wsId ? (s.byId[wsId]?.voice[userId]?.connectionLost ?? false) : false)) && userId !== me;
     const hasCamera = useVoice((s) => s.cameras.some((c) => c.userId === userId));
     const hidden = usePrefs((s) => !!s.hiddenVideo[userId]);
     const saveTraffic = usePrefs((s) => s.saveTraffic);
@@ -225,7 +231,8 @@ const Tile = memo(
         title={focused ? t('video.unfocus') : t('video.focus')}
         onClick={() => voice.focusTile(userId)}
         data-on-phone={onPhone || undefined}
-        className={cx('group/tile absolute overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-tile-bg)] text-left', onPhone && 'opacity-50', className)}
+        data-connection-lost={lost || undefined}
+        className={cx('group/tile absolute overflow-hidden rounded-[var(--radius-card)] bg-[var(--color-tile-bg)] text-left', (onPhone || lost) && 'opacity-50', className)}
         {...rest}
         style={x !== undefined ? { ...style, left: x, top: y, width: w, height: h } : style}
       >
@@ -239,7 +246,7 @@ const Tile = memo(
           aria-hidden
           className={cx(
             'pointer-events-none absolute inset-0 rounded-[var(--radius-card)] ring-2 ring-inset transition-shadow duration-100',
-            speaking && !muted && !onPhone ? 'ring-[var(--color-green)]' : focused ? 'ring-accent' : 'ring-transparent',
+            speaking && !muted && !onPhone && !lost ? 'ring-[var(--color-green)]' : focused ? 'ring-accent' : 'ring-transparent',
           )}
         />
         {focused ? (

@@ -949,7 +949,7 @@ describe('VoiceEngine', () => {
     await settle();
     // Rejoin attempts so far (the first /join was the user's).
     const attempts = (): number => joinVoice.mock.calls.length - 1;
-    // Attempts at 1, 3, 7, 15, 30, 45, 60, 75 and 90 s; then the cycle gives up (90 s, ADR-0148 hold).
+    // Attempts at 1, 3, 7, 15, 30, 45, 60, 75 and 90 s; then the cycle gives up (90 s, ADR-0150 hold).
     const steps: [number, number][] = [[999, 0], [1, 1], [1_999, 1], [1, 2], [3_999, 2], [1, 3], [7_999, 3], [1, 4], [14_999, 4], [1, 5], [14_999, 5], [1, 6], [14_999, 6], [1, 7], [14_999, 7], [1, 8], [14_999, 8], [1, 9]];
     for (const [ms, n] of steps) {
       await vi.advanceTimersByTimeAsync(ms);

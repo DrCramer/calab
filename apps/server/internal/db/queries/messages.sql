@@ -1,8 +1,9 @@
 -- name: InsertMessage :one
 -- Idempotent by (author_id, nonce): no row = a message with this nonce already exists.
 -- via_bot_id: the bot that wrote it on behalf of its owner, the author (ADR-0106).
-INSERT INTO messages (room_id, author_id, content, reply_to_id, nonce, sticker_id, inline_keyboard, keyboard_revision, via_bot_id)
-VALUES ($1, $2, $3, $4, $5, $6, sqlc.narg('inline_keyboard')::jsonb, CASE WHEN sqlc.narg('inline_keyboard')::jsonb IS NULL THEN 0 ELSE 1 END, sqlc.narg('via_bot_id'))
+-- via: the channel, 'mcp' through the MCP endpoint (ADR-0156); NULL otherwise.
+INSERT INTO messages (room_id, author_id, content, reply_to_id, nonce, sticker_id, inline_keyboard, keyboard_revision, via_bot_id, via)
+VALUES ($1, $2, $3, $4, $5, $6, sqlc.narg('inline_keyboard')::jsonb, CASE WHEN sqlc.narg('inline_keyboard')::jsonb IS NULL THEN 0 ELSE 1 END, sqlc.narg('via_bot_id'), sqlc.narg('via'))
 ON CONFLICT (author_id, nonce) WHERE nonce IS NOT NULL DO NOTHING
 RETURNING *;
 
@@ -11,6 +12,18 @@ SELECT * FROM messages WHERE author_id = $1 AND nonce = $2;
 
 -- name: GetMessage :one
 SELECT * FROM messages WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: GetMessageBotOwner :one
+-- The current owner of the bot that wrote a message, for the author rule (perm.MessageAuthor,
+-- ADR-0162). Only in the bot's home workspace (ADR-0151 §1): a workspace room or task room
+-- counts when it is the bot's workspace_id; a DM (workspace_id NULL) when the owner is still a
+-- member of the bot's home workspace (where they control the bot, ADR-0106). No row: not a bot,
+-- the bot was deleted, or outside its home.
+SELECT b.owner_user_id FROM bots b
+WHERE b.user_id = sqlc.arg('author_id')
+  AND CASE WHEN sqlc.narg('workspace_id')::uuid IS NULL
+        THEN EXISTS (SELECT FROM workspace_members hm WHERE hm.workspace_id = b.workspace_id AND hm.user_id = b.owner_user_id)
+        ELSE b.workspace_id = sqlc.narg('workspace_id')::uuid END;
 
 -- name: ListMessagesBefore :many
 -- Newest first. NULL before = from the newest message; since = only after this id (a DM the
