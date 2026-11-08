@@ -15,6 +15,7 @@ import { phoneBack } from '../../services/phoneNav';
 import { useCanvas } from '../../stores/canvas';
 import { useCanvasUi } from '../../stores/canvasUi';
 import { CanvasViewLazy } from './lazy';
+import { PrivateLock } from './PrivateLock';
 
 /**
  * «Холст» on the phone (ADR-0126 §5, ADR-0095: a section behind «Ещё»; view by default): the tab
@@ -159,9 +160,12 @@ const ItemRow = memo(function ItemRow({ id, onOpen }: { id: string; onOpen: (id:
   return (
     <div role="listitem" className="flex h-14 items-center pl-4 pr-3" data-testid="phone-canvas-row" data-kind={folder ? 'folder' : 'canvas'}>
       <button type="button" onClick={() => onOpen(id)} className="tap-hit flex h-14 min-w-0 flex-1 items-center gap-3 text-left">
-        <KindIcon folder={folder} />
+        <KindIcon id={id} folder={folder} />
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-list leading-5 text-fg">{name || t('canvas.untitled')}</span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-list leading-5 text-fg">{name || t('canvas.untitled')}</span>
+            <PrivateLock id={id} />
+          </span>
           {!folder && updated ? <span className="truncate text-caption leading-4 text-muted">{t('canvasPhone.updated', { when: fmt.relative(new Date(updated)) })}</span> : null}
         </span>
         {folder ? <ChevronRight className="size-4 shrink-0 text-faint" aria-hidden /> : null}
@@ -170,11 +174,12 @@ const ItemRow = memo(function ItemRow({ id, onOpen }: { id: string; onOpen: (id:
   );
 });
 
-function KindIcon({ folder }: { folder: boolean }): ReactNode {
+function KindIcon({ id, folder }: { id: string; folder: boolean }): ReactNode {
+  const emoji = useCanvas((s) => s.items[id]?.emoji ?? '');
   const Icon = folder ? Folder : Shapes;
   return (
     <span className="grid size-10 shrink-0 place-items-center rounded-[8px] bg-[var(--color-fill)] text-muted" aria-hidden>
-      <Icon className="size-5" strokeWidth={1.75} />
+      {emoji ? <span className="text-[22px] leading-none">{emoji}</span> : <Icon className="size-5" strokeWidth={1.75} />}
     </span>
   );
 }
@@ -219,7 +224,7 @@ function SearchResults({ workspaceId, query, onOpen }: { workspaceId: string; qu
       {extra.map((r) => (
         <div key={r.id} role="listitem" className="flex h-14 items-center pl-4 pr-3" data-testid="phone-canvas-hit">
           <button type="button" onClick={() => onOpen(r.id)} className="tap-hit flex h-14 min-w-0 flex-1 items-center gap-3 text-left">
-            <KindIcon folder={r.folder} />
+            <KindIcon id={r.id} folder={r.folder} />
             <span className="min-w-0 flex-1 truncate text-list leading-5 text-fg">{r.name || t('canvas.untitled')}</span>
           </button>
         </div>

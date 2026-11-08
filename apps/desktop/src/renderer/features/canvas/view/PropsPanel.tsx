@@ -1,24 +1,26 @@
 import * as Popover from '@radix-ui/react-popover';
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter, AlignStartHorizontal, AlignStartVertical,
-  AlignVerticalDistributeCenter, ArrowLeftRight, ArrowRight, BringToFront, Check, CopyPlus, Group, Lock, LockOpen, Minus, SendToBack, Shapes, Slash, Trash2, Ungroup,
+  AlignVerticalDistributeCenter, ArrowLeftRight, ArrowRight, BringToFront, Check, CopyPlus, Group, Layers, Lock, LockOpen, Minus, SendToBack, Shapes, Slash, Trash2, Ungroup,
   type LucideIcon,
 } from 'lucide-react';
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
 import { rotateHandlePoint } from '../../../lib/canvas/geometry';
-import { IconButton, MOD, cx } from '../../../components/ui';
+import { MARKER_WIDTHS, PEN_WIDTHS } from '../../../lib/canvas/ink';
+import { Button, IconButton, MOD, cx } from '../../../components/ui';
 import { t, useLocale } from '../../../i18n';
 import type { ArrangeOp } from '../../../lib/canvas/arrange';
 import { FontSizeField } from './FontSizeField';
+import { FrameTitleField } from './FrameTitleField';
 import { RouteIcon } from './RouteIcon';
 import { ShapeIcon } from './ShapeIcon';
-import type { Arrow, ObjectKind, ObjectPatch, RouteKind, ShapeKind } from '../../../lib/canvas/types';
-import { readableInk, resolveColor, resolveSticky, type CanvasEngine, type CanvasPalette } from '../engine';
+import { splitFill, type Arrow, type ObjectKind, type ObjectPatch, type RouteKind, type ShapeKind } from '../../../lib/canvas/types';
+import { readableInk, resolveColor, resolveFill, resolveSticky, type CanvasEngine, type CanvasPalette } from '../engine';
 import { ROTATE_OFFSET_PX } from '../engine/overlay';
 import { DIVIDER, MENU_BOX, PANEL, keepFocus } from './chrome';
 import { NO_INSETS, placePanel, type Insets } from './layout';
 import {
-  ARROW_DEFS, FILL_COLORS, INK_COLORS, ROUTE_DEFS, SHAPE_DEFS, STICKY_COLORS, STROKE_COLORS, STROKE_WIDTHS,
+  ARROW_DEFS, FILL_PICKER, FRAME_FILLS, INK_COLORS, ROUTE_DEFS, SHAPE_DEFS, STICKY_COLORS, STROKE_COLORS, STROKE_WIDTHS,
 } from './model';
 import { createSelectionModel } from './selectionModel';
 
@@ -27,6 +29,7 @@ const ICON = 'size-4';
 /** The screen's floating panels, by test id, and the edge each one hangs from. */
 const CHROME: readonly { id: string; edge: keyof Insets }[] = [
   { id: 'canvas-toolbar', edge: 'left' },
+  { id: 'canvas-frames-panel', edge: 'left' },
   { id: 'canvas-history', edge: 'bottom' },
   { id: 'canvas-zoom', edge: 'bottom' },
   { id: 'canvas-presence', edge: 'top' },
@@ -48,13 +51,19 @@ export function measureChrome(host: HTMLElement): Insets {
   return out;
 }
 
-type ColorKind = 'sticky' | 'ink' | 'fill';
+/** `frame`: a hue as a frame draws it (its soft tone). */
+type ColorKind = 'sticky' | 'ink' | 'fill' | 'frame';
 
 export function swatchCss(palette: CanvasPalette, kind: ColorKind, token: string): string | null {
-  return kind === 'sticky' ? resolveSticky(palette, token).bg : resolveColor(palette, token);
+  if (kind === 'sticky') return resolveSticky(palette, token).bg;
+  if (kind === 'frame') return resolveFill(palette, token, true);
+  const f = splitFill(token);
+  return kind === 'fill' ? resolveFill(palette, f.fill, f.soft) : resolveColor(palette, token);
 }
 
 export function colorLabel(token: string): string {
+  const f = splitFill(token);
+  if (f.soft) return t('canvasBoard.color.softOf', { color: colorLabel(f.fill).toLowerCase() });
   const key = `canvasBoard.color.${token}`;
   const s = t(key as Parameters<typeof t>[0]);
   return s === key ? token : s;
@@ -292,6 +301,14 @@ function widthNode(w: number): ReactNode {
   return <svg viewBox="0 0 16 16" className={ICON} aria-hidden><rect x="2" y={8 - w / 2} width="12" height={w} rx={w / 2} fill="currentColor" /></svg>;
 }
 
+/** The pen's (or the marker's) three widths, drawn thin / medium / thick whatever their size in the world. */
+export function inkWidthItems(marker: boolean): { id: number; label: string; node: ReactNode }[] {
+  return (marker ? MARKER_WIDTHS : PEN_WIDTHS).map((w, i) => {
+    const def = STROKE_WIDTHS[i];
+    return { id: w, label: def ? t(def.label) : String(w), node: widthNode([1.5, 3, 5][i] ?? 3) };
+  });
+}
+
 const ALIGN_DEFS: readonly { op: ArrangeOp; label: Parameters<typeof t>[0]; Icon: LucideIcon }[] = [
   { op: 'left', label: 'canvasBoard.props.align.left', Icon: AlignStartVertical },
   { op: 'hcenter', label: 'canvasBoard.props.align.hcenter', Icon: AlignCenterVertical },
@@ -442,9 +459,36 @@ export const PropsPanel = memo(function PropsPanel({
       className={cx(PANEL, 'absolute left-0 top-0 z-10 flex w-max items-center gap-1')}
       style={{ visibility: 'hidden' }}
     >
-      {m.locked ? <Lock className="mx-1 size-4 shrink-0 text-muted" strokeWidth={1.75} role="img" aria-label={t('canvasBoard.props.locked')} data-testid="canvas-prop-locked-badge" /> : null}
-      {!m.locked && m.hasSticky ? (
-        <SwatchMenu label={t('canvasBoard.props.color')} kind="sticky" tokens={STICKY_COLORS} value={m.stickyColor} palette={palette} onPick={(c) => patch({ color: c }, ['sticky'])} focusCanvas={focusCanvas} testId="canvas-prop-sticky-color" />
+      {!m.locked && m.frameTitle !== undefined ? (
+        <FrameTitleField
+          // A new selection starts a fresh draft.
+          key={engine.getState().selectedId ?? ''}
+          value={m.frameTitle}
+          label={t('canvasBoard.props.frameTitle')}
+          placeholder={t('canvasBoard.frames.untitled')}
+          onCommit={(title) => patch({ title }, ['frame'])}
+          onDone={focusCanvas}
+          className="h-7 w-40"
+          testId="canvas-prop-frame-title"
+        />
+      ) : null}
+      {!m.locked && m.hasFrame ? (
+        <SwatchMenu label={t('canvasBoard.props.fill')} kind="frame" tokens={FRAME_FILLS} value={m.frameFill} palette={palette} onPick={(c) => patch({ fill: c }, ['frame'])} focusCanvas={focusCanvas} testId="canvas-prop-frame-fill" />
+      ) : null}
+      {m.hasSticky && !m.locked ? (
+        <>
+          <SwatchMenu label={t('canvasBoard.props.color')} kind="sticky" tokens={STICKY_COLORS} value={m.stickyColor} palette={palette} onPick={(c) => patch({ color: c }, ['sticky'])} focusCanvas={focusCanvas} testId="canvas-prop-sticky-color" />
+          {/* A pad hands out stickies of its colour (owner 30.10, Miro-style). */}
+          <IconButton
+            size="sm"
+            label={m.stickyPad ? `${t('canvasBoard.props.unpad')} · ${t('canvasBoard.props.padHint')}` : `${t('canvasBoard.props.pad')} · ${t('canvasBoard.props.padHint')}`}
+            active={m.stickyPad === true}
+            onClick={() => patch({ pad: m.stickyPad !== true }, ['sticky'])}
+            data-testid="canvas-prop-sticky-pad"
+          >
+            <Layers className="size-4" aria-hidden />
+          </IconButton>
+        </>
       ) : null}
       {!m.locked && m.hasText ? (
         <>
@@ -458,18 +502,30 @@ export const PropsPanel = memo(function PropsPanel({
       {!m.locked && m.hasShape ? (
         <>
           <ShapeMenu value={m.shape} onPick={(shape) => patch({ shape })} focusCanvas={focusCanvas} />
-          <SwatchMenu label={t('canvasBoard.props.fill')} kind="fill" tokens={FILL_COLORS} value={m.fill} palette={palette} onPick={(c) => patch({ fill: c })} focusCanvas={focusCanvas} testId="canvas-prop-fill" />
+          <SwatchMenu label={t('canvasBoard.props.fill')} kind="fill" tokens={FILL_PICKER} value={m.fill} palette={palette} onPick={(c) => patch({ fill: c }, ['shape'])} focusCanvas={focusCanvas} testId="canvas-prop-fill" />
         </>
       ) : null}
       {!m.locked && (m.hasShape || m.hasConnector) ? (
         <>
-          <SwatchMenu label={t('canvasBoard.props.stroke')} kind="ink" tokens={STROKE_COLORS} value={m.stroke} palette={palette} onPick={(c) => patch({ stroke: c })} focusCanvas={focusCanvas} testId="canvas-prop-stroke" />
+          <SwatchMenu label={t('canvasBoard.props.stroke')} kind="ink" tokens={STROKE_COLORS} value={m.stroke} palette={palette} onPick={(c) => patch({ stroke: c }, ['shape', 'connector'])} focusCanvas={focusCanvas} testId="canvas-prop-stroke" />
           <Seg
             label={t('canvasBoard.props.strokeWidth')}
             testId="canvas-prop-width"
             value={m.strokeWidth}
             items={STROKE_WIDTHS.map((w) => ({ id: w.width, label: t(w.label), node: widthNode(w.width) }))}
-            onPick={(strokeWidth) => patch({ strokeWidth })}
+            onPick={(strokeWidth) => patch({ strokeWidth }, ['shape', 'connector'])}
+          />
+        </>
+      ) : null}
+      {!m.locked && m.hasInk ? (
+        <>
+          <SwatchMenu label={t('canvasBoard.props.color')} kind="ink" tokens={STROKE_COLORS} value={m.inkColor} palette={palette} onPick={(c) => patch({ stroke: c }, ['ink'])} focusCanvas={focusCanvas} testId="canvas-prop-ink-color" />
+          <Seg
+            label={t('canvasBoard.props.strokeWidth')}
+            testId="canvas-prop-ink-width"
+            value={m.inkWidth}
+            items={inkWidthItems(m.inkMarker === true)}
+            onPick={(strokeWidth) => patch({ strokeWidth }, ['ink'])}
           />
         </>
       ) : null}
@@ -502,18 +558,26 @@ export const PropsPanel = memo(function PropsPanel({
           <Ungroup className={ICON} strokeWidth={1.75} aria-hidden />
         </IconButton>
       ) : null}
-      <IconButton
-        label={t(m.locked ? 'canvasBoard.props.unlock' : 'canvasBoard.props.lock')}
-        shortcut={`⇧${MOD}L`}
-        size="sm"
-        active={m.locked}
-        className={cx(m.locked && 'bg-active text-fg')}
-        onMouseDown={keepFocus}
-        onClick={run(() => engine.toggleLock())}
-        data-testid="canvas-prop-lock"
-      >
-        {m.locked ? <Lock className={ICON} strokeWidth={1.75} aria-hidden /> : <LockOpen className={ICON} strokeWidth={1.75} aria-hidden />}
-      </IconButton>
+      {/* Locked: one labelled button says both the state and the way out (an icon toggle next to a «locked» badge read as two locks). */}
+      {m.locked ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-fg"
+          title={`${t('canvasBoard.props.locked')} · ⇧${MOD}L`}
+          aria-pressed
+          onMouseDown={keepFocus}
+          onClick={run(() => engine.toggleLock())}
+          data-testid="canvas-prop-lock"
+        >
+          <Lock className="size-3.5" strokeWidth={1.75} aria-hidden />
+          {t('canvasBoard.props.unlock')}
+        </Button>
+      ) : (
+        <IconButton label={t('canvasBoard.props.lock')} shortcut={`⇧${MOD}L`} size="sm" onMouseDown={keepFocus} onClick={run(() => engine.toggleLock())} data-testid="canvas-prop-lock">
+          <LockOpen className={ICON} strokeWidth={1.75} aria-hidden />
+        </IconButton>
+      )}
       <div className={DIVIDER} aria-hidden />
       <IconButton label={t('canvasBoard.props.front')} shortcut={`⇧${MOD}]`} size="sm" onMouseDown={keepFocus} onClick={run(() => engine.reorder(1, true))} data-testid="canvas-prop-front">
         <BringToFront className={ICON} strokeWidth={1.75} aria-hidden />

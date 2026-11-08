@@ -10,7 +10,7 @@ import type { Arrow, ObjectKind, ObjectPatch, RouteKind } from '../../../lib/can
 import { readableInk, type CanvasEngine, type CanvasPalette } from '../engine';
 import { keepFocus } from './chrome';
 import { useEngineValue } from './hooks';
-import { ARROW_DEFS, FILL_COLORS, INK_COLORS, ROUTE_DEFS, SHAPE_DEFS, STICKY_COLORS, STROKE_COLORS, STROKE_WIDTHS } from './model';
+import { ARROW_DEFS, FILL_PICKER, INK_COLORS, ROUTE_DEFS, SHAPE_DEFS, STICKY_COLORS, STROKE_COLORS, STROKE_WIDTHS } from './model';
 import { FontSizeField } from './FontSizeField';
 import { PhoneBtn, SHEET } from './PhoneEditBar';
 import { Swatch, colorLabel, swatchCss } from './PropsPanel';
@@ -85,7 +85,6 @@ export const PhoneProps = memo(function PhoneProps({ engine, palette, focusCanva
         ) : (
           <span className="shrink-0 px-2 text-control text-muted" data-testid="canvas-phone-multi-hint">{t('canvasPhone.multiHint')}</span>
         )}
-        {m?.locked ? <Lock className="mx-1 size-4 shrink-0 text-muted" strokeWidth={1.75} role="img" aria-label={t('canvasBoard.props.locked')} /> : null}
         {free && m.count === 1 && (m.hasSticky || m.hasText || m.hasShape) ? (
           <PhoneBtn label={t('canvasPhone.editText')} onClick={() => void engine.startTextEdit()} testId="canvas-prop-edit-text">
             <Pencil className={ICON} strokeWidth={1.75} aria-hidden />
@@ -218,7 +217,7 @@ function Seg<T extends string | number>({
 const COLOR_PANEL: Record<'sticky' | 'ink' | 'fill' | 'stroke', { kind: 'sticky' | 'ink' | 'fill'; tokens: readonly string[]; label: Parameters<typeof t>[0]; field: 'color' | 'fill' | 'stroke'; value: (m: PanelModel) => string | undefined }> = {
   sticky: { kind: 'sticky', tokens: STICKY_COLORS, label: 'canvasBoard.props.color', field: 'color', value: (m) => m.stickyColor },
   ink: { kind: 'ink', tokens: INK_COLORS, label: 'canvasBoard.props.color', field: 'color', value: (m) => m.textColor },
-  fill: { kind: 'fill', tokens: FILL_COLORS, label: 'canvasBoard.props.fill', field: 'fill', value: (m) => m.fill },
+  fill: { kind: 'fill', tokens: FILL_PICKER, label: 'canvasBoard.props.fill', field: 'fill', value: (m) => m.fill },
   stroke: { kind: 'ink', tokens: STROKE_COLORS, label: 'canvasBoard.props.stroke', field: 'stroke', value: (m) => m.stroke },
 };
 

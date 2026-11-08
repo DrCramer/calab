@@ -2,6 +2,7 @@ import * as Popover from '@radix-ui/react-popover';
 import { Vote } from 'lucide-react';
 import { memo, useState, type ReactNode } from 'react';
 import { ALT, Button, IconButton, cx } from '../../../components/ui';
+import { ToolHint } from './ToolHint';
 import { t, useLocale } from '../../../i18n';
 import { VOTE_DEFAULT, VOTE_MAX, VOTE_MIN, clampVotes } from '../../../lib/canvas/votes';
 import type { CanvasEngine } from '../engine';
@@ -28,11 +29,13 @@ export const VoteButton = memo(function VoteButton({ engine, focusCanvas }: { en
   };
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <IconButton label={t('canvasBoard.vote.button')} active={phase !== 'none'} onMouseDown={keepFocus} data-testid="canvas-vote-button">
-          <Vote className={ICON} strokeWidth={1.75} aria-hidden />
-        </IconButton>
-      </Popover.Trigger>
+      <ToolHint id="vote" title={t('canvasBoard.vote.button')} suppress={open}>
+        <Popover.Trigger asChild>
+          <IconButton label={t('canvasBoard.vote.button')} tip={false} active={phase !== 'none'} onMouseDown={keepFocus} data-testid="canvas-vote-button">
+            <Vote className={ICON} strokeWidth={1.75} aria-hidden />
+          </IconButton>
+        </Popover.Trigger>
+      </ToolHint>
       <Popover.Portal>
         <Popover.Content
           side="right"

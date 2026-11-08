@@ -12,7 +12,7 @@ import { useCanvas } from '../../stores/canvas';
 import { useCanvasUi } from '../../stores/canvasUi';
 import { myUserId, useSession } from '../../stores/session';
 import { menuBox } from '../shell/menu';
-import { DROP, ItemMenuEntries } from './ItemMenu';
+import { DROP, ItemEmojiPicker, ItemMenuEntries } from './ItemMenu';
 import { CanvasViewLazy } from './lazy';
 
 /**
@@ -208,9 +208,14 @@ function CrumbButton({ workspaceId, id }: { workspaceId: string; id: string }): 
 
 function CrumbTitle({ id }: { id: string }): ReactNode {
   const name = useCanvas((s) => s.items[id]?.name ?? '');
+  const emoji = useCanvas((s) => s.items[id]?.emoji ?? '');
   return (
     <h1 className="flex min-w-0 items-center gap-1.5 truncate px-1.5 text-body font-semibold" aria-current="page" data-testid="canvas-title">
-      <span className="truncate">{name || t('canvas.untitled')}</span>
+      {/* The emoji picker of the header's «Иконка» anchors on the emoji, or on the name while there is none. */}
+      <ItemEmojiPicker id={id} at="header">
+        {emoji ? <span className="shrink-0 text-[15px] leading-none" aria-hidden>{emoji}</span> : <span className="truncate">{name || t('canvas.untitled')}</span>}
+      </ItemEmojiPicker>
+      {emoji ? <span className="truncate">{name || t('canvas.untitled')}</span> : null}
     </h1>
   );
 }

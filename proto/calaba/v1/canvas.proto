@@ -47,6 +47,7 @@ message CanvasItem {
   bool trashed_root = 17; // the item the deletion started at (the trash lists only these)
   uint32 doc_size = 18; // bytes of the last snapshot (the client warns near 4 MiB); canvases only
   string preview = 19; // the first ≤ 200 characters of the objects' text (from the last snapshot)
+  string emoji = 20; // one emoji in place of the item's icon, or empty (canvases and folders)
 }
 
 // One override of an item (canvas_permissions): «Просмотр» = CANVAS_VIEW, «Правка» = CANVAS_VIEW
@@ -129,6 +130,7 @@ message UpdateCanvasItemRequest {
   optional string parent_id = 2;
   optional int32 position = 3;
   optional bool restricted = 4;
+  optional string emoji = 5; // one emoji or "" (back to the icon); the structure right, as a rename
 }
 
 // GET /api/canvas/items/{id}/path — the ancestors, the top-level item first, then the item.

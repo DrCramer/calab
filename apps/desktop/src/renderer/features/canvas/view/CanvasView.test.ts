@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { CANVAS_BITS } from '@calaba/protocol';
+import * as TooltipP from '@radix-ui/react-tooltip';
 import { Profiler, act, createElement, type ComponentProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -75,7 +76,7 @@ async function mount(opts: { bits?: bigint; relay?: MockRelay; name?: string; id
   await act(async () => {
     root.render(createElement(Profiler, { id: 'cv', onRender: () => {
       commits.n++;
-    } }, createElement(CanvasView, props)));
+    } }, createElement(TooltipP.Provider, null, createElement(CanvasView, props))));
     await vi.advanceTimersByTimeAsync(0);
   });
   const canvas = host.querySelector('canvas') as HTMLCanvasElement;
@@ -316,7 +317,7 @@ describe('read-only', () => {
     const m = await mount({ relay, bits: VIEW });
     expect(m.q('canvas-toolbar')).toBeNull();
     await act(async () => {
-      m.root.render(createElement(CanvasView, { canvasId: 'c1', workspaceId: 'w1', bits: WRITE, onOpenHistory: () => undefined, onShare: () => undefined, deps: deps(relay, true) }));
+      m.root.render(createElement(TooltipP.Provider, null, createElement(CanvasView, { canvasId: 'c1', workspaceId: 'w1', bits: WRITE, onOpenHistory: () => undefined, onShare: () => undefined, deps: deps(relay, true) })));
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(m.q('canvas-toolbar')).not.toBeNull();
@@ -800,13 +801,12 @@ describe('transform controls (ADR-0127)', () => {
     expect(m.q('canvas-prop-group')).toBeNull();
     expect(m.q('canvas-prop-align')).toBeNull(); // one group = one thing to align
     act(() => m.q('canvas-prop-lock')?.click());
-    expect(m.q('canvas-prop-locked-badge')).not.toBeNull();
     expect(m.q('canvas-prop-sticky-color')).toBeNull();
     expect(m.q('canvas-prop-delete')).toBeNull(); // a lock protects from deletion too
     expect(m.q('canvas-prop-duplicate')).not.toBeNull();
     expect(m.q('canvas-prop-lock')?.getAttribute('aria-pressed')).toBe('true');
     act(() => m.q('canvas-prop-lock')?.click());
-    expect(m.q('canvas-prop-locked-badge')).toBeNull();
+    expect(m.q('canvas-prop-lock')?.getAttribute('aria-pressed')).not.toBe('true');
     expect(m.q('canvas-prop-delete')).not.toBeNull();
     expect(m.q('canvas-prop-sticky-color')).not.toBeNull();
     act(() => m.q('canvas-prop-ungroup')?.click());
@@ -896,7 +896,7 @@ describe('transform controls (ADR-0127)', () => {
     expect(delta[delta.length - 1]).toEqual({ insert: '\n', attributes: { list: 'bullet' } });
   });
 
-  it('an empty canvas offers the templates; one click inserts it, selects it and the card goes; the toolbar menu has the same five', async () => {
+  it('an empty canvas offers the templates; one click inserts it, selects it and the card goes; the toolbar menu has the same eight', async () => {
     const relay = new MockRelay();
     const m = await mount({ relay });
     await settle(100);
@@ -905,7 +905,7 @@ describe('transform controls (ADR-0127)', () => {
     expect(m.q('canvas-templates-button')).not.toBeNull();
     act(() => m.q('canvas-template-retro')?.click());
     await settle(400);
-    expect(relay.doc.getMap<Y.Map<unknown>>('objects').size).toBe(12);
+    expect(relay.doc.getMap<Y.Map<unknown>>('objects').size).toBe(17);
     expect(m.q('canvas-templates-card')).toBeNull();
     expect(m.q('canvas-props')).not.toBeNull(); // the inserted set is selected
   });
@@ -922,10 +922,10 @@ describe('transform controls (ADR-0127)', () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     const items = document.querySelectorAll('[data-testid="canvas-templates-menu"] [data-testid^="canvas-template-"]');
-    expect(items).toHaveLength(5);
+    expect(items).toHaveLength(8);
     act(() => (items[2] as HTMLElement).click());
     await settle(400);
-    expect(relay.doc.getMap<Y.Map<unknown>>('objects').size).toBe(8); // SWOT
+    expect(relay.doc.getMap<Y.Map<unknown>>('objects').size).toBe(17); // SWOT
   });
 
   it('a canvas that has objects shows no templates card, and it stays out of the way while the document loads', async () => {

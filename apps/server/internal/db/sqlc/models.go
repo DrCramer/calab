@@ -398,6 +398,7 @@ type Board struct {
 	ApprovalNotifyDelaySeconds int32
 	AiInstruction              string
 	AiFindDuplicates           bool
+	ApprovalGateOff            bool
 }
 
 type BoardCategory struct {
@@ -740,6 +741,7 @@ type CanvasItem struct {
 	TrashedAt   *time.Time
 	TrashedBy   *uuid.UUID
 	TrashedRoot bool
+	Emoji       string
 }
 
 type CanvasItemHead struct {
@@ -760,6 +762,7 @@ type CanvasItemHead struct {
 	TrashedAt   *time.Time
 	TrashedBy   *uuid.UUID
 	TrashedRoot bool
+	Emoji       string
 }
 
 type CanvasLink struct {
@@ -955,6 +958,8 @@ type Event struct {
 	CancelledAt     *time.Time
 	TempRoom        bool
 	TempRoomRetryAt *time.Time
+	SeriesID        *uuid.UUID
+	RecurrenceAt    *time.Time
 }
 
 type EventAttendee struct {
@@ -1113,6 +1118,37 @@ type MailOutbox struct {
 	Error     string
 }
 
+type McpOauthClient struct {
+	ID           string
+	Name         string
+	RedirectUris []string
+	CreatedIp    string
+	CreatedAt    time.Time
+	LastUsedAt   *time.Time
+}
+
+type McpOauthRequest struct {
+	ID            uuid.UUID
+	HandleHash    []byte
+	BrowserHash   []byte
+	ClientID      string
+	RedirectUri   string
+	CodeChallenge string
+	State         string
+	Resource      string
+	CreatedIp     string
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
+	UserID        *uuid.UUID
+	BoundSession  *uuid.UUID
+	CsrfHash      []byte
+	DecidedAt     *time.Time
+	CodeHash      []byte
+	CodeExpiresAt *time.Time
+	CodeUsedAt    *time.Time
+	SessionID     *uuid.UUID
+}
+
 type MemberAchievement struct {
 	ID            uuid.UUID
 	WorkspaceID   uuid.UUID
@@ -1130,6 +1166,12 @@ type MemberRole struct {
 	WorkspaceID uuid.UUID
 	UserID      uuid.UUID
 	RoleID      uuid.UUID
+}
+
+type MentionDismissal struct {
+	UserID    uuid.UUID
+	MessageID uuid.UUID
+	CreatedAt time.Time
 }
 
 type Message struct {
@@ -1154,6 +1196,7 @@ type Message struct {
 	InlineKeyboard   []byte
 	KeyboardRevision int64
 	ViaBotID         *uuid.UUID
+	Via              *string
 }
 
 type MessageAttachment struct {
@@ -1568,6 +1611,8 @@ type Session struct {
 	LocalAuthenticatedAt    *time.Time
 	RecoveryAuthenticatedAt *time.Time
 	AuthorityVersion        int64
+	Scope                   *string
+	McpClientID             *string
 }
 
 type SessionWorkspaceAssurance struct {
@@ -1868,6 +1913,7 @@ type TaskActivity struct {
 	CreatedAt time.Time
 	RuleID    *uuid.UUID
 	ViaBotID  *uuid.UUID
+	Via       *string
 }
 
 type TaskApprover struct {
@@ -2054,6 +2100,7 @@ type User struct {
 	TaskNotifyOff                  []string
 	TaskNotifyBots                 []uuid.UUID
 	CalendarZones                  []byte
+	DeletedAt                      *time.Time
 }
 
 type UserAttribution struct {
@@ -2068,11 +2115,32 @@ type UserAttribution struct {
 	CreatedAt   time.Time
 }
 
+type UserBlock struct {
+	UserID        uuid.UUID
+	BlockedUserID uuid.UUID
+	CreatedAt     time.Time
+}
+
 type UserNote struct {
 	AuthorID  uuid.UUID
 	SubjectID uuid.UUID
 	Text      string
 	UpdatedAt time.Time
+}
+
+type UserReport struct {
+	ID           uuid.UUID
+	WorkspaceID  uuid.UUID
+	ReporterID   *uuid.UUID
+	TargetUserID *uuid.UUID
+	MessageID    *uuid.UUID
+	RoomID       *uuid.UUID
+	MessageText  string
+	Reason       int16
+	Comment      string
+	CreatedAt    time.Time
+	ResolvedAt   *time.Time
+	ResolvedBy   *uuid.UUID
 }
 
 type UserStickerPack struct {
@@ -2216,6 +2284,9 @@ type Workspace struct {
 	OwnerSeesPrivate         bool
 	CanvasTrashDays          *int32
 	DefaultJoinLeaveSoundMax int32
+	UploadBurst              *int32
+	UploadPerHour            *int32
+	MaxFileMb                *int32
 }
 
 type WorkspaceAdminLog struct {

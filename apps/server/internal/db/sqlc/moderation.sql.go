@@ -144,7 +144,7 @@ func (q *Queries) IsBanned(ctx context.Context, arg IsBannedParams) (bool, error
 }
 
 const listBans = `-- name: ListBans :many
-SELECT b.workspace_id, b.user_id, b.email, b.reason, b.banned_by, b.created_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots, u.calendar_zones
+SELECT b.workspace_id, b.user_id, b.email, b.reason, b.banned_by, b.created_at, u.id, u.email, u.password_hash, u.display_name, u.avatar_file_id, u.status_text, u.settings, u.created_at, u.disabled_at, u.status_emoji, u.status_expires_at, u.is_guest, u.guest_expires_at, u.timezone, u.email_verified_at, u.pending_email, u.locale, u.presence_status, u.presence_until, u.is_bot, u.birthday_day, u.birthday_month, u.birthday_year, u.birthday_hidden, u.event_reminders, u.event_reminders_dnd, u.storage_quota_bytes, u.work_start_min, u.work_end_min, u.work_days, u.hide_message_text_in_notifications, u.username, u.phone, u.task_notify_off, u.task_notify_bots, u.calendar_zones, u.deleted_at
 FROM workspace_bans b
 JOIN users u ON u.id = b.user_id
 WHERE b.workspace_id = $1
@@ -208,6 +208,7 @@ func (q *Queries) ListBans(ctx context.Context, workspaceID uuid.UUID) ([]ListBa
 			&i.User.TaskNotifyOff,
 			&i.User.TaskNotifyBots,
 			&i.User.CalendarZones,
+			&i.User.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -242,7 +243,7 @@ SET suspended_at     = $1,
     suspended_reason = $2,
     suspended_by     = $3
 WHERE id = $4
-RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private, canvas_trash_days, default_join_leave_sound_max
+RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private, canvas_trash_days, default_join_leave_sound_max, upload_burst, upload_per_hour, max_file_mb
 `
 
 type SetWorkspaceSuspensionParams struct {
@@ -287,6 +288,67 @@ func (q *Queries) SetWorkspaceSuspension(ctx context.Context, arg SetWorkspaceSu
 		&i.OwnerSeesPrivate,
 		&i.CanvasTrashDays,
 		&i.DefaultJoinLeaveSoundMax,
+		&i.UploadBurst,
+		&i.UploadPerHour,
+		&i.MaxFileMb,
+	)
+	return i, err
+}
+
+const setWorkspaceUploadLimits = `-- name: SetWorkspaceUploadLimits :one
+UPDATE workspaces
+SET upload_burst    = $1,
+    upload_per_hour = $2,
+    max_file_mb     = $3
+WHERE id = $4
+RETURNING id, slug, name, icon_file_id, visibility, owner_id, created_at, default_audio_bitrate_kbps, default_max_stream_preset, default_max_streams, storage_quota_bytes, storage_used_bytes, allow_self_nickname, default_camera_limit, suspended_at, suspended_reason, suspended_by, time_format, sip_enabled, disk_trash_days, wiki_trash_days, temp_archive_days, owner_sees_private, canvas_trash_days, default_join_leave_sound_max, upload_burst, upload_per_hour, max_file_mb
+`
+
+type SetWorkspaceUploadLimitsParams struct {
+	Burst     *int32
+	PerHour   *int32
+	MaxFileMb *int32
+	ID        uuid.UUID
+}
+
+// The superadmin's upload limits of a workspace (ADR-0155); NULL = the server default.
+func (q *Queries) SetWorkspaceUploadLimits(ctx context.Context, arg SetWorkspaceUploadLimitsParams) (Workspace, error) {
+	row := q.db.QueryRow(ctx, setWorkspaceUploadLimits,
+		arg.Burst,
+		arg.PerHour,
+		arg.MaxFileMb,
+		arg.ID,
+	)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.IconFileID,
+		&i.Visibility,
+		&i.OwnerID,
+		&i.CreatedAt,
+		&i.DefaultAudioBitrateKbps,
+		&i.DefaultMaxStreamPreset,
+		&i.DefaultMaxStreams,
+		&i.StorageQuotaBytes,
+		&i.StorageUsedBytes,
+		&i.AllowSelfNickname,
+		&i.DefaultCameraLimit,
+		&i.SuspendedAt,
+		&i.SuspendedReason,
+		&i.SuspendedBy,
+		&i.TimeFormat,
+		&i.SipEnabled,
+		&i.DiskTrashDays,
+		&i.WikiTrashDays,
+		&i.TempArchiveDays,
+		&i.OwnerSeesPrivate,
+		&i.CanvasTrashDays,
+		&i.DefaultJoinLeaveSoundMax,
+		&i.UploadBurst,
+		&i.UploadPerHour,
+		&i.MaxFileMb,
 	)
 	return i, err
 }

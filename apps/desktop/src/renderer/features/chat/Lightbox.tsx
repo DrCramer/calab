@@ -9,6 +9,7 @@ import { platform } from '../../platform';
 import { useSession } from '../../stores/session';
 import { toast } from '../../stores/toasts';
 import { dragOutAttrs, dragOutHandlers } from './imageDragOut';
+import { useImageGestures } from './useImageGestures';
 import { dimsOf, fitFrame, isTap, lightboxLayers, stepImage, type Dims, type LightboxImage, type LoadState } from '../../lib/lightbox';
 
 /** A URL image saved through the standard download path (main applies quarantine / Mark-of-the-Web). */
@@ -139,13 +140,13 @@ export function Lightbox({
               <Download className="size-5" />
             </IconButton>
           </ViewerBar>
-          <div className="relative flex min-h-0 flex-1 items-center" onClick={closeOnBackdrop}>
+          <div className="relative flex min-h-0 flex-1 items-center overflow-hidden" onClick={closeOnBackdrop}>
             {gallery ? (
               <IconButton label={t('lightbox.prev')} onClick={() => step(-1)} disabled={index === 0} className={cx('z-[1] ml-2 shrink-0', onDark)}>
                 <ChevronLeft className="size-6" />
               </IconButton>
             ) : null}
-            <ImageStage key={img.fileId} img={img} onBackdrop={closeOnBackdrop} onClose={onClose} />
+            <ImageStage key={img.fileId} img={img} onBackdrop={closeOnBackdrop} onClose={onClose} hasPrev={index > 0} hasNext={index < images.length - 1} onStep={step} />
             {gallery ? (
               <IconButton label={t('lightbox.next')} onClick={() => step(1)} disabled={index === images.length - 1} className={cx('z-[1] mr-2 shrink-0', onDark)}>
                 <ChevronRight className="size-6" />
@@ -166,10 +167,16 @@ function ImageStage({
   img,
   onBackdrop,
   onClose,
+  hasPrev,
+  hasNext,
+  onStep,
 }: {
   img: LightboxImage;
   onBackdrop: (e: MouseEvent) => void;
   onClose: () => void;
+  hasPrev: boolean;
+  hasNext: boolean;
+  onStep: (delta: -1 | 1) => void;
 }): ReactNode {
   const [thumb, setThumb] = useState<LoadState>('loading');
   const [full, setFull] = useState<LoadState>('loading');
@@ -185,8 +192,11 @@ function ImageStage({
   const layers = lightboxLayers(thumb, full);
   // A click on the image closes like the backdrop; a press that moved (a drag) does not.
   const down = useRef<{ x: number; y: number } | null>(null);
+  // Touch / pen never close on a tap (a double tap zooms, board #118): swipe down or the button does.
+  const frameRef = useRef<HTMLDivElement>(null);
+  useImageGestures(frameRef, { hasPrev, hasNext, onStep, onClose });
   const onFrameDown = (e: PointerEvent): void => {
-    down.current = e.isPrimary ? { x: e.clientX, y: e.clientY } : null;
+    down.current = e.isPrimary && e.pointerType === 'mouse' ? { x: e.clientX, y: e.clientY } : null;
   };
   const onFrameClick = (e: MouseEvent): void => {
     const from = down.current;
@@ -232,10 +242,11 @@ function ImageStage({
     <div className="grid min-w-0 flex-1 self-stretch place-items-center px-6 pb-6 [container-type:size] mobile:px-2" onClick={onBackdrop}>
       <div
         data-testid="lightbox-frame"
+        ref={frameRef}
         data-state={full}
         onPointerDown={onFrameDown}
         onClick={onFrameClick}
-        className={cx('relative cursor-zoom-out overflow-hidden', frame && 'rounded-[var(--radius-card)] shadow-[var(--shadow-popover)]')}
+        className={cx('relative cursor-zoom-out touch-none overflow-hidden', frame && 'rounded-[var(--radius-card)] shadow-[var(--shadow-popover)]')}
         style={frame ?? { width: '100cqw', height: '100cqh' }}
       >
         {thumbSrc ? (

@@ -371,6 +371,35 @@ func TestCanvasPermissionsMatrix(t *testing.T) {
 }
 
 // Moves: order among siblings, into folders only, no cycles, the path, depth 32.
+func TestCanvasEmoji(t *testing.T) {
+	e := newEnv(t, ysync.Config{})
+	team := e.mkdir(e.alice, "", "Team")
+	board := e.create(e.alice, team.GetId(), "Plan")
+	e.ev.take()
+	// The structure right, as a rename: bob (WRITE only) may not set it on alice's folder.
+	e.must(403, e.bob, "PATCH", item(team.GetId()), &v1.UpdateCanvasItemRequest{Emoji: proto.String("🚀")}, nil)
+	var out v1.CanvasItemResponse
+	e.must(200, e.alice, "PATCH", item(team.GetId()), &v1.UpdateCanvasItemRequest{Emoji: proto.String(" 🚀 ")}, &out)
+	if out.GetItem().GetEmoji() != "🚀" || out.GetItem().GetName() != "Team" {
+		t.Fatalf("folder emoji answer: %v", out.GetItem())
+	}
+	if evs := e.ev.take(); len(evs) != 1 || evs[0].GetCanvasItemUpsert().GetItem().GetEmoji() != "🚀" {
+		t.Fatalf("emoji events: %v", evs)
+	}
+	e.must(200, e.alice, "PATCH", item(board.GetId()), &v1.UpdateCanvasItemRequest{Emoji: proto.String("🧭")}, nil)
+	var list v1.ListCanvasItemsResponse
+	e.must(200, e.bob, "GET", "/api/workspaces/"+e.ws.String()+"/canvas/items?parent="+team.GetId(), nil, &list)
+	if len(list.GetItems()) != 1 || list.GetItems()[0].GetEmoji() != "🧭" {
+		t.Fatalf("listing: %v", list.GetItems())
+	}
+	e.must(422, e.alice, "PATCH", item(board.GetId()), &v1.UpdateCanvasItemRequest{Emoji: proto.String("ab")}, nil)
+	// "" goes back to the icon.
+	e.must(200, e.alice, "PATCH", item(board.GetId()), &v1.UpdateCanvasItemRequest{Emoji: proto.String("")}, &out)
+	if out.GetItem().GetEmoji() != "" {
+		t.Fatalf("cleared emoji: %v", out.GetItem())
+	}
+}
+
 func TestCanvasMoveAndOrder(t *testing.T) {
 	e := newEnv(t, ysync.Config{})
 	ws := "/api/workspaces/" + e.ws.String()

@@ -39,6 +39,7 @@ export const CanvasLinkCard = memo(function CanvasLinkCard({ itemId }: { itemId:
     const at = s.items[itemId]?.updatedAt;
     return at ? timestampMs(at) : 0;
   });
+  const emoji = useCanvas((s) => s.items[itemId]?.emoji ?? '');
   const st = useCanvasRefs((s) => s.state[itemId]);
   useEffect(() => ensureCanvasItem(itemId), [itemId]);
   const view = refView(known, st);
@@ -49,7 +50,7 @@ export const CanvasLinkCard = memo(function CanvasLinkCard({ itemId }: { itemId:
       state={view}
       href={canvasUrl(itemId) ?? undefined}
       onOpen={() => openCanvasLink(itemId)}
-      icon={<Shapes className="size-5" strokeWidth={1.75} />}
+      icon={emoji ? <span className="text-[20px] leading-none">{emoji}</span> : <Shapes className="size-5" strokeWidth={1.75} />}
       title={view === 'loading' ? label : name || t('canvas.untitled')}
       sub={view === 'loading' ? t('wiki.pageLink.loading') : updated ? `${label} · ${t('canvasPhone.updated', { when: fmt.dayMonth(new Date(updated)) })}` : label}
       openLabel={t('wiki.card.open')}

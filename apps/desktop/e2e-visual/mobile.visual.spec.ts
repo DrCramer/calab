@@ -2,10 +2,11 @@ import { seedInlineButtons } from '../e2e-support/inline-buttons';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { AiState, FormerMemberReason, Plan, RecordingStatus, SipCallStatus, WorkspaceRole } from '@calaba/protocol';
+import { create } from '@bufbuild/protobuf';
+import { AiState, FileMetaSchema, FormerMemberReason, Plan, RecordingStatus, SipCallStatus, WorkspaceRole, ReportReason } from '@calaba/protocol';
 import { ts } from '../e2e-support/fixtures';
 import { CANVAS_PUBLIC_CODE, CODE_FIXTURE, IDS, MOCK_GPTUNNEL_WEB, WIKI_PUBLIC_CODE, startMockServer, type MockServer } from '../e2e-support/mock-server';
-import { expectAccessible, expectAssigneeStacks, layoutProblems, NOW, PASSWORD, seedAssigneeCounts, seedDays, seedLabelOverflow, seedReleases, settle } from './harness';
+import { expectAccessible, expectAssigneeStacks, layoutProblems, NOW, PASSWORD, seedAssigneeCounts, seedBotAuthoredTask, seedDays, seedLabelOverflow, seedReleases, seedRichComments, seedViaMcp, settle } from './harness';
 import { seedDay } from './calendarWeb';
 
 /**
@@ -270,8 +271,11 @@ async function mobileProblems(page: Page, main: boolean): Promise<string[]> {
   );
 }
 
-/** Screenshot (baseline phone) + layout invariants + axe for the current screen. */
-async function checkpoint(page: Page, name: string, opts: { main?: boolean; snapshot?: boolean; mask?: Locator[]; keyboard?: boolean } = {}): Promise<void> {
+/**
+ * Screenshot (baseline phone) + layout invariants + axe for the current screen. `axe: false` only for a
+ * known violation outside the screen's change (as the desktop checkpoint), with the reason at the call.
+ */
+async function checkpoint(page: Page, name: string, opts: { main?: boolean; snapshot?: boolean; mask?: Locator[]; keyboard?: boolean; axe?: boolean } = {}): Promise<void> {
   await settle(page);
   const dir = process.env['CALABA_MOBILE_SHOTS'];
   if (dir) {
@@ -285,7 +289,7 @@ async function checkpoint(page: Page, name: string, opts: { main?: boolean; snap
   // With the keyboard up the shell ends at the keyboard on purpose (m-keyboard checks that).
   const problems = [...generic, ...(await mobileProblems(page, opts.main ?? false))].filter((p) => !(opts.keyboard && p.startsWith('shell ')));
   expect.soft(problems, `layout invariants: ${name}`).toEqual([]);
-  await expectAccessible(page, name);
+  if (opts.axe !== false) await expectAccessible(page, name);
 }
 
 /** No programmatic focus on a phone: iOS scrolls / zooms to a focused field and raises the keyboard. */
@@ -475,6 +479,78 @@ test('m-chat-image', async ({ page }) => {
   await page.mouse.move(0, 0);
   await expectFeedFits(page);
   await checkpoint(page, 'm-chat-image-untyped', { main: true });
+
+  // Board #118: the viewer behaves like Telegram's. Touch is simulated with pointer events on the
+  // frame (Playwright's WebKit has no multi-touch); double tap uses real taps.
+  await untyped.click();
+  const box = page.getByTestId('lightbox');
+  const frame = box.getByTestId('lightbox-frame');
+  await expect(frame).toHaveAttribute('data-state', 'loaded');
+  const touch = (type: string, id: number, x: number, y: number): Promise<void> =>
+    frame.evaluate(
+      (el, a) => {
+        el.dispatchEvent(new PointerEvent(a.type, { bubbles: true, pointerId: a.id, pointerType: 'touch', isPrimary: a.id === 1, clientX: a.x, clientY: a.y }));
+      },
+      { type, id, x, y },
+    );
+  const center = (await frame.boundingBox()) ?? { x: 0, y: 0, width: 0, height: 0 };
+  const cx = center.x + center.width / 2;
+  const cy = center.y + center.height / 2;
+  // Pinch out: the picture grows about the fingers and fills the screen width.
+  await touch('pointerdown', 1, cx - 30, cy);
+  await touch('pointerdown', 2, cx + 30, cy);
+  for (let i = 1; i <= 6; i++) {
+    await touch('pointermove', 1, cx - 30 - i * 20, cy);
+    await touch('pointermove', 2, cx + 30 + i * 20, cy);
+  }
+  await touch('pointerup', 1, cx - 150, cy);
+  await touch('pointerup', 2, cx + 150, cy);
+  await expect.poll(async () => (await frame.boundingBox())?.width ?? 0).toBeGreaterThan(center.width * 2);
+  await checkpoint(page, 'm-lightbox-zoomed');
+  // Zoomed: a horizontal drag pans, it does not page (still the second photo).
+  await touch('pointerdown', 1, cx, cy);
+  await touch('pointermove', 1, cx - 80, cy);
+  await touch('pointerup', 1, cx - 80, cy);
+  await expect(box.getByRole('heading', { name: 'image.png' })).toBeVisible();
+  // Double tap zooms back out.
+  await page.touchscreen.tap(cx, cy);
+  await page.touchscreen.tap(cx, cy);
+  await expect.poll(async () => Math.round((await frame.boundingBox())?.width ?? 0)).toBe(Math.round(center.width));
+  // Fitted: a swipe right shows the previous photo, another one at the first photo does nothing.
+  await touch('pointerdown', 1, cx - 80, cy);
+  await touch('pointermove', 1, cx, cy);
+  await touch('pointermove', 1, cx + 120, cy);
+  await touch('pointerup', 1, cx + 120, cy);
+  const counter = box.locator('span.tabular-nums');
+  await expect(box.getByRole('heading', { name: 'IMG_2041.png' })).toBeVisible();
+  await expect(frame).toHaveAttribute('data-state', 'loaded');
+  await checkpoint(page, 'm-lightbox-paged');
+  const swipe = async (from: number, to: number): Promise<void> => {
+    await touch('pointerdown', 1, from, cy);
+    await touch('pointermove', 1, to, cy);
+    await touch('pointerup', 1, to, cy);
+  };
+  // The chat holds three photos (message order): one more swipe right reaches the first, the next does nothing.
+  await expect(counter).toHaveText('2 / 3');
+  await swipe(cx - 80, cx + 120);
+  await expect(counter).toHaveText('1 / 3');
+  await expect(frame).toHaveAttribute('data-state', 'loaded');
+  await swipe(cx - 80, cx + 120);
+  await expect(counter).toHaveText('1 / 3');
+  // Swipe left goes forward to the last one (then nothing more); swipe down closes.
+  await swipe(cx + 80, cx - 120);
+  await expect(counter).toHaveText('2 / 3');
+  await expect(frame).toHaveAttribute('data-state', 'loaded');
+  await swipe(cx + 80, cx - 120);
+  await expect(counter).toHaveText('3 / 3');
+  await expect(frame).toHaveAttribute('data-state', 'loaded');
+  await swipe(cx + 80, cx - 120);
+  await expect(counter).toHaveText('3 / 3');
+  await expect(box.getByRole('heading', { name: 'image.png' })).toBeVisible();
+  await touch('pointerdown', 1, cx, cy);
+  await touch('pointermove', 1, cx, cy + 200);
+  await touch('pointerup', 1, cx, cy + 200);
+  await expect(box).toHaveCount(0);
 });
 
 // CBF-66: a Disk folder link in a chat is its own card — name, who shared, what is inside, «Открыть».
@@ -730,6 +806,11 @@ test('m-home', async ({ page }) => {
   await seat('connected');
   const strip = page.getByTestId('mobile-voice-strip');
   await expect(strip).toBeVisible();
+  // #116: only the voice room I am in is tinted in the list; it follows a switch and clears on leave.
+  const current = list.locator('[data-testid="phone-room-row"][data-current]');
+  await expect(current).toHaveCount(1);
+  await expect(current).toHaveAttribute('data-room', IDS.rooms.call);
+  await checkpoint(page, 'm-home-in-voice');
   await page.evaluate(() => {
     const w = window as unknown as { __calabaVoiceRecovery?: (what: string) => void };
     w.__calabaVoiceRecovery?.('recovering');
@@ -747,6 +828,18 @@ test('m-home', async ({ page }) => {
   await expect(strip.getByTestId('mobile-voice-status')).toHaveText('Вас не слышно');
   await expect(page.getByTestId('toast')).toHaveCount(1); // no mic toast
   await checkpoint(page, 'm-voice-recovery-unheard');
+});
+
+// Bug #146: a room with an unread @mention carries the count badge, a plainly unread one only the bold name.
+test('m-home-mentions', async ({ page }) => {
+  await signedIn(page);
+  const list = page.getByTestId('phone-room-list');
+  await expect(list.getByTestId('phone-room-row').first()).toBeVisible();
+  mock.injectMessage({ roomId: IDS.rooms.call, authorId: IDS.users.vera, content: 'Обычное непрочитанное' });
+  mock.injectMessage({ roomId: IDS.rooms.dev, authorId: IDS.users.vera, content: `@${IDS.users.anna} посмотришь макет?` });
+  await expect(page.getByTestId('phone-room-row').filter({ hasText: 'разработка' }).locator('[data-count-badge]')).toBeVisible();
+  await page.mouse.move(0, 0);
+  await checkpoint(page, 'm-home-mentions');
 });
 
 // ADR-0073 §4: people in the room's voice, I am not — the banner under the header with «Присоединиться».
@@ -775,6 +868,18 @@ test('m-room-voice-banner', async ({ page }) => {
   for (const row of await rows.all()) expect(Math.round((await row.boundingBox())?.height ?? 0), 'a 56 px person row').toBe(56);
   await expect(card.getByTestId('voice-people-join')).toBeVisible();
   await checkpoint(page, 'm-voice-people');
+  // ADR-0150: Вера's connection is lost, her seat is kept: the card row dimmed with «нет связи»,
+  // her avatar dimmed in the banner and header stacks.
+  mock.setVoiceState({ userId: IDS.users.vera, roomId: IDS.rooms.call, connectionLost: true });
+  await expect(rows.nth(1).locator('[data-voice-icon="connection-lost"]')).toBeVisible();
+  await checkpoint(page, 'm-voice-people-lost');
+  await page.keyboard.press('Escape');
+  await expect(card).toHaveCount(0);
+  await expect(banner.locator('[data-connection-lost]')).toHaveCount(1);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await checkpoint(page, 'm-room-voice-banner-lost', { main: true });
+  await stack.tap();
+  await expect(card).toBeVisible();
   // A tap on a person: their member menu, a level over the card; back closes one level at a time.
   await rows.first().tap();
   await expect(page.getByRole('menu')).toBeVisible();
@@ -832,6 +937,13 @@ test('m-settings-profile', async ({ page }) => {
   await settings.getByTestId('username-input').fill('boris_p');
   await expect(settings.getByTestId('username-hint')).toHaveText('Этот ник уже занят');
   await checkpoint(page, 'm-settings-profile', { snapshot: false });
+  // ADR-0153: the last card «Удаление аккаунта» and its dialog (Anna owns a workspace: the blocker).
+  const entry = settings.getByTestId('delete-account');
+  await entry.scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-settings-delete-entry', { snapshot: false });
+  await entry.tap();
+  await expect(page.getByRole('dialog', { name: 'Удалить аккаунт?' }).getByTestId('delete-account-blocked')).toBeVisible();
+  await checkpoint(page, 'm-settings-delete', { snapshot: false });
 });
 
 // ADR-0073 §1: «Профиль» (owner 06.10: the former «Я» tab, now the fifth tab «Профиль» with my avatar, owner 07.10) — the
@@ -952,6 +1064,14 @@ test('m-calendar-day', async ({ page }) => {
   await longPress(page.getByTestId('event-block').filter({ hasText: 'Планёрка' }));
   await expectMenuCard(page, 'm-calendar-event-menu');
   await expect(page.getByTestId('event-panel')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  // ADR-0157: cancelling an occurrence of a series asks «Только эту / Всю серию».
+  await page.getByTestId('event-block').filter({ hasText: 'Стендап' }).first().tap();
+  await page.getByTestId('event-panel').getByTestId('event-cancel').tap();
+  await expect(page.getByTestId('choice-following')).toBeVisible();
+  await checkpoint(page, 'm-calendar-series-scope', { snapshot: false });
+  await page.getByRole('button', { name: 'Отмена' }).tap();
+  await expect(page.getByTestId('choice-following')).toHaveCount(0);
 });
 
 // Board #85: two extra zones as narrow muted columns left of the day's scale (compact offsets),
@@ -970,6 +1090,9 @@ test('m-calendar-zones', async ({ page }) => {
   await openProfile(page);
   await page.getByTestId('phone-profile-calendar').tap();
   await expect(page.getByTestId('cal-zone-label')).toHaveCount(2);
+  // CBF-165: «Первый день недели» sits first in the section.
+  await expect(page.getByRole('radio', { name: 'Понедельник' })).toBeChecked();
+  await checkpoint(page, 'm-settings-calendar-week');
   await page.getByTestId('cal-zone-label').last().evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await checkpoint(page, 'm-settings-calendar-zones');
 });
@@ -1133,6 +1256,23 @@ test('m-boards-list', async ({ page }) => {
   await checkpoint(page, 'm-boards-task-release');
 });
 
+// Board #115: the bot's «act on your behalf» request in the task screen and its window.
+test('m-boards-bot-consent', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  seedBotAuthoredTask(mock);
+  await signedIn(page);
+  await tab(page, 'boards');
+  await page.getByTestId('phone-boards').getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).getByText('Эхо в звонке').tap();
+  const block = page.getByTestId('task-panel').getByTestId('bot-consent-prompt');
+  await block.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await expect(block).toBeVisible();
+  await checkpoint(page, 'm-boards-bot-consent');
+  await block.getByTestId('bot-consent-review').tap();
+  await expect(page.getByTestId('bot-consent-dialog')).toBeVisible();
+  await checkpoint(page, 'm-boards-bot-consent-dialog');
+});
+
 // Owner 07.10: the create dialog has the start date (when the board's dates are on).
 test('m-boards-create', async ({ page }) => {
   mock.setClock(NOW.getTime());
@@ -1172,12 +1312,22 @@ test('m-boards-smart', async ({ page }) => {
   await expect(page.getByTestId('smart-task-refusal')).toContainText('Похоже на дубль задачи CAL-3');
   await expect(page.getByTestId('smart-task-text')).toHaveValue('Оплатить счёт поставщика — похоже, дубль');
   await checkpoint(page, 'm-boards-smart-refused', { keyboard: true });
+  // Bug #152: no answer in time — the cause and the code / status / request id to quote.
+  await page.getByTestId('smart-task-text').fill('Оплатить счёт поставщика — таймаут');
+  await page.getByTestId('smart-task-submit').tap();
+  await expect(page.getByTestId('smart-task-error-ref')).toHaveText('Для поддержки: UNAVAILABLE · 504 · 7f3c9a1e5b2d4c6f8a0b1c2d');
+  await checkpoint(page, 'm-boards-smart-error', { keyboard: true });
 });
 
 test('m-boards-task', async ({ page }) => {
   mock.setClock(NOW.getTime());
   const cal4 = mock.boards.taskByKey('CAL-4');
   if (cal4) seedDays(mock, cal4.task.roomId); // #87: CAL-4's comments over several days
+  const cal3 = mock.boards.taskByKey('CAL-3');
+  if (cal3) {
+    cal3.task.attachments = [create(FileMetaSchema, { id: IDS.files.sheet, workspaceId: IDS.workspaces.main, name: 'График отпусков 2026.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 19n })];
+    cal3.task.attachmentCount = 1;
+  }
   await signedIn(page);
   // The «Доски» tab (ADR-0073, owner 06.10): the list of the open workspace, a board is pushed.
   await tab(page, 'boards');
@@ -1196,6 +1346,10 @@ test('m-boards-task', async ({ page }) => {
   const panel = page.getByTestId('task-panel');
   await expect(panel.getByTestId('assignee-row')).toHaveCount(2);
   await checkpoint(page, 'm-boards-task');
+  // «Скачать» on a description's attachment: always visible on the phone (no hover).
+  await expect(panel.getByTestId('task-attachment-download')).toBeVisible();
+  await panel.getByTestId('task-attachment').scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-boards-task-attachment');
   // Owner 23.10: a tap on the description edits it in place in the wiki's editor («Готово» under it).
   await panel.getByTestId('task-description').tap();
   const prose = panel.getByTestId('task-description-editor').locator('.wiki-prose');
@@ -1209,7 +1363,8 @@ test('m-boards-task', async ({ page }) => {
 test('m-boards-task-desc-wysiwyg', async ({ page }) => {
   mock.setClock(NOW.getTime());
   const cal4 = mock.boards.taskByKey('CAL-4');
-  if (cal4) cal4.task.description = 'Эхо пропало после правки 🎉 подробности на https://calab.io/docs\n\nВторой абзац.\n\n- первый **жирный** пункт\n- второй пункт';
+  if (cal4) cal4.task.description = 'Эхо пропало после правки 🎉 подробности на https://calab.io/docs\n\n\nВторой абзац.\n\n- первый **жирный** пункт\n- второй пункт\n\n| Поле | Тип | Обязательное | Описание |\n| --- | --- | --- | --- |\n| id | **uuid** | да | первичный ключ задачи |\n| имя | text | | |';
+  // Board #134: a table is drawn in read mode like in the editor; a wide one scrolls inside the description.
   await signedIn(page);
   await tab(page, 'boards');
   const nav = page.getByTestId('phone-boards');
@@ -1218,11 +1373,12 @@ test('m-boards-task-desc-wysiwyg', async ({ page }) => {
   const panel = page.getByTestId('task-panel');
   const read = panel.getByTestId('task-description');
   await expect(read.locator('li')).toHaveCount(2);
+  await expect(read.locator('table td')).toHaveCount(8);
   // Block geometry relative to the first paragraph (the keyboard may scroll the panel).
   const boxes = async (root: Locator): Promise<number[][]> => {
     const first = await root.locator('p').first().boundingBox();
     const out: number[][] = [];
-    for (const sel of ['p >> nth=1', 'li >> nth=0', 'li >> nth=1']) {
+    for (const sel of ['p >> nth=1', 'li >> nth=0', 'li >> nth=1', '.tableWrapper', 'th >> nth=1', 'td >> nth=4']) {
       const b = await root.locator(sel).boundingBox();
       out.push(b && first ? [b.x - first.x, b.y - first.y, b.width, b.height] : []);
     }
@@ -1256,7 +1412,7 @@ test('m-boards-task-history', async ({ page }) => {
   await tab(page, 'boards');
   const nav = page.getByTestId('phone-boards');
   await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
-  await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).tap();
+  await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).getByText('Эхо в звонке').tap(); // the title: the row's centre is the due date
   const section = page.getByTestId('task-panel').getByTestId('task-activity');
   await section.getByRole('radio', { name: 'История' }).tap();
   const rows = section.getByTestId('history-row');
@@ -1265,6 +1421,38 @@ test('m-boards-task-history', async ({ page }) => {
   await expect(section.getByTestId('history-diff')).toBeVisible();
   await section.evaluate((el) => el.scrollIntoView({ block: 'start' }));
   await checkpoint(page, 'm-boards-task-history');
+  // ADR-0156: «(через бота Погода · MCP)» / «(через MCP)» in the history and on the comments.
+  seedViaMcp(mock);
+  await page.getByTestId('task-panel').getByTestId('phone-back').tap();
+  await expect(page.getByTestId('task-panel')).toHaveCount(0);
+  await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).getByText('Эхо в звонке').tap();
+  await section.getByRole('radio', { name: 'История' }).tap();
+  await expect(section.locator('[data-via-mcp]')).toHaveCount(2);
+  await section.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await checkpoint(page, 'm-boards-task-via-mcp');
+  await section.getByRole('radio', { name: 'Комментарии' }).tap();
+  const panel = page.getByTestId('task-panel');
+  await expect(panel.locator('[data-message-id] [data-via-mcp]')).toHaveCount(3);
+  await panel.locator('[data-message-id]').filter({ hasText: 'Взял в работу' }).scrollIntoViewIfNeeded();
+  await checkpoint(page, 'm-boards-task-comments-via-mcp');
+});
+
+// Board #148: a picture and pipe tables in the comments; the wide table scrolls inside its bubble.
+test('m-boards-task-comments-rich', async ({ page }) => {
+  mock.setClock(NOW.getTime());
+  await signedIn(page);
+  seedRichComments(mock);
+  await tab(page, 'boards');
+  const nav = page.getByTestId('phone-boards');
+  await nav.getByTestId('board-row').filter({ hasText: 'Разработка' }).getByRole('button').first().tap();
+  await page.getByTestId('list-row').filter({ hasText: 'CAL-3' }).getByText('Эхо в звонке').tap();
+  const panel = page.getByTestId('task-panel');
+  await expect(panel.locator('table')).toHaveCount(2);
+  const wide = panel.locator('.tableWrapper').last();
+  await wide.scrollIntoViewIfNeeded();
+  expect(await wide.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  // axe off: label-content-name-mismatch on the task-list rows behind the panel, not this change (the desktop twin skips it too).
+  await checkpoint(page, 'm-boards-task-comments-rich', { axe: false });
 });
 
 // The kanban on a phone: columns a screen wide, swiped horizontally with snap (ADR-0042 §5).
@@ -1418,6 +1606,24 @@ test('m-menu', async ({ page }) => {
   await page.getByTestId('message-read-by').tap();
   await expect(page.getByRole('menu').getByTestId('read-by-row')).toHaveCount(2);
   await checkpoint(page, 'm-message-read-by');
+  // ADR-0154: «Пожаловаться…» on someone else's message → the report dialog as a centred card.
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await page.getByText('Готово, выдал.').dispatchEvent('contextmenu', { clientX: 120, clientY: 400 });
+  await page.getByTestId('message-report').tap();
+  const report = page.getByTestId('report-dialog');
+  await expect(report).toBeVisible();
+  await report.getByTestId(`report-reason-${ReportReason.SPAM}`).tap();
+  await checkpoint(page, 'm-report-dialog');
+  // ADR-0162: «Изменить» on a message of my own bot («Погода»).
+  await page.keyboard.press('Escape');
+  await expect(report).toHaveCount(0);
+  mock.seedBots();
+  mock.injectMessage({ roomId: IDS.rooms.general, authorId: IDS.bots.weather, content: 'Завтра +3, без осадков.' });
+  await feedToBottom(page);
+  await page.getByText('Завтра +3, без осадков.').dispatchEvent('contextmenu', { clientX: 120, clientY: 400 });
+  await expect(page.getByTestId('message-edit')).toBeVisible();
+  await checkpoint(page, 'm-message-menu-bot');
 });
 
 // Owner 07.10: a sub-level («+» → «Создать задачу ▸») opens by a tap only — never on hover — as a
@@ -1575,6 +1781,14 @@ test('m-dm-list', async ({ page }) => {
   await expect(list.getByRole('button')).toHaveCount(2);
   await expect(nav.getByTestId('dm-archive').getByRole('button', { name: 'Архив — 1' })).toHaveAttribute('aria-expanded', 'false');
   await checkpoint(page, 'm-dm-list');
+
+  // CBF-159: the field at the top of the tab searches the messages of my DMs.
+  await nav.getByTestId('dm-search').fill('ре');
+  await expect(nav.getByTestId('dm-search-hits').getByTestId('dm-hit').first()).toBeVisible();
+  await checkpoint(page, 'm-dm-search');
+  await nav.getByTestId('dm-search').fill('qzxw');
+  await expect(nav.getByTestId('dm-search-empty')).toBeVisible();
+  await checkpoint(page, 'm-dm-search-empty');
 });
 
 // Count badges (owner 07.10): 1 and 2 digits are perfect circles, 99+ is a pill; tab bar and DM rows.
@@ -1700,6 +1914,14 @@ test('m-dm-chat', async ({ page }) => {
   await expectNoFieldFocus(page, 'dm open');
   await feedToBottom(page);
   await checkpoint(page, 'm-dm-chat', { main: true });
+  // ADR-0154: «⋯» → «Заблокировать» → the DM shows the unblock note instead of the composer and
+  // Борис's messages collapse.
+  await page.getByTestId('dm-actions').tap();
+  await page.getByTestId('dm-user-block').tap();
+  await page.getByRole('button', { name: 'Заблокировать', exact: true }).tap();
+  await expect(page.getByTestId('composer-blocked')).toBeVisible();
+  await expect(page.getByTestId('message-hidden').first()).toBeVisible();
+  await checkpoint(page, 'm-dm-blocked');
 });
 
 test('m-call-incoming', async ({ page }) => {
@@ -1778,6 +2000,13 @@ test('m-ws-switcher', async ({ page }) => {
   await expect(menu.getByRole('menuitem', { name: 'Найти пространство' })).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: 'Настройки', exact: true })).toBeVisible();
   await checkpoint(page, 'm-ws-switcher');
+  // Board #145: READY leaves the open workspace out while its access lease is pending — «Подключение…»
+  // on the tab root, never «Создать пространство».
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  mock.readyPending(IDS.workspaces.main);
+  await expect(page.getByTestId('shell-connecting')).toBeVisible();
+  await checkpoint(page, 'm-ws-pending');
 });
 
 test('m-dialog', async ({ page }) => {
@@ -2633,6 +2862,15 @@ test('m-disk-item-menu', async ({ page }) => {
   await menu.getByTestId('disk-menu-move').tap();
   await expect(page.getByRole('dialog')).toBeVisible();
   await checkpoint(page, 'm-disk-move', { snapshot: false });
+  // CBF-161: «Доступ» of a restricted folder with the third level «Управление».
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByTestId('disk-row').filter({ hasText: 'Договоры' }).getByTestId('disk-item-more').tap();
+  await page.getByTestId('disk-item-menu').getByTestId('disk-menu-access').tap();
+  const boris = page.getByTestId('disk-access-row').filter({ hasText: 'Борис' }).getByTestId('disk-access-level');
+  await boris.selectOption('manage');
+  await expect(boris).toHaveValue('manage');
+  await checkpoint(page, 'm-disk-share-levels', { snapshot: false });
 });
 
 test('m-disk-trash', async ({ page }) => {

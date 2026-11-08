@@ -309,6 +309,14 @@ var eventScope = map[protoreflect.Name]bool{
 	// call's room visible) and the call's parties; the missed badge on the member's user channel,
 	// lease-gated by its workspace like every scoped event.
 	"sip_journal_entry": true, "sip_missed_changed": true,
+	// Reports (ADR-0154): workspace channel, routed to MANAGE_MEMBERS (not guests) like bans.
+	"workspace_report_create": true, "workspace_report_update": true,
+	// The caller's own block list changed on another device (ADR-0154): their user channel
+	// only, personal like notes.
+	"user_blocks_update": false,
+	// The caller dismissed inbox items on another device (CBF-155, ADR-0163): their user
+	// channel only, personal like notes.
+	"inbox_dismiss": false,
 }
 
 // knownScopedEvent: the variant is explicitly classified as workspace-scoped; an absent
@@ -351,7 +359,8 @@ func (h *Hub) prepareEvent(ctx context.Context, enc *encEvent) {
 		case *v1.DispatchEvent_UserUpdate, *v1.DispatchEvent_PresenceUpdate,
 			*v1.DispatchEvent_CallRing, *v1.DispatchEvent_CallState,
 			*v1.DispatchEvent_NotesCreate, *v1.DispatchEvent_NotesUpdate, *v1.DispatchEvent_NotesDelete,
-			*v1.DispatchEvent_BotCreate, *v1.DispatchEvent_BotUpdate, *v1.DispatchEvent_BotDelete:
+			*v1.DispatchEvent_BotCreate, *v1.DispatchEvent_BotUpdate, *v1.DispatchEvent_BotDelete,
+			*v1.DispatchEvent_UserBlocksUpdate, *v1.DispatchEvent_InboxDismiss:
 			scopes[uuid.Nil] = true
 		case *v1.DispatchEvent_EventReminder:
 			// A reminder of the user's own imported CalDAV event (ADR-0045 amendment 3): personal,
@@ -504,6 +513,13 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 			h.identityRemoveWorkspace(s, ws, identitypolicy.Decision{Reason: identitypolicy.MembershipRequired}, err)
 		}
 	}
+	// A workspace left out of READY as pending (board #145) whose membership ended: the client
+	// keeps it as connecting until told.
+	for _, ws := range s.omittedWorkspaces() {
+		if !present[ws] && s.endOmission(ws) {
+			h.identityRemoveWorkspace(s, ws, identitypolicy.Decision{Reason: identitypolicy.MembershipRequired}, nil)
+		}
+	}
 	stubs := map[uuid.UUID]bool{} // held as billing stubs (not subscribed)
 	for _, ws := range s.billingStubs() {
 		if old[ws] {
@@ -530,6 +546,16 @@ func (h *Hub) enforceIdentitySession(ctx context.Context, s *Session) {
 		} else if stubs[ws] && !identityTransient(decision, err) && !billingDenied(decision, err) && !decision.Allowed {
 			// A billing stub that is now denied for another reason (left, banned, SSO): gone.
 			h.identityRemoveWorkspace(s, ws, decision, err)
+		} else if !identityTransient(decision, err) && (err != nil || !decision.Allowed) && s.endOmission(ws) {
+			// Left out of READY as pending (board #145) and now denied: the client never had
+			// its content, so the access status alone, as READY carries a denied workspace (no
+			// WORKSPACE_DELETE: the client keeps it selected on the lock screen). Unpaid
+			// billing is shown as a stub, which only READY builds: a fresh one.
+			if billingDenied(decision, err) {
+				s.requireResync("identity resync required")
+				return
+			}
+			s.dispatch(uuid.New(), &v1.DispatchEvent{Event: &v1.DispatchEvent_WorkspaceIdentityAccessUpdate{WorkspaceIdentityAccessUpdate: &v1.WorkspaceIdentityAccessUpdate{SessionId: s.asess.String(), Access: identityAccessStatus(ws, decision, err, s.principal)}}})
 		}
 	}
 	for i := 0; i < len(due) && ctx.Err() == nil; i++ {

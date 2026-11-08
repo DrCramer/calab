@@ -1,19 +1,19 @@
 import * as Popover from '../../components/radix/popover';
-import { AtSign, Hash, Inbox, SquareCheckBig, Volume2 } from 'lucide-react';
+import { AtSign, Hash, Inbox, SquareCheckBig, Volume2, X } from 'lucide-react';
 import { TaskPriority, type Message, type Task, type TaskNoticeEntry } from '@calaba/protocol';
 import { memo, useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../../components/Avatar';
-import { CountBadge, Empty, Spinner, Tip, cx } from '../../components/ui';
+import { CountBadge, Empty, IconButton, Spinner, Tip, cx } from '../../components/ui';
 import { t } from '../../i18n';
-import { api } from '../../lib/api/endpoints';
 import { fmt, toDate } from '../../lib/format';
 import { systemPreview } from '../../lib/recording';
-import { noticeText, openTaskAnywhere } from '../../services/boards';
-import { loadMentions } from '../../services/mentions';
+import { noticeText } from '../../services/boards';
+import { openTaskOrTab } from '../../services/taskTab';
+import { dismissInboxItem, loadMentions, markReadUpTo } from '../../services/mentions';
 import { useBoards } from '../../stores/boards';
 import { useInbox } from '../../stores/inbox';
-import { inboxBadgeCount, inboxRows, unreadInboxItems } from '../../stores/inboxUnread';
+import { inboxBadgeCount, inboxRows, unreadInboxItems, unreadNoticeTasks } from '../../stores/inboxUnread';
 import { idAfter, isVoice, useRooms } from '../../stores/rooms';
 import { useSession } from '../../stores/session';
 import { useUi } from '../../stores/ui';
@@ -22,19 +22,12 @@ import { useChatView } from '../chat/chatView';
 import { usePreviewText } from '../chat/mentionText';
 import { popoverBox } from './menu';
 
-
-/** Moves the room's read marker forward to `messageId` (local + server; markers never go back). */
-function markReadUpTo(roomId: string, messageId: string): void {
-  useRooms.getState().setRead(roomId, messageId);
-  void api.messages.markRead(roomId, messageId).catch(() => undefined);
-}
-
 /**
  * Mentions inbox (docs/09 #1, ADR-0141): chat mentions (GET /api/me/mentions, all workspaces) and
  * task notices (GET /api/me/task-notices), merged with the live ones, newest first. Read items
- * stay listed; unread ones carry a dot. The badge counts unread mentions: «read» is the room's
- * read marker being at or after the mention (stores/inboxUnread.ts); unread tasks are counted by
- * the boards' «Непрочитанное».
+ * stay listed; unread ones carry a dot. The badge counts unread mentions («read» is the room's
+ * read marker being at or after the mention, stores/inboxUnread.ts) plus the tasks with an unread
+ * notice here (the boards' unread set, one per task).
  */
 export function InboxButton(): ReactNode {
   const ready = useSession((s) => s.ready);
@@ -75,7 +68,11 @@ function InboxBadge(): ReactNode {
   const items = useInbox((s) => s.items);
   const loaded = useInbox((s) => s.loaded);
   const hasMore = useInbox((s) => s.hasMore);
-  const total = useRooms((s) => inboxBadgeCount({ items, loaded, hasMore }, s.readState, s.mentions, s.byId));
+  const notices = useInbox((s) => s.notices);
+  const chats = useRooms((s) => inboxBadgeCount({ items, loaded, hasMore }, s.readState, s.mentions, s.byId));
+  // Unread task notices count like mentions (bug #146): the badge is the whole inbox's unread.
+  const tasks = useBoards((s) => unreadNoticeTasks(notices, s.unread));
+  const total = chats + tasks;
   if (total <= 0) return null;
   return (
     <CountBadge count={total} data-testid="inbox-badge" role="status" aria-label={`${t('shell.inbox')}: ${total}`} className="absolute -right-1 -top-1" />
@@ -161,6 +158,21 @@ function UnreadDot(): ReactNode {
   return <span role="img" aria-label={t('shell.inboxUnread')} className="size-2 shrink-0 self-center rounded-full bg-accent" />;
 }
 
+/** The card's own button: room on the right for the ✕ (44 px on the phone). */
+const ROW_BTN = 'flex w-full items-start gap-2.5 rounded-[var(--radius-row)] py-2 pl-2 pr-9 text-left hover:bg-hover mobile:pr-12';
+
+/**
+ * The ✕ in the card's top-right corner (CBF-155, ADR-0163): a sibling of the card's button (a
+ * button cannot nest one), outside Popover.Close so the popover stays open.
+ */
+function DismissButton({ onClick }: { onClick: () => void }): ReactNode {
+  return (
+    <IconButton label={t('shell.inboxDismiss')} size="sm" data-inbox-dismiss onClick={onClick} className="absolute right-0.5 top-0.5">
+      <X className="size-4" strokeWidth={1.75} aria-hidden />
+    </IconButton>
+  );
+}
+
 const InboxItem = memo(function InboxItem({ m }: { m: Message }): ReactNode {
   const room = useRooms((s) => s.byId[m.roomId]);
   const unread = useRooms((s) => idAfter(m.id, s.readState[m.roomId]));
@@ -172,11 +184,12 @@ const InboxItem = memo(function InboxItem({ m }: { m: Message }): ReactNode {
   const preview = usePreviewText(wsId, m.content);
   const text = systemPreview(m) || preview || t('chat.attachment');
   const openRoom = useUi((s) => s.openRoom);
+  const dismiss = useCallback(() => void dismissInboxItem({ m }), [m]);
   if (!room) return null;
   const Icon = isVoice(room) ? Volume2 : Hash;
   const d = toDate(m.createdAt);
   return (
-    <li>
+    <li className="relative">
       <Popover.Close asChild>
         <button
           type="button"
@@ -186,7 +199,7 @@ const InboxItem = memo(function InboxItem({ m }: { m: Message }): ReactNode {
             openRoom(room.workspaceId, room.id);
             useChatView.getState().requestJump(room.id, m.id);
           }}
-          className="flex w-full items-start gap-2.5 rounded-[var(--radius-row)] px-2 py-2 text-left hover:bg-hover"
+          className={ROW_BTN}
         >
           <Avatar userId={m.authorId} name={author} fileId={avatar || undefined} size={28} />
           <span className="min-w-0 flex-1">
@@ -209,6 +222,7 @@ const InboxItem = memo(function InboxItem({ m }: { m: Message }): ReactNode {
           </span>
         </button>
       </Popover.Close>
+      <DismissButton onClick={dismiss} />
     </li>
   );
 });
@@ -231,13 +245,17 @@ const NoticeItem = memo(function NoticeItem({ e, latest }: { e: TaskNoticeEntry;
   const text = n ? noticeText(task ?? { ...NO_TASK, workspaceId: e.workspaceId }, n) : '';
   const source = `${e.taskKey} · ${e.taskTitle}`;
   const d = toDate(e.createdAt);
+  const dismiss = useCallback(() => void dismissInboxItem({ e, latest }), [e, latest]);
   return (
-    <li>
+    <li className="relative">
       <Popover.Close asChild>
         <button
           type="button"
-          onClick={() => openTaskAnywhere({ id: e.taskId, workspaceId: e.workspaceId, boardId: e.boardId })}
-          className="flex w-full items-start gap-2.5 rounded-[var(--radius-row)] px-2 py-2 text-left hover:bg-hover"
+          onClick={(ev) => {
+            // Ctrl/⌘-click: a background tab; the preventDefault keeps the popover open (Popover.Close honours it).
+            if (openTaskOrTab({ id: e.taskId, workspaceId: e.workspaceId, boardId: e.boardId }, ev)) ev.preventDefault();
+          }}
+          className={ROW_BTN}
         >
           {actorId ? (
             <Avatar userId={actorId} name={actor} fileId={avatar || undefined} size={28} />
@@ -266,6 +284,7 @@ const NoticeItem = memo(function NoticeItem({ e, latest }: { e: TaskNoticeEntry;
           </span>
         </button>
       </Popover.Close>
+      <DismissButton onClick={dismiss} />
     </li>
   );
 });

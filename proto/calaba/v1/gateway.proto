@@ -17,6 +17,7 @@ import "calaba/v1/media.proto";
 import "calaba/v1/message.proto";
 import "calaba/v1/permissions.proto";
 import "calaba/v1/recording.proto";
+import "calaba/v1/report.proto";
 import "calaba/v1/sip.proto";
 import "calaba/v1/room.proto";
 import "calaba/v1/sound.proto";
@@ -329,6 +330,13 @@ message DispatchEvent {
     SipJournalChange sip_journal_entry = 113;
     // The member's missed calls badge changed: their user channel only.
     SipMissedChanged sip_missed_changed = 114;
+    // Report and block users (ADR-0154).
+    WorkspaceReportCreate workspace_report_create = 120;
+    WorkspaceReportUpdate workspace_report_update = 121;
+    UserBlocksUpdate user_blocks_update = 122;
+    // The caller dismissed inbox items on another device (CBF-155, ADR-0163): their user
+    // channel only, personal like notes.
+    InboxDismiss inbox_dismiss = 123;
   }
 }
 
@@ -375,6 +383,12 @@ message VoiceState {
   // user talks on an inbound phone call - connected, nothing published or received. Others show
   // the row dimmed with a phone icon. Set through PATCH /api/voice/self.
   bool on_phone = 13;
+  // Connection lost (ADR-0150): every device of the user in this room dropped out of LiveKit
+  // involuntarily (a frozen phone, a lost network) and the server keeps the seat for
+  // VOICE_LOST_GRACE (60 s by default). Others show the row dimmed with «no connection», play no
+  // leave cue, and no join cue when the device comes back in time. The seat still counts against
+  // the room's user_limit. When the grace ends the state goes like a leave (empty room_id).
+  bool connection_lost = 14;
 }
 
 message Presence {
@@ -518,6 +532,13 @@ message Ready {
   // as BOT_CREATE with owner_user_id = the recipient; a deleted one may stay until the next READY
   // (the server decides anyway).
   repeated string my_bot_ids = 19;
+  // Board #145: the user's workspaces left out of this READY without a verdict yet (the
+  // access check or the member read failed transiently, or invalidations kept racing the
+  // evaluation). Not a removal and no data: the identity sweep later sends WORKSPACE_CREATE
+  // (leased), the access status (denied), WORKSPACE_DELETE (no longer a member) or makes the
+  // session resync. The client keeps such a workspace selected and shows it as connecting
+  // meanwhile; empty from servers before #145.
+  repeated string pending_workspace_ids = 20;
 }
 
 // A guest knocks on a room (ADR-0040); to the room's deciders.

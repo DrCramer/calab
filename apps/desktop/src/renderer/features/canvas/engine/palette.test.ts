@@ -4,7 +4,7 @@ import { esCanvasBoard } from '../../../i18n/es/canvasBoard';
 import { ruCanvasBoard } from '../../../i18n/ru/canvasBoard';
 import { zhCanvasBoard } from '../../../i18n/zh-CN/canvasBoard';
 import { FILL_COLORS, INK_COLORS, STICKY_COLORS, STROKE_COLORS } from '../view/model';
-import { type CanvasPalette, HUE_IDS, STICKY_IDS, contrastRatio, defaultPalette, readableInk, resolveColor, resolveSticky } from './palette';
+import { type CanvasPalette, HUE_IDS, STICKY_IDS, contrastRatio, defaultPalette, readableInk, resolveColor, resolveFill, resolveSticky } from './palette';
 
 // CIEDE2000 on sRGB → Lab (D65): the distance two colors need to look different at a glance.
 function lab(hex: string): [number, number, number] {
@@ -153,6 +153,20 @@ describe('shape / text / connector colors', () => {
     expect(readableInk('#1f2937', '#1f2937')).toBe('#ffffff');
     expect(readableInk('#facc15', '#e5e7eb')).toBe('#111827');
     expect(readableInk('rgba(0,0,0,0.5)', '#1f2937')).toBe('#1f2937');
+  });
+});
+
+describe('soft tones', () => {
+  it.each(THEMES)('%s: every hue has one, the ink reads on it (AA) and it stays apart from the plain hue', (theme) => {
+    const p = defaultPalette(theme);
+    for (const id of HUE_IDS) {
+      const soft = resolveFill(p, id, true);
+      expect(soft, `${theme} ${id}`).toMatch(/^#[0-9a-f]{6}$/);
+      expect(soft).not.toBe(resolveColor(p, id));
+      expect(contrastRatio(p.ink, soft ?? ''), `${theme} ink on soft ${id}`).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(resolveFill(p, 'none', true)).toBeNull();
+    expect(resolveFill(p, 'red', false)).toBe(resolveColor(p, 'red'));
   });
 });
 

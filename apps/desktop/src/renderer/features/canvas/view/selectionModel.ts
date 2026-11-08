@@ -7,7 +7,7 @@
 import { arrangeUnits } from '../../../lib/canvas/arrange';
 import type { Scene } from '../../../lib/canvas/scene';
 import { boxFontSize } from '../../../lib/canvas/textLayout';
-import type { Arrow, ObjectRec, RouteKind, ShapeKind } from '../../../lib/canvas/types';
+import { SOFT_PREFIX, type Arrow, type ObjectRec, type RouteKind, type ShapeKind } from '../../../lib/canvas/types';
 import type { CanvasEngine } from '../engine';
 
 export interface PanelModel {
@@ -16,6 +16,10 @@ export interface PanelModel {
   hasText: boolean;
   hasShape: boolean;
   hasConnector: boolean;
+  /** Freehand strokes are selected. */
+  hasInk: boolean;
+  /** Frames are selected. */
+  hasFrame: boolean;
   /** Every selected object is locked: nothing of the selection can be changed or deleted, only unlocked, grouped, ordered or duplicated. */
   locked: boolean;
   /** Two or more objects that are not already exactly one group. */
@@ -26,6 +30,8 @@ export interface PanelModel {
   units: number;
   /** Uniform values of the selection; undefined where the selected objects differ (or do not have the field). */
   stickyColor?: string;
+  /** All selected stickies are pads (true) or none is (false); undefined when they differ. */
+  stickyPad?: boolean;
   textColor?: string;
   textSize?: number;
   /** Text size in px shared by all selected texts, stickies and shapes; undefined when they differ. */
@@ -36,6 +42,14 @@ export interface PanelModel {
   strokeWidth?: number;
   arrow?: Arrow;
   route?: RouteKind;
+  /** The selected strokes' color, width and kind (marker or pen), where they agree. */
+  inkColor?: string;
+  inkWidth?: number;
+  inkMarker?: boolean;
+  /** The selected frames' hue, where they agree. */
+  frameFill?: string;
+  /** The name of the one selected frame (only when it is the whole selection). */
+  frameTitle?: string;
 }
 
 function uniform<T>(values: readonly T[]): T | undefined {
@@ -51,12 +65,16 @@ export function panelModelOf(objs: readonly ObjectRec[], groupSize: (gid: string
   const text = objs.flatMap((o) => (o.kind === 'text' ? [o] : []));
   const shape = objs.flatMap((o) => (o.kind === 'shape' ? [o] : []));
   const conn = objs.flatMap((o) => (o.kind === 'connector' ? [o] : []));
+  const ink = objs.flatMap((o) => (o.kind === 'ink' ? [o] : []));
+  const frame = objs.flatMap((o) => (o.kind === 'frame' ? [o] : []));
   const out: PanelModel = {
     count: objs.length,
     hasSticky: sticky.length > 0,
     hasText: text.length > 0,
     hasShape: shape.length > 0,
     hasConnector: conn.length > 0,
+    hasInk: ink.length > 0,
+    hasFrame: frame.length > 0,
     locked: objs.every((o) => o.locked === true),
     canGroup: objs.length >= 2 && !(firstGroup !== undefined && objs.every((o) => o.group === firstGroup) && groupSize(firstGroup) <= objs.length),
     canUngroup: objs.some((o) => o.group !== undefined),
@@ -66,20 +84,26 @@ export function panelModelOf(objs: readonly ObjectRec[], groupSize: (gid: string
     if (v !== undefined) out[k] = v;
   };
   set('stickyColor', uniform(sticky.map((o) => o.color)));
+  set('stickyPad', uniform(sticky.map((o) => o.pad === true)));
   set('textColor', uniform(text.map((o) => o.color)));
   set('textSize', uniform(text.map((o) => o.size)));
   set('fontPx', uniform([...text, ...sticky, ...shape].map(boxFontSize)));
   set('shape', uniform(shape.map((o) => o.shape)));
-  set('fill', uniform(shape.map((o) => o.fill)));
+  set('fill', uniform(shape.map((o) => (o.soft ? `${SOFT_PREFIX}${o.fill}` : o.fill))));
   set('stroke', uniform([...shape.map((o) => o.stroke), ...conn.map((o) => o.stroke)]));
   set('strokeWidth', uniform([...shape.map((o) => o.strokeWidth), ...conn.map((o) => o.strokeWidth)]));
   set('arrow', uniform(conn.map((o) => o.arrow)));
   set('route', uniform(conn.map((o) => o.route)));
+  set('inkColor', uniform(ink.map((o) => o.stroke)));
+  set('inkWidth', uniform(ink.map((o) => o.strokeWidth)));
+  set('inkMarker', uniform(ink.map((o) => o.marker === true)));
+  set('frameFill', uniform(frame.map((o) => o.fill)));
+  if (objs.length === 1 && frame[0]) out.frameTitle = frame[0].title;
   return out;
 }
 
 const KEYS: readonly (keyof PanelModel)[] = [
-  'count', 'hasSticky', 'hasText', 'hasShape', 'hasConnector', 'locked', 'canGroup', 'canUngroup', 'units', 'stickyColor', 'textColor', 'textSize', 'fontPx', 'shape', 'fill', 'stroke', 'strokeWidth', 'arrow', 'route',
+  'count', 'hasSticky', 'hasText', 'hasShape', 'hasConnector', 'locked', 'canGroup', 'canUngroup', 'units', 'stickyColor', 'textColor', 'textSize', 'fontPx', 'shape', 'fill', 'stroke', 'strokeWidth', 'arrow', 'route', 'hasInk', 'inkColor', 'inkWidth', 'inkMarker', 'hasFrame', 'frameFill', 'frameTitle',
 ];
 
 export const samePanelModel = (a: PanelModel | null, b: PanelModel | null): boolean =>

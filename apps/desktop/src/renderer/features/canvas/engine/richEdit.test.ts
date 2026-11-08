@@ -214,8 +214,8 @@ describe('templates', () => {
     const steps = r.engine.doc.undo.undoStack.length;
     const view = r.engine.visibleWorld();
     const ids = r.engine.insertTemplate('kanban', tr);
-    expect(ids).toHaveLength(12);
-    expect(r.engine.selection.size).toBe(12);
+    expect(ids).toHaveLength(17);
+    expect(r.engine.selection.size).toBe(17);
     const b = r.engine.scene.bounds(ids);
     expect(b ? b.x + b.w / 2 : 0).toBeCloseTo(view.x + view.w / 2);
     expect(b ? b.y + b.h / 2 : 0).toBeCloseTo(view.y + view.h / 2);
@@ -233,7 +233,8 @@ describe('templates', () => {
     const ids = r.engine.insertTemplate('flow', tr);
     const conn = ids.map((i) => r.engine.scene.get(i)).find((o) => o?.kind === 'connector');
     const before = conn?.kind === 'connector' ? [...conn.points] : [];
-    r.engine.doc.patch(ids[0] ?? '', { x: (r.engine.scene.get(ids[0] ?? '')?.x ?? 0) - 200 });
+    const glued = conn?.kind === 'connector' && 'id' in conn.from ? conn.from.id : '';
+    r.engine.doc.patch(glued, { x: (r.engine.scene.get(glued)?.x ?? 0) - 200 });
     const after = r.engine.scene.get(conn?.id ?? '');
     expect(after?.kind === 'connector' ? after.points[0] : 0).not.toBe(before[0]);
   });

@@ -1655,7 +1655,9 @@ function VoiceMember({
   const connectingRing = useConnectingRing(workspaceId, state.userId, state.pending);
   // Parked for a phone call (ADR-0133): dimmed, a handset, never the speaking ring.
   const onPhone = state.onPhone;
-  const talking = speaking && !state.muted && !connectingRing && !onPhone;
+  // Someone else's seat kept after a lost connection (ADR-0150): dimmed, «нет связи».
+  const lost = !isMe && state.connectionLost;
+  const talking = speaking && !state.muted && !connectingRing && !onPhone && !lost;
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
     id: `member:${room.id}:${state.userId}`,
     data: { type: 'member', userId: state.userId, fromRoomId: room.id, name } satisfies DragMember,
@@ -1687,12 +1689,21 @@ function VoiceMember({
         // Lighter than the rooms (owner, 07.10): 26 px rows, 20 px avatars, 13 px muted names.
         'group/member relative flex h-[26px] items-center gap-2 rounded-[var(--radius-row)] pl-8 pr-2.5 text-[13px] leading-[18px] transition-colors duration-[var(--motion-fast)] hover:bg-row-hover',
         draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
-        isDragging ? 'opacity-40' : onPhone && 'opacity-50',
+        isDragging ? 'opacity-40' : (onPhone || lost) && 'opacity-50',
       )}
-      title={connectingRing ? `${name} · ${t('voice.pendingMember')}` : onPhone ? `${name} · ${t('call.onPhone')}` : name}
+      title={
+        lost
+          ? `${name} · ${t('call.connectionLost')}`
+          : connectingRing
+            ? `${name} · ${t('voice.pendingMember')}`
+            : onPhone
+              ? `${name} · ${t('call.onPhone')}`
+              : name
+      }
       data-speaking={talking || undefined}
       data-pending={state.pending || undefined}
       data-on-phone={onPhone || undefined}
+      data-connection-lost={lost || undefined}
     >
       {/* «Только вошёл»: 6 px dot 4 px left of the 24 px avatar (32 px), outside the flex flow. */}
       <JustJoinedDot joinedAt={joinedAtMs(state.joinedAt)} className="absolute left-[22px] top-1/2 -translate-y-1/2" />
@@ -1729,7 +1740,7 @@ function VoiceMember({
         <SelfVoiceStateIcons onPhone={onPhone} />
       ) : (
         // CBF-82: someone else in push-to-talk mode: the pale crossed mic until they speak.
-        <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted} pttIdle={state.ptt && !talking} onPhone={onPhone} />
+        <VoiceStateIcons muted={state.muted} deafened={state.deafened} serverMuted={state.serverMuted} pttIdle={state.ptt && !talking} onPhone={onPhone} connectionLost={lost} />
       )}
     </li>
   );

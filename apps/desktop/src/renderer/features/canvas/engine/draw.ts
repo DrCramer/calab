@@ -3,9 +3,12 @@ import { connectorEndDirection, connectorMidpoint } from '../../../lib/canvas/ro
 import { contentRect, STICKY_RADIUS, traceRounded, traceShape } from '../../../lib/canvas/shapes';
 import { F_STRIKE, type Fmt } from '../../../lib/canvas/richText';
 import { LABEL_SIZE, boxFontSize, fontOf, type TextLayout, type TextLayouter } from '../../../lib/canvas/textLayout';
-import { aabb, type ConnectorRec, type ImageRec, type ObjectRec, type TextBoxRec } from '../../../lib/canvas/types';
+import { MARKER_ALPHA, isDot, traceInk } from '../../../lib/canvas/ink';
+import { visualBounds } from '../../../lib/canvas/scene';
+import { FRAME_RADIUS, FRAME_TITLE_GAP, FRAME_TITLE_SIZE, frameTitleRect } from '../../../lib/canvas/frames';
+import { MAX_SIZE, type ConnectorRec, type FrameRec, type ImageRec, type InkRec, type ObjectRec, type TextBoxRec } from '../../../lib/canvas/types';
 import type { ImageSource } from './images';
-import { readableInk, resolveColor, resolveSticky, type CanvasPalette } from './palette';
+import { readableInk, resolveColor, resolveFill, resolveSticky, type CanvasPalette } from './palette';
 import type { VoteBadge } from '../../../lib/canvas/votes';
 import { drawVoteMark } from './voteDraw';
 
@@ -33,6 +36,12 @@ export interface DrawEnv {
   votes?: { badge(id: string): VoteBadge | null } | undefined;
   /** Decoded pictures (ADR-0127, 2026-10-23); absent: every picture is its plaque. */
   images?: ImageSource | undefined;
+  /** The world region being painted (set by `drawObjects`): an erased stroke composes only that much of itself. */
+  region?: Rect | undefined;
+  /** Objects not painted here: lifted into the renderer's drag sprite while they move. */
+  skip?: ReadonlySet<string> | undefined;
+  /** How far a sticky pad's corner is lifted by the pointer over it (0…1, animated by the engine); absent: 0. */
+  padLift?: ((id: string) => number) | undefined;
 }
 
 const font = (env: DrawEnv, size: number): string => `${size}px ${env.palette.fontFamily}`;
@@ -124,7 +133,201 @@ function drawBody(ctx: Ctx2D, o: ObjectRec, env: DrawEnv): void {
     case 'image':
       drawPicture(ctx, o, env);
       break;
+    case 'ink':
+      drawInk(ctx, o, env);
+      break;
+    case 'frame':
+      drawFrame(ctx, o, env);
+      break;
   }
+}
+
+/**
+ * A frame: its board in the hue's soft tone (or none) with a hairline outline, and the title above the top-left corner,
+ * cut at the frame's width. Drawn first of all (the scene orders frames below everything), so it never covers content.
+ */
+function drawFrame(ctx: Ctx2D, o: FrameRec, env: DrawEnv): void {
+  const fill = resolveFill(env.palette, o.fill, true);
+  const plain = env.scale < TEXT_PLAQUE_SCALE;
+  ctx.beginPath();
+  if (plain) ctx.rect(o.x, o.y, o.w, o.h);
+  else traceRounded(ctx, o, FRAME_RADIUS);
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+  ctx.strokeStyle = env.palette.plaque;
+  ctx.lineWidth = 1 / env.scale;
+  ctx.stroke();
+  if (!o.title || env.hiddenText === o.id || FRAME_TITLE_SIZE * env.scale < MIN_GLYPH_PX) return;
+  const lay = env.layouter.layout(o.title, FRAME_TITLE_SIZE, MAX_SIZE);
+  const r = frameTitleRect(o, lay.widths[0] ?? 0);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(r.x, r.y, r.w, r.h + FRAME_TITLE_GAP);
+  ctx.clip();
+  ctx.fillStyle = env.palette.ink;
+  ctx.globalAlpha *= 0.72;
+  ctx.font = font(env, FRAME_TITLE_SIZE);
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  ctx.fillText(lay.lines[0] ?? o.title, o.x, o.y - FRAME_TITLE_GAP - FRAME_TITLE_SIZE * 0.22);
+  ctx.restore();
+}
+
+/** A freehand stroke: the smoothed line with round caps and joins; a marker semi-transparent in one pass (no darker overlaps). */
+function drawInk(ctx: Ctx2D, o: InkRec, env: DrawEnv): void {
+  const color = resolveColor(env.palette, o.stroke) ?? env.palette.ink;
+  const width = Math.max(o.strokeWidth, 1 / env.scale);
+  if (!o.erase || !strokeErased(ctx, o, color, width, env.region)) strokeInk(ctx, o.points, o.x, o.y, color, width, o.marker === true);
+}
+
+let scratch: { canvas: HTMLCanvasElement | OffscreenCanvas; ctx: Ctx2D } | null = null;
+
+/** The most the eraser's scratch canvas holds per side, device px (1024² ≈ 4 MB); a larger stroke is painted in tiles. */
+export const SCRATCH_TILE = 1024;
+
+/** Drops the scratch canvas (a hidden window or a destroyed engine holds nothing); the next erased stroke makes it anew. */
+export function releaseScratch(): void {
+  if (scratch) {
+    scratch.canvas.width = 0;
+    scratch.canvas.height = 0;
+  }
+  scratch = null;
+}
+
+/** A shared offscreen canvas of at least `w × h` device px (≤ SCRATCH_TILE, grown, never shrunk), cleared; null where there is none. */
+function scratchOf(w: number, h: number): Ctx2D | null {
+  if (!scratch || scratch.canvas.width < w || scratch.canvas.height < h) {
+    const cw = Math.max(w, scratch?.canvas.width ?? 0);
+    const ch = Math.max(h, scratch?.canvas.height ?? 0);
+    const c = makeTileCanvas(1);
+    if (!c) return null;
+    c.width = cw;
+    c.height = ch;
+    const x = c.getContext('2d');
+    if (!x) return null;
+    scratch = { canvas: c, ctx: x };
+  }
+  const x = scratch.ctx;
+  x.setTransform(1, 0, 0, 1, 0, 0);
+  x.globalCompositeOperation = 'source-over';
+  x.globalAlpha = 1;
+  x.clearRect(0, 0, w, h);
+  return x;
+}
+
+/**
+ * A stroke with eraser swaths: painted opaque into the scratch canvas (only the device box of the stroke inside the
+ * painted region, walked in tiles of at most SCRATCH_TILE px so the scratch stays small), the swaths punched out with
+ * `destination-out`, the result laid on `ctx` in one pass per tile (a marker's transparency applied once: tiles do
+ * not overlap). False when it cannot (no transform or scratch: a test double), so the caller paints the stroke whole.
+ */
+function strokeErased(ctx: Ctx2D, o: InkRec, color: string, width: number, region: Rect | undefined): boolean {
+  const erase = o.erase;
+  if (!erase || typeof ctx.getTransform !== 'function') return false;
+  const t = ctx.getTransform();
+  const pad = width / 2 + 1;
+  let box = { x: o.x - pad, y: o.y - pad, w: o.w + 2 * pad, h: o.h + 2 * pad };
+  // The region is in world units; the context may be turned (a rotated stroke), so only an unrotated one clips by it.
+  if (region && !o.rot) {
+    const x0 = Math.max(box.x, region.x);
+    const y0 = Math.max(box.y, region.y);
+    const x1 = Math.min(box.x + box.w, region.x + region.w);
+    const y1 = Math.min(box.y + box.h, region.y + region.h);
+    if (x1 <= x0 || y1 <= y0) return true;
+    box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
+  let dx0 = Infinity;
+  let dy0 = Infinity;
+  let dx1 = -Infinity;
+  let dy1 = -Infinity;
+  for (const [x, y] of [[box.x, box.y], [box.x + box.w, box.y], [box.x, box.y + box.h], [box.x + box.w, box.y + box.h]] as const) {
+    const px = t.a * x + t.c * y + t.e;
+    const py = t.b * x + t.d * y + t.f;
+    dx0 = Math.min(dx0, px);
+    dy0 = Math.min(dy0, py);
+    dx1 = Math.max(dx1, px);
+    dy1 = Math.max(dy1, py);
+  }
+  dx0 = Math.max(0, Math.floor(dx0));
+  dy0 = Math.max(0, Math.floor(dy0));
+  dx1 = Math.min(ctx.canvas.width, Math.ceil(dx1));
+  dy1 = Math.min(ctx.canvas.height, Math.ceil(dy1));
+  if (dx1 <= dx0 || dy1 <= dy0) return true;
+  for (let ty = dy0; ty < dy1; ty += SCRATCH_TILE) {
+    for (let tx = dx0; tx < dx1; tx += SCRATCH_TILE) {
+      const w = Math.min(SCRATCH_TILE, dx1 - tx);
+      const h = Math.min(SCRATCH_TILE, dy1 - ty);
+      if (!paintErasedTile(ctx, o, erase, t, color, width, tx, ty, w, h)) return false;
+    }
+  }
+  return true;
+}
+
+/** One tile (`w × h` device px at `dx0, dy0`) of an erased stroke: paint, punch the swaths out, lay on `ctx`. */
+function paintErasedTile(
+  ctx: Ctx2D, o: InkRec, erase: readonly number[], t: DOMMatrix, color: string, width: number,
+  dx0: number, dy0: number, w: number, h: number,
+): boolean {
+  const s = scratchOf(w, h);
+  if (!s || !scratch) return false;
+  s.setTransform(t.a, t.b, t.c, t.d, t.e - dx0, t.f - dy0);
+  strokeInk(s, o.points, o.x, o.y, color, width, false);
+  s.globalCompositeOperation = 'destination-out';
+  s.fillStyle = '#000';
+  s.strokeStyle = '#000';
+  s.lineCap = 'round';
+  for (let i = 0; i + 4 < erase.length; i += 5) {
+    const ax = o.x + (erase[i] ?? 0);
+    const ay = o.y + (erase[i + 1] ?? 0);
+    const bx = o.x + (erase[i + 2] ?? 0);
+    const by = o.y + (erase[i + 3] ?? 0);
+    const r = erase[i + 4] ?? 0;
+    s.beginPath();
+    if (ax === bx && ay === by) {
+      // A zero-length line has no caps in every engine: a click is a disc.
+      s.arc(ax, ay, r, 0, Math.PI * 2);
+      s.fill();
+    } else {
+      s.lineWidth = 2 * r;
+      s.moveTo(ax, ay);
+      s.lineTo(bx, by);
+      s.stroke();
+    }
+  }
+  s.globalCompositeOperation = 'source-over';
+  s.lineCap = 'butt';
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (o.marker) ctx.globalAlpha *= MARKER_ALPHA;
+  ctx.drawImage(scratch.canvas, 0, 0, w, h, dx0, dy0, w, h);
+  ctx.restore();
+  return true;
+}
+
+/** Paints a stroke's points (relative to `ox, oy`); shared by the stored strokes and the live preview. */
+export function strokeInk(ctx: Ctx2D, pts: readonly number[], ox: number, oy: number, color: string, width: number, marker: boolean): void {
+  if (pts.length < 2) return;
+  const alpha = ctx.globalAlpha;
+  if (marker) ctx.globalAlpha = alpha * MARKER_ALPHA;
+  if (isDot(pts)) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(ox + (pts[0] ?? 0), oy + (pts[1] ?? 0), width / 2, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    traceInk(ctx, pts, ox, oy);
+    ctx.stroke();
+    // The other painters never set caps: leave the default behind.
+    ctx.lineCap = 'butt';
+  }
+  ctx.globalAlpha = alpha;
 }
 
 /**
@@ -250,17 +453,72 @@ function drawRich(ctx: Ctx2D, env: DrawEnv, lay: TextLayout, size: number, box: 
   }
 }
 
+/** The stack band at the bottom of a sticky pad, world units: a share of its height, within bounds. */
+export const padBand = (h: number): number => Math.min(14, Math.max(6, h * 0.07));
+
 function drawSticky(ctx: Ctx2D, o: TextBoxRec & { kind: 'sticky' }, env: DrawEnv): void {
   const c = resolveSticky(env.palette, o.color);
   ctx.fillStyle = c.bg;
-  if (env.scale < TEXT_PLAQUE_SCALE) {
+  const plain = env.scale < TEXT_PLAQUE_SCALE;
+  if (plain) {
     ctx.fillRect(o.x, o.y, o.w, o.h);
   } else {
     ctx.beginPath();
     traceRounded(ctx, o, STICKY_RADIUS);
     ctx.fill();
   }
-  if (env.hiddenText !== o.id) drawLines(ctx, env, o, o.text, o.fmt, boxFontSize(o), contentRect(o), c.fg, 'left', false);
+  // A pad (a stack to tear sheets off): the edges of the sheets under the top one as a darker band at the bottom, and
+  // the top sheet's bottom-right corner curled up, the next sheet showing under it. All inside the sticky's frame, so
+  // its bounds and repaints stay those of a sticky.
+  const band = o.pad ? padBand(o.h) : 0;
+  if (band > 0 && !plain) {
+    const a = ctx.globalAlpha;
+    const top = o.y + o.h - band;
+    // The pointer over the pad lifts the corner (eased by the engine): an invitation to tear a sheet off.
+    const lift = env.padLift?.(o.id) ?? 0;
+    const curl = Math.min(o.w, o.h - band) * (0.16 + 0.2 * lift);
+    const right = o.x + o.w;
+    ctx.save();
+    ctx.beginPath();
+    traceRounded(ctx, o, STICKY_RADIUS);
+    ctx.clip();
+    ctx.fillStyle = '#000000';
+    // The sheet edges: two darker stripes.
+    ctx.globalAlpha = a * 0.16;
+    ctx.fillRect(o.x, top, o.w, band);
+    ctx.globalAlpha = a * 0.12;
+    ctx.fillRect(o.x, top + band / 2, o.w, band / 2);
+    // Under the curl: the next sheet.
+    ctx.globalAlpha = a * 0.16;
+    ctx.beginPath();
+    ctx.moveTo(right, top - curl);
+    ctx.lineTo(right, top);
+    ctx.lineTo(right - curl, top);
+    ctx.closePath();
+    ctx.fill();
+    // The curled flap: the sheet's back, lighter, with a soft shadow along its fold.
+    ctx.globalAlpha = a;
+    ctx.fillStyle = c.bg;
+    ctx.beginPath();
+    ctx.moveTo(right, top - curl);
+    ctx.quadraticCurveTo(right - curl * 0.55, top - curl * 0.55, right - curl, top);
+    ctx.lineTo(right - curl * 0.92, top - curl * 0.92);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = a * 0.28;
+    ctx.fill();
+    ctx.strokeStyle = '#000000';
+    ctx.globalAlpha = a * 0.18;
+    ctx.lineWidth = Math.max(1 / env.scale, curl * 0.04);
+    ctx.beginPath();
+    ctx.moveTo(right, top - curl);
+    ctx.quadraticCurveTo(right - curl * 0.55, top - curl * 0.55, right - curl, top);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // Centred both ways, as in Miro (owner 30.10); the lines wrap at the sticky's width.
+  if (env.hiddenText !== o.id) drawLines(ctx, env, o, o.text, o.fmt, boxFontSize(o), contentRect(band > 0 ? { ...o, h: o.h - band } : o), c.fg, 'center', true);
 }
 
 function drawText(ctx: Ctx2D, o: TextBoxRec & { kind: 'text' }, env: DrawEnv): void {
@@ -269,7 +527,7 @@ function drawText(ctx: Ctx2D, o: TextBoxRec & { kind: 'text' }, env: DrawEnv): v
 }
 
 function drawShape(ctx: Ctx2D, o: TextBoxRec & { kind: 'shape' }, env: DrawEnv): void {
-  const fill = resolveColor(env.palette, o.fill);
+  const fill = resolveFill(env.palette, o.fill, o.soft);
   const stroke = resolveColor(env.palette, o.stroke);
   ctx.beginPath();
   traceShape(ctx, o.shape, o);
@@ -338,5 +596,8 @@ function drawArrowHead(ctx: Ctx2D, x: number, y: number, d: { x: number; y: numb
 
 /** Draws `objects` (already z-sorted) that touch `region`. */
 export function drawObjects(ctx: Ctx2D, objects: readonly ObjectRec[], region: Rect, env: DrawEnv): void {
-  for (const o of objects) if (o.kind === 'connector' || rectsIntersect(aabb(o), region)) drawObject(ctx, o, env);
+  const e = env.region === region ? env : { ...env, region };
+  // By what is painted (a wide marker's or a thick outline's edge is outside the frame), or a repaint beside the line
+  // would wipe that edge with the background.
+  for (const o of objects) if (!e.skip?.has(o.id) && (o.kind === 'connector' || rectsIntersect(visualBounds(o), region))) drawObject(ctx, o, e);
 }

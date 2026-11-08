@@ -29,6 +29,8 @@ export interface EditSpec {
   rich?: boolean;
   /** The object has a text size the format bar can change (false: e.g. a connector label). */
   sized?: boolean;
+  /** A thin frame around the field (a free text object: without it, typing on an empty canvas shows nothing but the caret). */
+  frame?: string;
 }
 
 /** What the format bar shows: replaced (not mutated) whenever any of it changes, so it is a `useSyncExternalStore` snapshot. */
@@ -269,6 +271,13 @@ export class TextEditor {
     st.width = `${spec.box.w}px`;
     st.fontSize = `${spec.size}px`;
     st.transformOrigin = '0 0';
+    if (spec.frame) {
+      // Screen-sized: the field is scaled by the camera, so its frame is drawn at 1 / scale.
+      const k = 1 / (cam.scale || 1);
+      st.outline = `${1.5 * k}px solid ${spec.frame}`;
+      st.outlineOffset = `${6 * k}px`;
+      st.borderRadius = `${2 * k}px`;
+    }
     if (spec.rot && spec.center) {
       const cx = spec.center.x - spec.box.x;
       const cy = spec.center.y - spec.box.y;

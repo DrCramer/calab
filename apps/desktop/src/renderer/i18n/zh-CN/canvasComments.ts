@@ -29,6 +29,7 @@ export const zhCanvasComments: DictShape<typeof ruCanvasComments> = {
   'canvasComments.resolve': '解决',
   'canvasComments.reopen': '重新打开',
   'canvasComments.showPin': '在画布上显示',
+  'canvasComments.cardMore': '面板中还有 {n} 条',
   'canvasComments.newThread': '新讨论',
   'canvasComments.pinLabel': '评论：{name}',
   'canvasComments.gone': '评论已删除或不可用',

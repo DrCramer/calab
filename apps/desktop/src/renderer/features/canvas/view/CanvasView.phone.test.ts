@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { CANVAS_BITS } from '@calaba/protocol';
+import * as TooltipP from '@radix-ui/react-tooltip';
 import { act, createElement, type ComponentProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -66,7 +67,7 @@ async function mount(opts: { relay?: MockRelay; name?: string; phone?: boolean; 
     deps: deps(relay, opts.name ?? 'Ann'),
   };
   await act(async () => {
-    root.render(createElement(CanvasView, props));
+    root.render(createElement(TooltipP.Provider, null, createElement(CanvasView, props)));
     await vi.advanceTimersByTimeAsync(0);
   });
   const canvas = host.querySelector('canvas') as HTMLCanvasElement;
@@ -82,7 +83,7 @@ async function mount(opts: { relay?: MockRelay; name?: string; phone?: boolean; 
     key: (key) => act(() => void canvas.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))),
     rerender: async (next) => {
       await act(async () => {
-        root.render(createElement(CanvasView, { ...props, ...next }));
+        root.render(createElement(TooltipP.Provider, null, createElement(CanvasView, { ...props, ...next })));
         await vi.advanceTimersByTimeAsync(0);
       });
     },
@@ -276,9 +277,9 @@ describe('the edit mode tool bar', () => {
     expect(bar?.getAttribute('role')).toBe('toolbar');
     expect(bar?.className).toContain('--safe-bottom');
     const buttons = [...(bar?.querySelectorAll('button') ?? [])];
-    // select · sticky · text · shape · connector · «+» · undo · redo
-    expect(buttons).toHaveLength(8);
-    for (const b of buttons) expect(b.className, b.getAttribute('aria-label') ?? '').toContain('size-11');
+    // select · sticky · text · shape · connector · pencil · «+» · undo · redo (44 px tall, at most 44 wide, sharing the row)
+    expect(buttons).toHaveLength(9);
+    for (const b of buttons) expect(b.className, b.getAttribute('aria-label') ?? '').toMatch(/h-11 .*max-w-11/);
     await m.rerender({ phoneEdit: false });
     expect(m.q('canvas-phone-toolbar')).toBeNull();
   });
@@ -323,6 +324,39 @@ describe('the edit mode tool bar', () => {
     expect(m.q('canvas-phone-shapes')).not.toBeNull();
     click(m, 'canvas-tool-shape');
     expect(m.q('canvas-phone-shapes')).toBeNull();
+  });
+
+  it('the pencil button arms the pen and opens the ink sheet; pen / marker / eraser and the sizes switch in it', async () => {
+    const m = await mount({ phoneEdit: true });
+    const pressed = (id: string): string | null | undefined => m.q(id)?.getAttribute('aria-pressed');
+    click(m, 'canvas-tool-pen');
+    expect(m.q('canvas-phone-ink')).not.toBeNull();
+    expect(pressed('canvas-tool-pen')).toBe('true');
+    expect(m.q('canvas-phone-armed')?.textContent).toMatch(/пальцем/);
+    for (const b of m.q('canvas-phone-ink')?.querySelectorAll('button') ?? []) expect(b.className).toMatch(/h-11/);
+    click(m, 'canvas-ink-marker');
+    expect(pressed('canvas-ink-marker')).toBe('true');
+    expect(m.q('canvas-ink-color-red')).not.toBeNull();
+    click(m, 'canvas-ink-color-red');
+    expect(pressed('canvas-ink-color-red')).toBe('true');
+    click(m, 'canvas-ink-eraser');
+    expect(pressed('canvas-ink-eraser')).toBe('true');
+    expect(m.q('canvas-ink-color-red')).toBeNull();
+    expect(m.q('canvas-phone-armed')?.textContent).toMatch(/стереть/);
+    click(m, 'canvas-eraser-size-24');
+    expect(pressed('canvas-eraser-size-24')).toBe('true');
+    // A touch on the canvas puts the sheet away; the tool stays armed.
+    m.touch('pointerdown', 1, 200, 300);
+    expect(m.q('canvas-phone-ink')).toBeNull();
+    expect(pressed('canvas-tool-pen')).toBe('true');
+    m.touch('pointerup', 1, 200, 300);
+    expect(pressed('canvas-tool-pen')).toBe('true');
+    // The button again offers the sheet (the last of pen / eraser stays), and once more puts it away without disarming.
+    click(m, 'canvas-tool-pen');
+    expect(m.q('canvas-phone-ink')).not.toBeNull();
+    click(m, 'canvas-tool-pen');
+    expect(m.q('canvas-phone-ink')).toBeNull();
+    expect(pressed('canvas-tool-pen')).toBe('true');
   });
 
   it('«+» inserts a template at the view center; vote and countdown start from the same sheet', async () => {

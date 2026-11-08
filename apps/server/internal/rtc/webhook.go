@@ -99,7 +99,9 @@ func (s *Service) HandleEvent(ctx context.Context, ev *WebhookEvent) error {
 		if s.SIP != nil && !voice.IsDM(wid, rid) {
 			s.SIP.SIPRoomFinished(ctx, rid)
 		}
-		return s.roomFinished(ctx, wid, rid)
+		// LiveKit closes a room departure_timeout (20 s) after its last participant: seats held
+		// for a lost connection stay (ADR-0150); a /join creates the room again.
+		return s.roomFinished(ctx, wid, rid, true)
 	}
 	p := ev.Participant
 	if p == nil {
@@ -110,6 +112,11 @@ func (s *Service) HandleEvent(ctx context.Context, ev *WebhookEvent) error {
 			return nil
 		}
 		return s.SIP.SIPParticipant(ctx, ev.Event, wid, rid, p)
+	}
+	// A companion connection (ADR-0149 §3) is not a device: no voice state, grace, cues or phone
+	// line; it may only stay while its device holds a seat in the room.
+	if cu, cs, ok := voice.ParseCompanion(p.Identity); ok {
+		return s.companionEvent(ctx, ev.Event, wid, rid, cu, cs, ev.Room.Name, p)
 	}
 	uid, sid, ok := voice.ParseIdentity(p.Identity)
 	if !ok {
@@ -127,23 +134,35 @@ func (s *Service) HandleEvent(ctx context.Context, ev *WebhookEvent) error {
 		// A full reconnect into the same room may deliver the old connection's
 		// participant_left after the new one joined: then only the old connection's tracks
 		// go; the device's state, reservation and a moderator's sticky stop stay.
-		live, superseded, err := s.newerConnection(ctx, ev.Room.Name, p)
-		if err != nil {
-			slog.WarnContext(ctx, "participant_left: look up the identity's current connection", "identity", identity, "err", err)
+		live, superseded, lookupErr := s.newerConnection(ctx, ev.Room.Name, p)
+		if lookupErr != nil {
+			slog.WarnContext(ctx, "participant_left: look up the identity's current connection", "identity", identity, "err", lookupErr)
 		}
 		s.stopStreamsExcept(ctx, wid, rid, identity, live, v1.VoiceStreamStopReason_VOICE_STREAM_STOP_REASON_ENDED)
-		// Unknown (LiveKit error): keep the sticky stop — fail closed on moderation.
-		s.dropCameras(ctx, rid, sid, identity, live, superseded || err != nil)
 		if superseded {
+			s.dropCameras(ctx, rid, sid, identity, live, true)
 			return nil
 		}
+		// An involuntary drop holds the seat (ADR-0150); a leave, a removal or a takeover ends it.
+		hold, kept := s.holdsSeats(wid, rid) && !explicitRelease(p.DisconnectReason), false
+		now := time.Now()
 		if err := s.update(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
-			if cur == nil || cur.RoomID != rid {
-				return cur // the device already moved to another room
-			}
-			return nil
+			next := seatAfterDrop(cur, rid, hold, s.cfg.LostGrace, now) // another room: the device moved on
+			kept = next != nil && next.RoomID == rid
+			return next
 		}); err != nil {
 			return err
+		}
+		// Unknown (LiveKit error) or a held seat: keep the sticky stop — fail closed on
+		// moderation, and a reconnect must not lift it.
+		s.dropCameras(ctx, rid, sid, identity, live, lookupErr != nil || kept)
+		if kept {
+			slog.InfoContext(ctx, "voice seat held: the connection dropped", "identity", identity, "reason", string(p.DisconnectReason))
+			return nil
+		}
+		// The device left the room (or moved on): its companion has no seat here any more.
+		if !voice.IsDM(wid, rid) {
+			s.dropCompanion(ctx, wid, rid, uid, sid)
 		}
 		if s.SIP != nil && !voice.IsDM(wid, rid) {
 			s.SIP.PersonLeft(ctx, wid, rid) // the last person out hangs up a phone call (ADR-0046)
@@ -299,8 +318,8 @@ func (s *Service) participantJoined(ctx context.Context, wid, rid, uid, sid uuid
 		c, err = s.voice.UpdateLocked(ctx, wid, uid, sid, func(cur *voice.SessionState) *voice.SessionState {
 			n := voice.SessionState{RoomID: rid, Muted: muted}
 			if cur != nil && cur.RoomID == rid {
-				n = *cur // e.g. pending since /join: keeps its joined_at
-				n.Muted, n.Pending = muted, false
+				n = *cur // e.g. pending since /join, or held after a drop: keeps its joined_at
+				n.Muted, n.Pending, n.Lost, n.Hold = muted, false, false, 0
 			}
 			return &n
 		})
@@ -399,13 +418,16 @@ func (s *Service) stopStreamsExcept(ctx context.Context, wid, rid uuid.UUID, ide
 	}
 }
 
-func (s *Service) roomFinished(ctx context.Context, wid, rid uuid.UUID) error {
+// roomFinished clears a room that is gone: its devices' states, streams and webcams. keepHeld:
+// LiveKit closed it on its own (room_finished) — seats held for a lost connection stay until
+// their grace ends (ADR-0150); a room deleted by the app takes them too.
+func (s *Service) roomFinished(ctx context.Context, wid, rid uuid.UUID, keepHeld bool) error {
 	states, err := s.voice.List(ctx, wid)
 	if err != nil {
 		return err
 	}
 	for _, st := range states {
-		if st.RoomID == rid {
+		if st.RoomID == rid && (!keepHeld || !held(st)) {
 			if err := s.update(ctx, wid, st.UserID, st.SessionID, func(*voice.SessionState) *voice.SessionState { return nil }); err != nil {
 				return err
 			}

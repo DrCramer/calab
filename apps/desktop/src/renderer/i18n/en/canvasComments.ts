@@ -29,6 +29,7 @@ export const enCanvasComments: DictShape<typeof ruCanvasComments> = {
   'canvasComments.resolve': 'Resolve',
   'canvasComments.reopen': 'Reopen',
   'canvasComments.showPin': 'Show on the canvas',
+  'canvasComments.cardMore': '{n} more in the panel',
   'canvasComments.newThread': 'New thread',
   'canvasComments.pinLabel': 'Comment: {name}',
   'canvasComments.gone': 'The comment was deleted or is not available',

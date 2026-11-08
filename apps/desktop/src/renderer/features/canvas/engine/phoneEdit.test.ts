@@ -410,7 +410,7 @@ describe('a text edit and the on-screen keyboard (visualViewport)', () => {
   const rect = (top: number, bottom: number): DOMRect => ({ top, bottom, left: 0, right: 400, width: 400, height: bottom - top, x: 0, y: top, toJSON: () => ({}) });
   let vv: FakeViewport;
 
-  const setup = (opts: Partial<EngineOptions> = {}): Rig => {
+  const setup = (opts: Partial<EngineOptions> = {}, filled = true): Rig => {
     vv = new FakeViewport();
     Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true });
     // jsdom lays nothing out: the textarea's box is the one the editor positioned, the host is the whole 400×800 stage.
@@ -418,6 +418,8 @@ describe('a text edit and the on-screen keyboard (visualViewport)', () => {
       const top = parseFloat(this.style.top) || 0;
       return rect(top, top + (parseFloat(this.style.height) || 0));
     });
+    // The text fills its sticky (a centred short text would leave the textarea only its own lines tall).
+    if (filled) vi.spyOn(HTMLTextAreaElement.prototype, 'scrollHeight', 'get').mockReturnValue(10_000);
     const r = rig(opts);
     r.host.getBoundingClientRect = () => rect(0, 800);
     return r;
@@ -515,7 +517,7 @@ describe('a text edit and the on-screen keyboard (visualViewport)', () => {
   });
 
   it('growing text that reaches the keyboard moves the view on typing', () => {
-    const r = setup();
+    const r = setup({}, false);
     const [a] = r.make({ init: { kind: 'text' as const, x: 100, y: 300, w: 200, text: 'one' } });
     r.engine.startTextEdit(a);
     vv.resizeTo(450);

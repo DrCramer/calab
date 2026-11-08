@@ -146,29 +146,7 @@
   display: none;
 }
 
-/* Table */
-.wiki-prose .tableWrapper {
-  overflow-x: auto;
-}
-.wiki-prose table {
-  border-collapse: collapse;
-  table-layout: fixed;
-  width: 100%;
-  margin: var(--space-1) 0;
-}
-.wiki-prose th,
-.wiki-prose td {
-  border: 1px solid var(--color-separator);
-  padding: 6px 8px;
-  vertical-align: top;
-  min-width: 80px;
-  position: relative;
-}
-.wiki-prose th {
-  background: var(--color-fill);
-  font-weight: 600;
-  text-align: left;
-}
+/* Table: the cell look is in prose.css (the task read view draws it without the editor); only editing state here. */
 .wiki-prose .selectedCell::after {
   content: '';
   position: absolute;

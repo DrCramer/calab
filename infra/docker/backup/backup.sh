@@ -51,7 +51,7 @@ log "files ok: $(du -h "$BACKUP_DIR/files/files-$TS.tar.zst" | cut -f1)"
 # 3. NPM keeps and backs up its own ACME account and TLS certificates.
 
 # 3b. Secrets/config of the stand.
-tar -C "$HERE/.." -cf - .env $( [[ -f "$HERE/../.env.accounts" ]] && echo .env.accounts ) | zstd -q -o "$BACKUP_DIR/config/env-$TS.tar.zst"
+tar --dereference -C "$HERE/.." -cf - .env $( [[ -f "$HERE/../.env.accounts" ]] && echo .env.accounts ) | zstd -q -o "$BACKUP_DIR/config/env-$TS.tar.zst"
 
 # 4. Retention.
 find "$BACKUP_DIR/pg" "$BACKUP_DIR/files" "$BACKUP_DIR/config" -type f -mtime "+$RETENTION_DAYS" -print -delete | sed 's/^/calaba-backup: pruned /'

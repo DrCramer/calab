@@ -48,6 +48,9 @@ interface CanvasUiState {
   /** The item whose tree row is being renamed in place (not persisted). */
   renaming: string | null;
   setRenaming: (id: string | null) => void;
+  /** «Иконка» picked in an item menu: the emoji picker opens at that tree row or at the header title (not persisted). */
+  emojiFor: { id: string; at: 'tree' | 'header' } | null;
+  setEmojiFor: (v: { id: string; at: 'tree' | 'header' } | null) => void;
   dialog: CanvasDialog | null;
   openDialog: (d: CanvasDialog | null) => void;
 }
@@ -90,6 +93,9 @@ export const useCanvasUi = create<CanvasUiState>()(
       // The rename field lives in the tree row: a filter or the trash in its place is put away first.
       setRenaming: (renaming) =>
         set((s) => (s.renaming === renaming ? s : renaming === null ? { renaming } : { renaming, query: '', trashOf: {} })),
+      emojiFor: null,
+      // Like the rename field: the tree row must be on screen, so a filter or the trash is put away.
+      setEmojiFor: (emojiFor) => set(emojiFor?.at === 'tree' ? { emojiFor, query: '', trashOf: {} } : { emojiFor }),
       dialog: null,
       openDialog: (dialog) => set({ dialog }),
     }),

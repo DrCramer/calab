@@ -2,35 +2,131 @@
 	import log.caddy
 }
 
+(web_security_headers) {
+	header {
+		# 'wasm-unsafe-eval': RNNoise noise suppression (WASM in the mic AudioWorklet).
+		# frame-src https: blob: — the sandboxed iframe of a workspace web app (ADR-0050 §6); the page has no
+		# other frames but the PDF viewer's blob: frame of a file the page fetched itself (ADR-0103). No http: —
+		# this page is served over https, where an http frame is mixed content.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' wss://rtc.cramerstation.ru https://rtc.cramerstation.ru https://turn.cramerstation.ru; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-src https: blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Permissions-Policy "microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)"
+		-Server
+	}
+	# Default only: completion/consent set a stricter policy in their SPA handle.
+	header ?Referrer-Policy "same-origin"
+}
+
 :8080 {
-	# Preserve upstream's handling of identity and calendar credentials in URLs.
+	# Identity URLs contain one-time credentials. Access logging is intentionally disabled;
+	# sanitized API logs/metrics remain available. Do not enable raw request logging here.
 	log {
 		output discard
 	}
-	header {
-		Strict-Transport-Security "max-age=31536000"
-		X-Content-Type-Options nosniff
-		X-Frame-Options DENY
-		Referrer-Policy same-origin
-		Permissions-Policy "microphone=(self), display-capture=(self), speaker-selection=(self), autoplay=(self)"
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' wss://rtc.cramerstation.ru https://rtc.cramerstation.ru https://turn.cramerstation.ru; img-src 'self' blob: data:; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; frame-src https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-		-Server
+	# HSTS on the whole site (no preload: the parent gptunnel.* zones are not ours to pin).
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	# Internal-only endpoints: Prometheus metrics and the readiness probe (it names the backends).
+	# The api healthcheck and monitoring use 127.0.0.1:3000 directly.
+	# Inside handle: a bare `respond` sorts after `handle` and would never run.
+	@internal path /metrics /readyz
+	handle @internal {
+		respond 404
 	}
-	@api path /api/* /gateway /healthz
-	handle @api {
+
+	# Workspace OIDC issuer + RFC 8414 path-issuer metadata must precede SPA fallback.
+	# Match only the published endpoints; /oauth/consent and /sso/complete stay SPA routes.
+	@identity_provider path_regexp ^(/oidc/workspaces/[^/]+/(\.well-known/openid-configuration|jwks|authorize|token|userinfo|revoke)|/\.well-known/oauth-authorization-server/oidc/workspaces/[^/]+)$
+	handle @identity_provider {
+		header >Referrer-Policy "no-referrer"
+		# Keep upstream JWKS max-age=60; default to no-store for other responses.
+		header ?Cache-Control "no-store"
+		header >Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
 		reverse_proxy {$NPM_HOST_IP}:13000
 	}
+	# Proxy failures are written by Caddy's error chain, outside deferred proxy headers.
+	# They carry no credentials and must still be private and unframeable.
+	handle_errors {
+		header @identity_provider {
+			Cache-Control "no-store"
+			Referrer-Policy "no-referrer"
+			Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		}
+		@api_failure path /api/*
+		header @api_failure {
+			Cache-Control "no-store"
+			Referrer-Policy "no-referrer"
+			Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		}
+		respond "" {err.status_code}
+	}
+
+	# MCP without a bot (ADR-0158): RFC 9728 / RFC 8414 metadata of the MCP endpoint's OAuth server,
+	# published at the root of the app host. Exact paths only (other /.well-known/* stay as they are).
+	@mcp_oauth_metadata path /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/api/mcp /.well-known/oauth-authorization-server
+	handle @mcp_oauth_metadata {
+		header >Referrer-Policy "no-referrer"
+		reverse_proxy {$NPM_HOST_IP}:13000
+	}
+
+	# Go API (host network): REST, gateway WS, liveness.
+	@api path /api/* /gateway /healthz
+	handle @api {
+		# The API sets Cache-Control (no-store on JSON, its own on files/unfurl) and nosniff itself;
+		# identity/OAuth routes also set no-referrer: never weaken it at the proxy.
+		header /api/* >Referrer-Policy "no-referrer"
+		# JSON only (lists, READY-sized pages, search: 4–6× smaller; docs/18 step 3). Never touched:
+		# the gateway WebSocket, files/thumbnails (http.ServeContent with Range/ETag — encoding would
+		# break ranged and resumable downloads) and proxied unfurl images.
+		@api_json not path /gateway /api/files/* /api/unfurl/image
+		encode @api_json {
+			zstd
+			gzip
+			match header Content-Type application/json*
+		}
+		reverse_proxy {$NPM_HOST_IP}:13000
+	}
+
+	# Universal links (iOS) / App Links (Android), DEV-4947: AASA/assetlinks.json as JSON, generated
+	# by entrypoint.sh from APP_LINKS_IOS/APP_LINKS_ANDROID (404 when unset). Must precede the SPA
+	# fallback below (`@sensitive_spa` and the catch-all `handle {}` would otherwise serve index.html
+	# for these paths); Caddy also sorts `handle` blocks by path specificity, so this literal path
+	# wins regardless, but the explicit order keeps intent clear.
+
+
+
+
+	# Web client SPA (ADR-0015): static files from /srv/web (pushed by sync.sh).
 	handle {
 		root * /srv/web
+		# Static only (API responses incl. file downloads with Range stay untouched).
+		encode zstd gzip
+		# Go's MIME table has no .webmanifest; file_server keeps a preset Content-Type.
 		@manifest path *.webmanifest
 		header @manifest Content-Type "application/manifest+json"
-		@hashed {
-			path /assets/*
-			file
+		import web_security_headers
+		# The same SPA scripts/CSP load on completion and consent, but URLs/HTML are sensitive.
+		@sensitive_spa path /sso/complete /oauth/consent /mcp/connect /f/* /w/* /c/*
+		handle @sensitive_spa {
+			header X-Robots-Tag "noindex, nofollow"
+			header >Cache-Control "no-store"
+			header >Referrer-Policy "no-referrer"
+			try_files /index.html
+			file_server
 		}
-		header @hashed Cache-Control "public, max-age=31536000, immutable"
-		header Cache-Control "no-cache"
-		try_files {path} /index.html
-		file_server
+		# Vite puts content-hashed files under /assets/: cache forever; a missing asset is a 404,
+		# never index.html (otherwise a stale index would get HTML cached as JS for a year).
+		handle /assets/* {
+			@found file
+			header @found Cache-Control "public, max-age=31536000, immutable"
+			file_server
+		}
+		# Everything else (index.html, SPA routes, favicon…) must be revalidated on each load.
+		handle {
+			header Cache-Control "no-cache"
+			try_files {path} /index.html
+			file_server
+		}
 	}
 }

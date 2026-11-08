@@ -14,6 +14,8 @@ function kindLabel(o: ObjectRec): string {
     case 'text': return t('canvasBoard.tool.text');
     case 'connector': return t('canvasBoard.tool.connector');
     case 'image': return t('canvasBoard.a11y.image');
+    case 'ink': return t('canvasBoard.a11y.ink');
+    case 'frame': return t('canvasBoard.tool.frame');
     case 'shape': {
       const def = SHAPE_DEFS.find((d) => d.kind === o.shape);
       return def ? t(def.label) : t('canvasBoard.tool.shape');
@@ -23,8 +25,8 @@ function kindLabel(o: ObjectRec): string {
 
 /** «Стикер: Решения», «Эллипс: без текста, заблокирован». */
 export function describeObject(o: ObjectRec): string {
-  if (o.kind === 'image') return o.locked ? `${kindLabel(o)}, ${t('canvasBoard.a11y.locked')}` : kindLabel(o);
-  const raw = (o.kind === 'connector' ? o.label : o.text).replace(/\s+/g, ' ').trim();
+  if (o.kind === 'image' || o.kind === 'ink') return o.locked ? `${kindLabel(o)}, ${t('canvasBoard.a11y.locked')}` : kindLabel(o);
+  const raw = (o.kind === 'connector' ? o.label : o.kind === 'frame' ? o.title : o.text).replace(/\s+/g, ' ').trim();
   const text = raw ? (raw.length > MAX_TEXT ? `${raw.slice(0, MAX_TEXT)}…` : raw) : t('canvasBoard.a11y.noText');
   const line = t('canvasBoard.a11y.object', { kind: kindLabel(o), text });
   return o.locked ? `${line}, ${t('canvasBoard.a11y.locked')}` : line;

@@ -14,8 +14,10 @@ import { esRecording } from './recording';
 import { esAnnot } from './annot';
 import { esPeople } from './people';
 import { esFormer } from './former';
+import { esAccount } from './account';
 import { esPrivacy } from './privacy';
 import { esModeration } from './moderation';
+import { esReport } from './report';
 import { esPicker } from './picker';
 import { esRoles } from './roles';
 import { esCalendar } from './calendar';
@@ -92,8 +94,10 @@ export const es: Dict = {
   ...esTransitions,
   ...esCustomPlan,
   ...esFormer,
+  ...esAccount,
   ...esPrivacy,
   ...esModeration,
+  ...esReport,
   ...esMail,
   ...esRecording,
   ...esAnnot,
@@ -121,6 +125,7 @@ export const es: Dict = {
   'common.delete': 'Eliminar',
   'common.save': 'Guardar',
   'common.saved': 'Guardado',
+  'common.clear': 'Borrar',
   'common.reset': 'Restablecer',
   'common.retry': 'Reintentar',
   'common.search': 'Buscar',

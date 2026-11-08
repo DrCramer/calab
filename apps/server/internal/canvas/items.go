@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +18,7 @@ import (
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/httpx"
+	"github.com/calaba/calaba/server/internal/messages"
 	"github.com/calaba/calaba/server/internal/perm"
 	"github.com/calaba/calaba/server/internal/plans"
 )
@@ -299,7 +301,7 @@ func (s *Service) path(w http.ResponseWriter, r *http.Request) error {
 
 // update: PATCH /api/canvas/items/{id} — rename, move (parent_id set, "" = the top level:
 // CANVAS_WRITE on the destination folder, no cycles, ≤ 32 deep; position = the index among the
-// new siblings) and the restricted switch; the owner or CANVAS_MANAGE.
+// new siblings), the emoji and the restricted switch; the owner or CANVAS_MANAGE.
 func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 	id, err := httpx.PathUUID(r, "id", "item")
 	if err != nil {
@@ -316,6 +318,14 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		newName = &t
+	}
+	var newEmoji *string
+	if req.Emoji != nil {
+		e := strings.TrimSpace(req.GetEmoji())
+		if e != "" && !messages.ValidEmoji(e) {
+			return httpx.Validation("emoji", "emoji must be one emoji")
+		}
+		newEmoji = &e
 	}
 	var target *uuid.UUID
 	if req.ParentId != nil {
@@ -363,6 +373,9 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 				return s.journal(ctx, q, it, uid, "rename", snap{"name": cur.Name}, snap{"name": it.Name})
 			})
 		}
+		if newEmoji != nil && *newEmoji != cur.Emoji {
+			p.Emoji = newEmoji
+		}
 		if req.Restricted != nil && req.GetRestricted() != cur.Restricted {
 			p.Restricted = req.Restricted
 			journal = append(journal, func(it sqlc.CanvasItemHead) error {
@@ -379,7 +392,7 @@ func (s *Service) update(w http.ResponseWriter, r *http.Request) error {
 			})
 		}
 		it = cur
-		if p.Name != nil || p.Restricted != nil {
+		if p.Name != nil || p.Emoji != nil || p.Restricted != nil {
 			row, err := q.UpdateCanvasItem(ctx, p)
 			if err != nil {
 				return err

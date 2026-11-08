@@ -2,9 +2,10 @@ import * as Y from 'yjs';
 import { clamp, normRot, type Point } from './geometry';
 import { after, before, between, isValidKey } from './fracIndex';
 import { fmtFromDelta, fmtToDelta, formatChanges, rawText, type Fmt } from './richText';
+import { INK_MAX_WIDTH, INK_MIN_WIDTH, inkErase, inkPoints } from './ink';
 import { fontFields, isFontToken } from './textLayout';
 import {
-  DEFAULTS, MAX_COORD, MAX_OBJECTS, MAX_SIZE, MAX_STATE, MAX_TEXT, SCHEMA_VERSION, SHAPE_KINDS, isImageSrc,
+  DEFAULTS, MAX_COORD, MAX_OBJECTS, MAX_SIZE, MAX_STATE, MAX_TEXT, MAX_TITLE, SCHEMA_VERSION, SHAPE_KINDS, isImageSrc, splitFill,
   type Endpoint, type ObjectInit, type ObjectKind, type ObjectPatch, type ShapeKind, type Side,
 } from './types';
 
@@ -15,7 +16,7 @@ export const LIVE_ORIGIN: object = Object.freeze({ canvas: 'live' });
 /** Undo steps kept; the oldest is dropped (and the values it held are freed) past this. */
 export const MAX_UNDO = 100;
 
-const KINDS: readonly ObjectKind[] = ['sticky', 'text', 'shape', 'connector', 'image'];
+const KINDS: readonly ObjectKind[] = ['sticky', 'text', 'shape', 'connector', 'image', 'ink', 'frame'];
 const SIDE_SET = new Set<string>(['auto', 'top', 'right', 'bottom', 'left']);
 const ARROW_SET = new Set<string>(['none', 'end', 'both']);
 const ROUTE_SET = new Set<string>(['straight', 'elbow', 'curve']);
@@ -44,10 +45,10 @@ export function endpoint(v: unknown): Endpoint | null {
   return null;
 }
 
-/** Clamps text to MAX_TEXT without cutting a surrogate pair. */
-export function clampText(s: string): string {
-  if (s.length <= MAX_TEXT) return s;
-  let end = MAX_TEXT;
+/** Clamps text to `max` (MAX_TEXT) without cutting a surrogate pair. */
+export function clampText(s: string, max = MAX_TEXT): string {
+  if (s.length <= max) return s;
+  let end = max;
   const c = s.charCodeAt(end - 1);
   if (c >= 0xd800 && c <= 0xdbff) end--;
   return s.slice(0, end);
@@ -60,6 +61,9 @@ export function newId(): string {
   for (const b of buf) s += (b % 36).toString(36);
   return s;
 }
+
+/** A frame's title: one line (breaks become spaces), at most MAX_TITLE. */
+export const clampTitle = (v: unknown): string => (typeof v === 'string' ? clampText(v.replace(/[\r\n\t]+/g, ' '), MAX_TITLE) : '');
 
 /** Applies `next` to `yt` as the smallest single delete+insert (keeps concurrent edits mergeable). */
 export function applyTextDiff(yt: Y.Text, next: string, original?: string): void {
@@ -127,20 +131,26 @@ function isLow(c: number): boolean {
 export type PlainObject = { id: string; kind: ObjectKind; z: string } & Record<string, unknown>;
 
 const FIELD_KEYS: Record<ObjectKind, readonly string[]> = {
-  sticky: ['x', 'y', 'w', 'h', 'color', 'fontSize', 'fontPx', 'rot', 'locked', 'group'],
+  sticky: ['x', 'y', 'w', 'h', 'color', 'fontSize', 'fontPx', 'pad', 'rot', 'locked', 'group'],
   text: ['x', 'y', 'w', 'size', 'color', 'rot', 'locked', 'group'],
-  shape: ['shape', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'fontPx', 'rot', 'locked', 'group'],
+  shape: ['shape', 'x', 'y', 'w', 'h', 'fill', 'soft', 'stroke', 'strokeWidth', 'fontSize', 'fontPx', 'rot', 'locked', 'group'],
   connector: ['from', 'to', 'arrow', 'route', 'stroke', 'strokeWidth', 'label', 'locked', 'group'],
   image: ['x', 'y', 'w', 'h', 'src', 'stickerId', 'rot', 'locked', 'group'],
+  ink: ['x', 'y', 'w', 'h', 'points', 'stroke', 'strokeWidth', 'marker', 'erase', 'rot', 'locked', 'group'],
+  frame: ['x', 'y', 'w', 'h', 'title', 'fill', 'locked', 'group'],
 };
 
 const PATCH_KEYS: Record<ObjectKind, readonly (keyof ObjectPatch)[]> = {
-  sticky: ['x', 'y', 'w', 'h', 'color', 'fontSize', 'fontPx', 'rot', 'locked', 'group'],
+  sticky: ['x', 'y', 'w', 'h', 'color', 'fontSize', 'fontPx', 'pad', 'rot', 'locked', 'group'],
   text: ['x', 'y', 'w', 'size', 'color', 'rot', 'locked', 'group'],
-  shape: ['x', 'y', 'w', 'h', 'shape', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'fontPx', 'rot', 'locked', 'group'],
+  shape: ['x', 'y', 'w', 'h', 'shape', 'fill', 'soft', 'stroke', 'strokeWidth', 'fontSize', 'fontPx', 'rot', 'locked', 'group'],
   connector: ['from', 'to', 'arrow', 'route', 'stroke', 'strokeWidth', 'label', 'locked', 'group'],
   // The picture itself (`src`) is fixed at creation.
   image: ['x', 'y', 'w', 'h', 'rot', 'locked', 'group'],
+  // The stroke itself (`points`, `marker`) is fixed at creation; a resize stretches it through `w` / `h`; the eraser adds swaths.
+  ink: ['x', 'y', 'w', 'h', 'stroke', 'strokeWidth', 'erase', 'rot', 'locked', 'group'],
+  // A frame never rotates.
+  frame: ['x', 'y', 'w', 'h', 'title', 'fill', 'locked', 'group'],
 };
 
 /** A group id is a short token (newId's alphabet); anything else is ignored. */
@@ -149,7 +159,7 @@ export const isGroupId = (v: unknown): v is string => typeof v === 'string' && /
 /** Optional transform fields of an init that are worth storing: absent = default, so nothing is written for the defaults. */
 function extraFields(init: ObjectInit): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  const rot = init.kind !== 'connector' && typeof init.rot === 'number' ? normRot(init.rot) : 0;
+  const rot = init.kind !== 'connector' && init.kind !== 'frame' && typeof init.rot === 'number' ? normRot(init.rot) : 0;
   if (rot !== 0) out.rot = rot;
   if (init.locked === true) out.locked = true;
   if (isGroupId(init.group)) out.group = init.group;
@@ -169,6 +179,7 @@ function initFields(init: ObjectInit): { fields: Record<string, unknown>; text: 
           x: num(init.x, 0), y: num(init.y, 0),
           w: num(init.w, DEFAULTS.stickySize, DEFAULTS.minBox, MAX_SIZE), h: num(init.h, DEFAULTS.stickySize, DEFAULTS.minBox, MAX_SIZE),
           color: color(init.color, DEFAULTS.stickyColor),
+          ...(init.pad === true ? { pad: true } : {}),
         },
         text: clampText(init.text ?? ''),
       };
@@ -182,17 +193,19 @@ function initFields(init: ObjectInit): { fields: Record<string, unknown>; text: 
         },
         text: clampText(init.text ?? ''),
       };
-    case 'shape':
+    case 'shape': {
+      const fill = splitFill(typeof init.fill === 'string' ? init.fill : '');
       return {
         fields: {
           shape: isShapeKind(init.shape) ? init.shape : 'rect',
           x: num(init.x, 0), y: num(init.y, 0),
           w: num(init.w, DEFAULTS.shapeW, DEFAULTS.minBox, MAX_SIZE), h: num(init.h, DEFAULTS.shapeH, DEFAULTS.minBox, MAX_SIZE),
-          fill: color(init.fill, DEFAULTS.shapeFill), stroke: color(init.stroke, DEFAULTS.shapeStroke),
+          fill: color(fill.fill, DEFAULTS.shapeFill), ...(fill.soft ? { soft: true } : {}), stroke: color(init.stroke, DEFAULTS.shapeStroke),
           strokeWidth: num(init.strokeWidth, DEFAULTS.strokeWidth, 0, 24),
         },
         text: clampText(init.text ?? ''),
       };
+    }
     case 'connector':
       return {
         fields: {
@@ -214,6 +227,29 @@ function initFields(init: ObjectInit): { fields: Record<string, unknown>; text: 
         },
         text: null,
       };
+    case 'ink':
+      return {
+        fields: {
+          x: num(init.x, 0), y: num(init.y, 0),
+          w: num(init.w, 1, 1, MAX_SIZE), h: num(init.h, 1, 1, MAX_SIZE),
+          points: [...(inkPoints(init.points) ?? [0, 0, 0, 0])],
+          stroke: color(init.stroke, DEFAULTS.inkStroke), strokeWidth: num(init.strokeWidth, DEFAULTS.inkWidth, INK_MIN_WIDTH, INK_MAX_WIDTH),
+          ...(init.marker === true ? { marker: true } : {}),
+          ...(inkErase(init.erase) ? { erase: [...(init.erase ?? [])] } : {}),
+        },
+        text: null,
+      };
+    case 'frame':
+      return {
+        fields: {
+          x: num(init.x, 0), y: num(init.y, 0),
+          w: num(init.w, DEFAULTS.frameW, DEFAULTS.minFrame, MAX_SIZE), h: num(init.h, DEFAULTS.frameH, DEFAULTS.minFrame, MAX_SIZE),
+          title: clampTitle(init.title),
+          // A soft tone is how every frame hue is drawn: a `soft:` prefix from a picker is the same hue.
+          fill: color(splitFill(typeof init.fill === 'string' ? init.fill : '').fill, DEFAULTS.frameFill),
+        },
+        text: null,
+      };
   }
 }
 
@@ -228,7 +264,7 @@ type DeleteSet = Y.UndoManager['undoStack'][number]['deletions'];
  * (`fontFields`). A plain token write drops the exact size it overrides, so a token set by older code is never shadowed.
  */
 function expandFont(kind: ObjectKind, patch: ObjectPatch): ObjectPatch {
-  if (kind === 'connector' || kind === 'image') return patch;
+  if (kind === 'connector' || kind === 'image' || kind === 'ink' || kind === 'frame') return patch;
   const px = patch.fontPx;
   if (typeof px === 'number' && Number.isFinite(px)) {
     const v = clamp(px, DEFAULTS.minTextSize, DEFAULTS.maxTextSize);
@@ -240,25 +276,36 @@ function expandFont(kind: ObjectKind, patch: ObjectPatch): ObjectPatch {
   return patch;
 }
 
+/** Spells a `soft:<hue>` fill out as `fill` + `soft`; a plain fill drops the soft tone. */
+function expandFill(kind: ObjectKind, patch: ObjectPatch): ObjectPatch {
+  if ((kind !== 'shape' && kind !== 'frame') || typeof patch.fill !== 'string') return patch;
+  const f = splitFill(patch.fill);
+  // A frame draws every hue soft: the prefix is dropped, not stored.
+  if (kind === 'frame') return { ...patch, fill: f.fill };
+  return { ...patch, fill: f.fill, soft: f.soft };
+}
+
 /** Normalizes a stored field before it is written by a patch; undefined = reject. */
 function patchValue(kind: ObjectKind, key: keyof ObjectPatch, v: unknown): unknown {
   switch (key) {
     case 'rot': return typeof v === 'number' && Number.isFinite(v) ? (normRot(v) === 0 ? REMOVE : normRot(v)) : undefined;
-    case 'locked': return typeof v === 'boolean' ? (v ? true : REMOVE) : undefined;
+    case 'locked': case 'soft': case 'pad': return typeof v === 'boolean' ? (v ? true : REMOVE) : undefined;
     case 'group': return v === null ? REMOVE : isGroupId(v) ? v : undefined;
     case 'fontSize': return isFontToken(v) ? (v === 'm' ? REMOVE : v) : undefined;
     case 'fontPx': return v === null ? REMOVE : typeof v === 'number' && Number.isFinite(v) ? clamp(v, DEFAULTS.minTextSize, DEFAULTS.maxTextSize) : undefined;
     case 'x': case 'y': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, -MAX_COORD, MAX_COORD) : undefined;
-    case 'w': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, kind === 'text' ? DEFAULTS.minTextW : DEFAULTS.minBox, MAX_SIZE) : undefined;
-    case 'h': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, DEFAULTS.minBox, MAX_SIZE) : undefined;
+    case 'w': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, kind === 'text' ? DEFAULTS.minTextW : kind === 'ink' ? 1 : kind === 'frame' ? DEFAULTS.minFrame : DEFAULTS.minBox, MAX_SIZE) : undefined;
+    case 'h': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, kind === 'ink' ? 1 : kind === 'frame' ? DEFAULTS.minFrame : DEFAULTS.minBox, MAX_SIZE) : undefined;
     case 'size': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, DEFAULTS.minTextSize, DEFAULTS.maxTextSize) : undefined;
-    case 'strokeWidth': return typeof v === 'number' && Number.isFinite(v) ? clamp(v, 0, 24) : undefined;
+    case 'strokeWidth': return typeof v === 'number' && Number.isFinite(v) ? (kind === 'ink' ? clamp(v, INK_MIN_WIDTH, INK_MAX_WIDTH) : clamp(v, 0, 24)) : undefined;
     case 'color': case 'fill': case 'stroke': return color(v, '') || undefined;
     case 'shape': return isShapeKind(v) ? v : undefined;
     case 'from': case 'to': return endpoint(v) ?? undefined;
     case 'arrow': return typeof v === 'string' && ARROW_SET.has(v) ? v : undefined;
     case 'route': return typeof v === 'string' && ROUTE_SET.has(v) ? v : undefined;
     case 'label': return typeof v === 'string' ? clampText(v) : undefined;
+    case 'erase': return v === null ? REMOVE : inkErase(v) ? [...(v as number[])] : undefined;
+    case 'title': return typeof v === 'string' ? clampTitle(v) : undefined;
   }
 }
 
@@ -268,7 +315,7 @@ export type StoredFields = ReadonlyMap<string, unknown>;
 /** The fields `patchMany` would write for `raw` on an object of `kind` (only keys valid for it, values normalized). */
 export function normalizePatch(kind: ObjectKind, raw: ObjectPatch): Map<string, unknown> {
   const out = new Map<string, unknown>();
-  const patch = expandFont(kind, raw);
+  const patch = expandFill(kind, expandFont(kind, raw));
   for (const key of PATCH_KEYS[kind]) {
     if (!(key in patch)) continue;
     const v = patchValue(kind, key, patch[key]);
@@ -308,11 +355,13 @@ export class CanvasDoc {
   private static readonly OBJECT_BYTES = 260;
   private static readonly CHUNK_BYTES = 40_000;
 
-  /** What a batch adds to the encoded state: the fields of each object and its text in UTF-8. */
-  private static batchBytes(items: readonly { text: string | null }[]): number {
+  /** What a batch adds to the encoded state: the fields of each object, its text in UTF-8 and a stroke's points. */
+  private static batchBytes(items: readonly { text: string | null; fields: Record<string, unknown> }[]): number {
     const enc = new TextEncoder();
     let bytes = 0;
-    for (const { text } of items) bytes += CanvasDoc.OBJECT_BYTES + (text ? enc.encode(text).length : 0);
+    for (const { text, fields } of items) {
+      bytes += CanvasDoc.OBJECT_BYTES + (text ? enc.encode(text).length : 0) + (Array.isArray(fields.points) ? fields.points.length * 4 : 0);
+    }
     return bytes;
   }
 
@@ -464,8 +513,8 @@ export class CanvasDoc {
    * exceed it — while smaller updates travel as plain UPDATE frames.
    */
   createMany(all: readonly { id?: string; init: ObjectInit }[]): string[] {
-    // A picture of anything but the app's own media is never written.
-    const items = all.filter((i) => i.init.kind !== 'image' || isImageSrc(i.init.src));
+    // A picture of anything but the app's own media, or a stroke without sane points, is never written.
+    const items = all.filter((i) => (i.init.kind !== 'image' || isImageSrc(i.init.src)) && (i.init.kind !== 'ink' || inkPoints(i.init.points) !== null));
     if (items.length === 0 || this.objects.size + items.length > MAX_OBJECTS) return [];
     const ids: string[] = [];
     let z = this.maxZ();
@@ -474,7 +523,8 @@ export class CanvasDoc {
     let cur: typeof prepared = [];
     let bytes = 0;
     for (const p of prepared) {
-      const est = CanvasDoc.OBJECT_BYTES + (p.text?.length ?? 0) * 3;
+      // A stroke's points: ~4 bytes each number (a varint or a float32).
+      const est = CanvasDoc.OBJECT_BYTES + (p.text?.length ?? 0) * 3 + (p.item.init.kind === 'ink' ? (p.item.init.points.length + (p.item.init.erase?.length ?? 0)) * 4 : 0);
       if (cur.length > 0 && bytes + est > CanvasDoc.CHUNK_BYTES) {
         chunks.push(cur);
         cur = [];
@@ -558,7 +608,11 @@ export class CanvasDoc {
       this.patch(id, { label: text });
       return;
     }
-    if (kind === 'image') return;
+    if (kind === 'frame') {
+      this.patch(id, { title: text });
+      return;
+    }
+    if (kind === 'image' || kind === 'ink') return;
     const next = clampText(text);
     this.transact(() => {
       const cur = m.get('text');
@@ -579,7 +633,11 @@ export class CanvasDoc {
       this.patch(id, { label: text });
       return;
     }
-    if (m.get('kind') === 'image') return;
+    if (m.get('kind') === 'frame') {
+      this.patch(id, { title: text });
+      return;
+    }
+    if (m.get('kind') === 'image' || m.get('kind') === 'ink') return;
     const next = clampText(text);
     this.transact(() => {
       let yt = m.get('text');
@@ -614,7 +672,7 @@ export class CanvasDoc {
       const raw = t.toJSON();
       return raw.endsWith('\n') ? fmtFromDelta(t.toDelta() as never).text : raw;
     }
-    const label = m.get('label');
+    const label = m.get(m.get('kind') === 'frame' ? 'title' : 'label');
     return typeof label === 'string' ? label : '';
   }
 
@@ -649,7 +707,7 @@ export class CanvasDoc {
       const v = m.get(k);
       if (v !== undefined) out[k] = v;
     }
-    if (kind !== 'connector' && kind !== 'image') {
+    if (kind !== 'connector' && kind !== 'image' && kind !== 'ink' && kind !== 'frame') {
       const t = m.get('text');
       if (t instanceof Y.Text) {
         const { text, fmt } = fmtFromDelta(t.toDelta() as never);

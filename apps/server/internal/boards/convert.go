@@ -177,6 +177,7 @@ func boardProto(b sqlc.Board, p boardParts, bits perm.Bits, scoped bool) *v1.Boa
 		RulesCount:                 uint32(max(p.rules[b.ID], 0)),                //nolint:gosec // ≤ 20
 		ApprovalNotifyDelaySeconds: uint32(max(b.ApprovalNotifyDelaySeconds, 0)), //nolint:gosec // CHECK 0..3600
 		AiFindDuplicates:           b.AiFindDuplicates,
+		ApprovalGate:               ApprovalGateProto(b.ApprovalGateOff),
 	}
 	for _, s := range p.statuses[b.ID] {
 		out.Statuses = append(out.Statuses, status(s))
@@ -514,6 +515,7 @@ func activity(a sqlc.TaskActivity) *v1.TaskActivity {
 		Id: a.ID.String(), TaskId: a.TaskID.String(), BoardId: a.BoardID.String(), ActorId: idp(a.ActorID), Kind: a.Kind,
 		Before: jsonStruct(a.Before), After: jsonStruct(a.After), CreatedAt: timestamppb.New(a.CreatedAt), RuleId: idp(a.RuleID),
 		ViaBotId: idp(a.ViaBotID), // ADR-0106
+		Via:      deref(a.Via),    // ADR-0156
 	}
 }
 

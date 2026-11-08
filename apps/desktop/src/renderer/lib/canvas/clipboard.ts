@@ -1,8 +1,9 @@
 import { CanvasDoc, clampText, color, endpoint, isGroupId, isKind, isShapeKind, newId, num, type PlainObject } from './doc';
+import { INK_MAX_WIDTH, INK_MIN_WIDTH, inkErase, inkPoints } from './ink';
 import { fmtFromDelta, type DeltaOp } from './richText';
 import type { Scene } from './scene';
 import { isFontToken } from './textLayout';
-import { DEFAULTS, MAX_OBJECTS, MAX_TEXT, isImageSrc, type Endpoint, type InitExtras, type ObjectInit } from './types';
+import { DEFAULTS, MAX_OBJECTS, MAX_TEXT, SOFT_PREFIX, isImageSrc, type Endpoint, type InitExtras, type ObjectInit } from './types';
 
 /** Text-clipboard format: prefix + JSON (ADR-0126 §4). */
 export const CLIPBOARD_PREFIX = 'calaba-canvas:';
@@ -103,10 +104,10 @@ export function toInits(payload: ClipboardPayload, dx: number, dy: number, makeI
     if (!id) continue;
     const { text, fmt } = richOf(o);
     const extras: InitExtras = {};
-    if (fmt && o.kind !== 'connector' && o.kind !== 'image') extras.fmt = fmt;
+    if (fmt && o.kind !== 'connector' && o.kind !== 'image' && o.kind !== 'ink' && o.kind !== 'frame') extras.fmt = fmt;
     if ((o.kind === 'sticky' || o.kind === 'shape') && isFontToken(o.fontSize)) extras.fontSize = o.fontSize;
     if ((o.kind === 'sticky' || o.kind === 'shape') && typeof o.fontPx === 'number') extras.fontPx = o.fontPx;
-    if (o.kind !== 'connector' && typeof o.rot === 'number') extras.rot = o.rot;
+    if (o.kind !== 'connector' && o.kind !== 'frame' && typeof o.rot === 'number') extras.rot = o.rot;
     if (o.locked === true) extras.locked = true;
     const g = isGroupId(o.group) ? groups.get(o.group) : undefined;
     if (g !== undefined) extras.group = g;
@@ -114,7 +115,7 @@ export function toInits(payload: ClipboardPayload, dx: number, dy: number, makeI
     const y = num(o.y, 0) + dy;
     switch (o.kind) {
       case 'sticky':
-        out.push({ id, init: { kind: 'sticky', x, y, w: num(o.w, 160), h: num(o.h, 160), color: color(o.color, 'yellow'), text, ...extras } });
+        out.push({ id, init: { kind: 'sticky', x, y, w: num(o.w, 160), h: num(o.h, 160), color: color(o.color, 'yellow'), text, ...(o.pad === true ? { pad: true } : {}), ...extras } });
         break;
       case 'text':
         out.push({ id, init: { kind: 'text', x, y, w: num(o.w, 240), size: num(o.size, 20), color: color(o.color, 'text'), text, ...extras } });
@@ -124,7 +125,8 @@ export function toInits(payload: ClipboardPayload, dx: number, dy: number, makeI
           id,
           init: {
             kind: 'shape', shape: isShapeKind(o.shape) ? o.shape : 'rect', x, y, w: num(o.w, 160), h: num(o.h, 100),
-            fill: color(o.fill, 'none'), stroke: color(o.stroke, 'stroke'), strokeWidth: num(o.strokeWidth, 2, 0, 24), text, ...extras,
+            // A copied soft tone travels as its `soft:` fill (the doc splits it again).
+            fill: o.soft === true ? `${SOFT_PREFIX}${color(o.fill, 'none')}` : color(o.fill, 'none'), stroke: color(o.stroke, 'stroke'), strokeWidth: num(o.strokeWidth, 2, 0, 24), text, ...extras,
           },
         });
         break;
@@ -146,6 +148,30 @@ export function toInits(payload: ClipboardPayload, dx: number, dy: number, makeI
           init: {
             kind: 'image', src: o.src, x, y, w: num(o.w, DEFAULTS.imageSize), h: num(o.h, DEFAULTS.imageSize),
             ...(typeof o.stickerId === 'string' ? { stickerId: o.stickerId } : {}), ...extras,
+          },
+        });
+        break;
+      case 'ink': {
+        // A stroke without sane points is dropped (the doc would refuse it anyway).
+        const pts = inkPoints(o.points);
+        if (!pts) break;
+        out.push({
+          id,
+          init: {
+            kind: 'ink', x, y, w: num(o.w, 1, 1), h: num(o.h, 1, 1), points: pts,
+            stroke: color(o.stroke, DEFAULTS.inkStroke), strokeWidth: num(o.strokeWidth, DEFAULTS.inkWidth, INK_MIN_WIDTH, INK_MAX_WIDTH),
+            ...(o.marker === true ? { marker: true } : {}),
+            ...(inkErase(o.erase) ? { erase: o.erase as number[] } : {}), ...extras,
+          },
+        });
+        break;
+      }
+      case 'frame':
+        out.push({
+          id,
+          init: {
+            kind: 'frame', x, y, w: num(o.w, DEFAULTS.frameW), h: num(o.h, DEFAULTS.frameH),
+            title: typeof o.title === 'string' ? o.title : '', fill: color(o.fill, DEFAULTS.frameFill), ...extras,
           },
         });
         break;

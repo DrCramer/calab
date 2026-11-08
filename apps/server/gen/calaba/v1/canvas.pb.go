@@ -174,6 +174,7 @@ type CanvasItem struct {
 	TrashedRoot   bool                   `protobuf:"varint,17,opt,name=trashed_root,json=trashedRoot,proto3" json:"trashed_root,omitempty"` // the item the deletion started at (the trash lists only these)
 	DocSize       uint32                 `protobuf:"varint,18,opt,name=doc_size,json=docSize,proto3" json:"doc_size,omitempty"`             // bytes of the last snapshot (the client warns near 4 MiB); canvases only
 	Preview       string                 `protobuf:"bytes,19,opt,name=preview,proto3" json:"preview,omitempty"`                             // the first ≤ 200 characters of the objects' text (from the last snapshot)
+	Emoji         string                 `protobuf:"bytes,20,opt,name=emoji,proto3" json:"emoji,omitempty"`                                 // one emoji in place of the item's icon, or empty (canvases and folders)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -337,6 +338,13 @@ func (x *CanvasItem) GetDocSize() uint32 {
 func (x *CanvasItem) GetPreview() string {
 	if x != nil {
 		return x.Preview
+	}
+	return ""
+}
+
+func (x *CanvasItem) GetEmoji() string {
+	if x != nil {
+		return x.Emoji
 	}
 	return ""
 }
@@ -772,6 +780,7 @@ type UpdateCanvasItemRequest struct {
 	ParentId      *string                `protobuf:"bytes,2,opt,name=parent_id,json=parentId,proto3,oneof" json:"parent_id,omitempty"`
 	Position      *int32                 `protobuf:"varint,3,opt,name=position,proto3,oneof" json:"position,omitempty"`
 	Restricted    *bool                  `protobuf:"varint,4,opt,name=restricted,proto3,oneof" json:"restricted,omitempty"`
+	Emoji         *string                `protobuf:"bytes,5,opt,name=emoji,proto3,oneof" json:"emoji,omitempty"` // one emoji or "" (back to the icon); the structure right, as a rename
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -832,6 +841,13 @@ func (x *UpdateCanvasItemRequest) GetRestricted() bool {
 		return *x.Restricted
 	}
 	return false
+}
+
+func (x *UpdateCanvasItemRequest) GetEmoji() string {
+	if x != nil && x.Emoji != nil {
+		return *x.Emoji
+	}
+	return ""
 }
 
 // GET /api/canvas/items/{id}/path — the ancestors, the top-level item first, then the item.
@@ -2339,7 +2355,7 @@ var File_calaba_v1_canvas_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_canvas_proto_rawDesc = "" +
 	"\n" +
-	"\x16calaba/v1/canvas.proto\x12\tcalaba.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/room.proto\"\x91\x05\n" +
+	"\x16calaba/v1/canvas.proto\x12\tcalaba.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/room.proto\"\xa7\x05\n" +
 	"\n" +
 	"CanvasItem\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
@@ -2368,7 +2384,8 @@ const file_calaba_v1_canvas_proto_rawDesc = "" +
 	"trashed_by\x18\x10 \x01(\tR\ttrashedBy\x12!\n" +
 	"\ftrashed_root\x18\x11 \x01(\bR\vtrashedRoot\x12\x19\n" +
 	"\bdoc_size\x18\x12 \x01(\rR\adocSize\x12\x18\n" +
-	"\apreview\x18\x13 \x01(\tR\apreview\"\xa0\x01\n" +
+	"\apreview\x18\x13 \x01(\tR\apreview\x12\x14\n" +
+	"\x05emoji\x18\x14 \x01(\tR\x05emoji\"\xa0\x01\n" +
 	"\x15CanvasPermissionEntry\x12@\n" +
 	"\vtarget_type\x18\x01 \x01(\x0e2\x1f.calaba.v1.PermissionTargetTypeR\n" +
 	"targetType\x12\x1b\n" +
@@ -2403,19 +2420,21 @@ const file_calaba_v1_canvas_proto_rawDesc = "" +
 	"\x04kind\x18\x02 \x01(\x0e2\x19.calaba.v1.CanvasItemKindR\x04kind\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\"?\n" +
 	"\x12CanvasItemResponse\x12)\n" +
-	"\x04item\x18\x01 \x01(\v2\x15.calaba.v1.CanvasItemR\x04item\"\xcd\x01\n" +
+	"\x04item\x18\x01 \x01(\v2\x15.calaba.v1.CanvasItemR\x04item\"\xf2\x01\n" +
 	"\x17UpdateCanvasItemRequest\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12 \n" +
 	"\tparent_id\x18\x02 \x01(\tH\x01R\bparentId\x88\x01\x01\x12\x1f\n" +
 	"\bposition\x18\x03 \x01(\x05H\x02R\bposition\x88\x01\x01\x12#\n" +
 	"\n" +
 	"restricted\x18\x04 \x01(\bH\x03R\n" +
-	"restricted\x88\x01\x01B\a\n" +
+	"restricted\x88\x01\x01\x12\x19\n" +
+	"\x05emoji\x18\x05 \x01(\tH\x04R\x05emoji\x88\x01\x01B\a\n" +
 	"\x05_nameB\f\n" +
 	"\n" +
 	"_parent_idB\v\n" +
 	"\t_positionB\r\n" +
-	"\v_restricted\"A\n" +
+	"\v_restrictedB\b\n" +
+	"\x06_emoji\"A\n" +
 	"\x12CanvasPathResponse\x12+\n" +
 	"\x05items\x18\x01 \x03(\v2\x15.calaba.v1.CanvasItemR\x05items\"4\n" +
 	"\x18EmptyCanvasTrashResponse\x12\x18\n" +

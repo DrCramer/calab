@@ -6,6 +6,7 @@ import { t, useLocale } from '../../../i18n';
 import type { CanvasEngine } from '../engine';
 import { DIVIDER, MENU_BOX, PANEL, keepFocus } from './chrome';
 import { useEngineValue } from './hooks';
+import { FramesToggle } from './FramesPanel';
 import { useMinimapPref } from './MiniMap';
 import { minimapPref } from './minimapDraw';
 
@@ -112,7 +113,7 @@ function MiniMapToggle({ focusCanvas }: { focusCanvas: () => void }): ReactNode 
 
 /** Zoom, fit and the shortcut help: bottom right. `phone` (view only, no keyboard): zoom and «вписать всё» only. */
 export const ZoomBar = memo(function ZoomBar({
-  engine, focusCanvas, canWrite, helpOpen, onHelpOpenChange, phone = false, top = false, comments, minimap = true,
+  engine, focusCanvas, canWrite, helpOpen, onHelpOpenChange, phone = false, top = false, comments, minimap = true, frames = true,
 }: {
   engine: CanvasEngine;
   focusCanvas: () => void;
@@ -126,6 +127,8 @@ export const ZoomBar = memo(function ZoomBar({
   comments?: ReactNode;
   /** The mini-map's toggle; off where no mini-map is mounted (the public link's viewer). */
   minimap?: boolean;
+  /** The frames panel's toggle; off where no frames panel is mounted (the public link's viewer). */
+  frames?: boolean;
 }): ReactNode {
   useLocale();
   const step = (dir: 1 | -1) => (): void => {
@@ -156,6 +159,7 @@ export const ZoomBar = memo(function ZoomBar({
           <IconButton label={t('canvasBoard.zoom.fitSelection')} shortcut="⇧2" onMouseDown={keepFocus} onClick={() => { engine.fitSelection(); focusCanvas(); }} data-testid="canvas-fit-selection">
             <Focus className={ICON} strokeWidth={1.75} aria-hidden />
           </IconButton>
+          {frames ? <FramesToggle focusCanvas={focusCanvas} /> : null}
           {minimap ? <MiniMapToggle focusCanvas={focusCanvas} /> : null}
           <div className={DIVIDER} aria-hidden />
           <Help focusCanvas={focusCanvas} canWrite={canWrite} open={helpOpen} onOpenChange={onHelpOpenChange} />

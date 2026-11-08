@@ -14,8 +14,10 @@ import { zhRecording } from './recording';
 import { zhAnnot } from './annot';
 import { zhPeople } from './people';
 import { zhFormer } from './former';
+import { zhAccount } from './account';
 import { zhPrivacy } from './privacy';
 import { zhModeration } from './moderation';
+import { zhReport } from './report';
 import { zhPicker } from './picker';
 import { zhRoles } from './roles';
 import { zhCalendar } from './calendar';
@@ -92,8 +94,10 @@ export const zhCN: Dict = {
   ...zhTransitions,
   ...zhCustomPlan,
   ...zhFormer,
+  ...zhAccount,
   ...zhPrivacy,
   ...zhModeration,
+  ...zhReport,
   ...zhMail,
   ...zhRecording,
   ...zhAnnot,
@@ -121,6 +125,7 @@ export const zhCN: Dict = {
   'common.delete': '删除',
   'common.save': '保存',
   'common.saved': '已保存',
+  'common.clear': '清除',
   'common.reset': '重置',
   'common.retry': '重试',
   'common.search': '搜索',

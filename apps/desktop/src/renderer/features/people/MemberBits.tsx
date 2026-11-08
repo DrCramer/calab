@@ -3,8 +3,8 @@ import { Crown, ShieldCheck, UserCheck } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { Badge, cx } from '../../components/ui';
 import { t, type MessageKey } from '../../i18n';
-import { viaBotSuffix, viaBotText } from '../../lib/bots';
-import { roleColorCss } from '../../lib/roles';
+import { viaText } from '../../lib/bots';
+import { readableRoleColor, roleColorCss } from '../../lib/roles';
 import { useFormerInfo, useWorkspaces } from '../../stores/workspaces';
 
 /** «Гость» next to a name (ADR-0016): the shared badge (11/600, sentence case, radius 4). */
@@ -37,14 +37,18 @@ export function FormerChipView({ leftAt, className }: { leftAt: number; classNam
 
 /**
  * «(через бота X)» after an author's name (ADR-0106): the owner's message or task change made by
- * their bot. A small muted suffix in the caller's text style; `bare` drops the parentheses (a
- * line of its own, e.g. above my own bubble). Subscribes to the bot's name only.
+ * their bot; with `mcp` (ADR-0156) the way is the MCP endpoint — «(через бота X · MCP)», or
+ * «(через MCP)» for a bot's own action. A small muted suffix in the caller's text style; `bare`
+ * drops the parentheses (a line of its own, e.g. above my own bubble). Subscribes to the bot's
+ * name only. Nothing when neither is set.
  */
-export function ViaBot({ botId, bare = false, className }: { botId: string; bare?: boolean; className?: string }): ReactNode {
-  const name = useWorkspaces((s) => s.users[botId]?.displayName ?? '');
+export function ViaBot({ botId = '', mcp = false, bare = false, className }: { botId?: string | undefined; mcp?: boolean; bare?: boolean; className?: string }): ReactNode {
+  const name = useWorkspaces((s) => (botId ? (s.users[botId]?.displayName ?? '') : ''));
+  const text = viaText(!!botId, name, mcp);
+  if (!text) return null;
   return (
-    <span data-via-bot className={cx('font-normal', className)} data-testid="via-bot">
-      {bare ? viaBotText(name) : viaBotSuffix(name)}
+    <span data-via-bot data-via-mcp={mcp ? '' : undefined} className={cx('font-normal', className)} data-testid="via-bot">
+      {bare ? text : `(${text})`}
     </span>
   );
 }
@@ -85,7 +89,7 @@ export function roleTextClass(role: WorkspaceRole | undefined, tone: RoleTone = 
   if (role === WorkspaceRole.OWNER) return 'text-role-owner';
   if (role === WorkspaceRole.ADMIN) return 'text-role-admin';
   // A custom role's colour comes inline (roleTextStyle).
-  if (custom?.color) return '';
+  if (custom?.color) return 'role-tint';
   return 'text-fg';
 }
 
@@ -111,8 +115,16 @@ export type RoleLook = Pick<Role, 'name' | 'color'>;
  */
 export function roleTextStyle(role: WorkspaceRole | undefined, tone: RoleTone = 'role', custom?: RoleLook): CSSProperties | undefined {
   if (tone !== 'role' || hasRoleMark(role) || !custom?.color) return undefined;
-  return { color: roleColorCss(custom.color) };
+  const hit = tintStyles.get(custom.color);
+  if (hit) return hit;
+  // Both theme variants; .role-tint (styles.css) picks one, so no theme subscription per row.
+  const style = { '--rc-l': readableRoleColor(custom.color, 'light'), '--rc-d': readableRoleColor(custom.color, 'dark') } as CSSProperties;
+  if (tintStyles.size >= 512) tintStyles.clear();
+  tintStyles.set(custom.color, style);
+  return style;
 }
+/** One frozen-in-practice style object per role colour: rows get a stable `style` identity. */
+const tintStyles = new Map<number, CSSProperties>();
 
 /** Owner and admins carry a mark; members and guests don't (the guest badge is separate). */
 export const hasRoleMark = (role: WorkspaceRole | undefined): boolean => role === WorkspaceRole.OWNER || role === WorkspaceRole.ADMIN;

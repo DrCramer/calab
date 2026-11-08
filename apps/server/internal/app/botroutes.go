@@ -124,6 +124,9 @@ var botRouteGroups = []botRouteGroup{
 		"POST /api/me/avatar",
 		"GET /api/me/mentions",
 	}},
+	{access: botAllow, why: "the inbox ✕ (CBF-155, ADR-0163): a bot that polls GET /api/me/mentions may clear its own list; only its own rows change", routes: []string{
+		"POST /api/me/inbox/dismiss",
+	}},
 	{access: botAllow, why: "mailbox password recovery (ADR-0101): only the MAILHOST_RESET_BOTS allowlist passes the handlers", routes: []string{
 		"POST /api/mailbox/hosting-check",
 		"POST /api/mailbox/password-reset",
@@ -523,8 +526,9 @@ var botRouteGroups = []botRouteGroup{
 		"DELETE /api/events/{id}/comments/{comment_id}",
 	}},
 
-	// MCP for bots (CBF-48), closed on behalf: the endpoint is the bot itself.
-	{access: botAllow, onBehalf: onBehalfClosed, why: "MCP for bots (CBF-48): bot tokens only (the handler refuses people); every tool calls a REST route of this table in process with the same token, so it has exactly the bot's rights", routes: []string{
+	// MCP for bots (CBF-48); on behalf of the owner or a consenting member too (ADR-0156): each
+	// tool's REST call is then checked on behalf like any other (onBehalfRoutes).
+	{access: botAllow, why: "MCP for bots (CBF-48, ADR-0156): bot tokens only (the handler refuses people's sessions); every tool calls a REST route of this table in process with the same token and Calab-On-Behalf, so it has exactly the rights of the bot, or of the person it acts for", routes: []string{
 		"/api/mcp",
 	}},
 
@@ -534,6 +538,7 @@ var botRouteGroups = []botRouteGroup{
 		"DELETE /api/me/sessions/{id}",
 		"PATCH /api/me/password",
 		"PATCH /api/me/email",
+		"POST /api/me/delete",
 		"POST /api/auth/verify/send",
 		"POST /api/auth/verify",
 		"GET /api/me/push-capabilities",
@@ -586,6 +591,25 @@ var botRouteGroups = []botRouteGroup{
 		"POST /api/oauth/requests/{request}/bind",
 		"GET /api/me/oauth-grants",
 		"DELETE /api/me/oauth-grants/{grant}",
+	}},
+	{access: botPublic, why: "MCP without a bot (ADR-0158): the OAuth server's metadata, client registration, authorize, token and revocation read no user or bot token — a bot is anonymous there", routes: []string{
+		"GET /.well-known/oauth-protected-resource",
+		"GET /.well-known/oauth-protected-resource/api/mcp",
+		"GET /.well-known/oauth-authorization-server",
+		"OPTIONS /.well-known/oauth-protected-resource",
+		"OPTIONS /.well-known/oauth-protected-resource/api/mcp",
+		"OPTIONS /.well-known/oauth-authorization-server",
+		"POST /api/mcp/oauth/register",
+		"OPTIONS /api/mcp/oauth/register",
+		"GET /api/mcp/oauth/authorize",
+		"POST /api/mcp/oauth/token",
+		"OPTIONS /api/mcp/oauth/token",
+		"POST /api/mcp/oauth/revoke",
+		"OPTIONS /api/mcp/oauth/revoke",
+	}},
+	{access: botDeny, why: "MCP without a bot (ADR-0158): the consent is a person's — a bot has its own token and needs none", routes: []string{
+		"POST /api/mcp/oauth/requests/{request}/bind",
+		"POST /api/mcp/oauth/requests/{request}/decision",
 	}},
 	{access: botDeny, why: "money: the workspace's balance, plan, payer and payment methods are the owner's (ADR-0080; roles refuse BILLING to bots); superadmin billing is people only", routes: []string{
 		"GET /api/workspaces/{id}/billing",
@@ -645,6 +669,7 @@ var botRouteGroups = []botRouteGroup{
 		"PUT /api/admin/workspaces/{id}/plan",
 		"GET /api/admin/workspaces/{id}/plan/log",
 		"PUT /api/admin/workspaces/{id}/suspension",
+		"PUT /api/admin/workspaces/{id}/upload-limits",
 		"GET /api/admin/users/{id}/storage-quota",
 		"PUT /api/admin/users/{id}/storage-quota",
 	}},
@@ -678,6 +703,14 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/me/blocked-bots",
 		"POST /api/me/blocked-bots/{id}",
 		"DELETE /api/me/blocked-bots/{id}",
+	}},
+	{access: botDeny, why: "ADR-0154: blocking people, reporting people and reviewing reports are a person's own judgement — a bot neither blocks, reports nor reads the reports of a workspace", routes: []string{
+		"GET /api/me/blocked-users",
+		"POST /api/me/blocked-users/{id}",
+		"DELETE /api/me/blocked-users/{id}",
+		"POST /api/reports",
+		"GET /api/workspaces/{id}/reports",
+		"POST /api/workspaces/{id}/reports/{reportId}/resolve",
 	}},
 	{access: botDeny, why: "ADR-0111: a consent to act on someone's behalf is that person's own decision (giving, revoking, declining or cancelling an invitation)", routes: []string{
 		"PUT /api/workspaces/{id}/bots/{botId}/delegations/{userId}",
@@ -733,6 +766,9 @@ var botRouteGroups = []botRouteGroup{
 		"DELETE /api/rooms/{id}/invites/{inviteId}",
 		"PATCH /api/rooms/{id}/invites/{inviteId}",
 		"DELETE /api/rooms/{id}/admissions/me",
+	}},
+	{access: botDeny, why: "ADR-0149 §3: the companion is the iPhone shell's second, subscribe-only LiveKit connection beside the device's native room audio; a bot's own connection subscribes and publishes data already", routes: []string{
+		"POST /api/rooms/{id}/voice/companion",
 	}},
 	{access: botDeny, why: "client helpers, not the bot API: server-side fetches of arbitrary URLs (link previews) and the HEIC converter would make a token a free proxy / CPU", routes: []string{
 		"GET /api/unfurl",

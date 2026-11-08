@@ -20,6 +20,8 @@ export interface CanvasPalette {
   labelBg: string;
   /** Named colors for fills/strokes/text ('red', 'blue', …). 'none' is transparent, 'text'/'stroke' fall back to `ink`. */
   colors: Readonly<Record<string, string>>;
+  /** Soft tones of the shape hues (a column or an area behind stickies): light pastels / muted darks per theme. */
+  soft: Readonly<Record<string, string>>;
   /** Sticky note colors: background + ink. */
   sticky: Readonly<Record<string, { bg: string; fg: string }>>;
   fontFamily: string;
@@ -33,6 +35,15 @@ export function resolveColor(p: CanvasPalette, token: string): string | null {
   if (HEX.test(token)) return token;
   if (token === 'text' || token === 'stroke') return p.colors[token] ?? p.ink;
   return p.colors[token] ?? p.ink;
+}
+
+/** A shape's fill: its soft tone when `soft` (an unknown hue falls back to the plain one). */
+export function resolveFill(p: CanvasPalette, token: string, soft: boolean | undefined): string | null {
+  if (soft && token !== 'none') {
+    const s = p.soft[token];
+    if (s) return s;
+  }
+  return resolveColor(p, token);
 }
 
 export function resolveSticky(p: CanvasPalette, token: string): { bg: string; fg: string } {
@@ -158,6 +169,17 @@ const COLORS_DARK = {
   blue: '#5b9bff', indigo: '#8c8cff', purple: '#b184ff', magenta: '#ea6df0', pink: '#ff6fae', brown: '#c08457', gray: '#9ca3af', white: '#ffffff',
 } as const;
 
+/** Soft tones: what a coloured column in a retro or a Kanban looks like — calm under stickies, text in the ink. */
+const SOFT_LIGHT = {
+  red: '#fde2e0', orange: '#feead6', yellow: '#fdf3c4', lime: '#e9f5d0', green: '#d9f4e3', teal: '#d3f2ee', cyan: '#d4eff7',
+  blue: '#dfe9fe', indigo: '#e4e4fd', purple: '#ece3fd', magenta: '#f8def9', pink: '#fde1ed', brown: '#f1e3d7', gray: '#e9ebef', white: '#ffffff',
+} as const;
+
+const SOFT_DARK = {
+  red: '#4a2725', orange: '#4a3421', yellow: '#46401f', lime: '#35411f', green: '#1f3e2c', teal: '#1c3d39', cyan: '#1c3944',
+  blue: '#23324f', indigo: '#2c2c52', purple: '#362a4f', magenta: '#44274a', pink: '#4a2738', brown: '#3e3025', gray: '#2f3238', white: '#3a3d44',
+} as const;
+
 /** Reasonable stand-in palette (tests, benchmark, previews); the product passes token-derived colors. */
 export function defaultPalette(theme: 'light' | 'dark' = 'light'): CanvasPalette {
   const light = theme === 'light';
@@ -172,6 +194,7 @@ export function defaultPalette(theme: 'light' | 'dark' = 'light'): CanvasPalette
     plaque: light ? 'rgba(31,41,55,0.28)' : 'rgba(229,231,235,0.32)',
     labelBg: light ? '#f7f7f8' : '#17181b',
     colors: light ? COLORS_LIGHT : COLORS_DARK,
+    soft: light ? SOFT_LIGHT : SOFT_DARK,
     sticky: light ? STICKY_LIGHT : STICKY_DARK,
     fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
   };

@@ -1,6 +1,6 @@
 import * as Popover from '../../components/radix/popover';
 import { WorkspaceRole, type UpcomingBirthday, type WorkspaceMember } from '@calaba/protocol';
-import { ChevronRight, MonitorUp, Phone, Video, Volume2 } from 'lucide-react';
+import { ChevronRight, MonitorUp, Phone, Video, Volume2, WifiOff } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Avatar } from '../../components/Avatar';
@@ -403,6 +403,17 @@ const MemberRow = memo(function MemberRow({
       <>
         <MonitorUp className="size-3.5 shrink-0 text-danger" aria-hidden />
         <span className="min-w-0 truncate">{activityLabel}</span>
+      </>
+    );
+  } else if (line.activity === 'voice' && v && !isMe && v.connectionLost) {
+    // ADR-0150: «Нет связи» takes the room name's place, the room stays in the line's tooltip —
+    // side by side in this one 16 px line the room name truncated to «Перегов…».
+    const lost = t('call.connectionLost');
+    activityLabel = roomName ? `${lost} · ${roomName}` : lost;
+    activity = (
+      <>
+        <WifiOff className="size-3.5 shrink-0 text-muted" aria-hidden data-voice-icon="connection-lost" />
+        <span className="min-w-0 truncate" data-testid="connection-lost-caption">{lost}</span>
       </>
     );
   } else if (line.activity === 'voice' && v) {

@@ -1,19 +1,29 @@
 import { pinchStep, type Camera } from '../../../lib/canvas/camera';
 import { duplicate } from '../../../lib/canvas/clipboard';
 import type { CanvasDoc } from '../../../lib/canvas/doc';
+import { INK_EPS_PX, INK_MAX_ERASE, INK_RAW_MAX, inkErase, inkFromStroke, inkPoints, inkSegDistance, swathToStored, swathsCover, tailRect } from '../../../lib/canvas/ink';
 import type { LiveLayer } from '../../../lib/canvas/live';
 import {
   ROT_STEP, angleToward, boundsOf, dist, mapRect, normRot, rectCenter, rectFromPoints, rectInflate, resizeRect, resizeRotated, rotatePoint, snapAngle, snapTo,
   type HandleId, type Point, type Rect,
 } from '../../../lib/canvas/geometry';
-import { anchorOf, SIDES, type ConcreteSide } from '../../../lib/canvas/route';
+import { anchorOf, curveControls, flattenCubic, routeConnector, SIDE_DIR, SIDES, type ConcreteSide } from '../../../lib/canvas/route';
 import type { Scene } from '../../../lib/canvas/scene';
 import { snapMove, snapResizePoint, type SnapOptions } from '../../../lib/canvas/snap';
+import { SHAPE_TEXT_SIZE, STICKY_TEXT_SIZE } from '../../../lib/canvas/textLayout';
 import {
   DEFAULTS, aabb, isBound, isBox, isConnector,
-  type BoxRec, type ConnectorRec, type Endpoint, type ObjectPatch, type RouteKind, type ShapeKind,
+  type BoxRec, type ConnectorRec, type Endpoint, type ObjectPatch, type ShapeRec, type StickyRec, type RouteKind, type ShapeKind,
 } from '../../../lib/canvas/types';
-import type { OverlayState } from './overlay';
+import type { InkPreview, OverlayState } from './overlay';
+import { edgeMid, QUICK_ROUTE } from './quick';
+
+/** What the pen draws with now (remembered for the session by the engine). */
+export interface InkStyle {
+  readonly color: string;
+  readonly width: number;
+  readonly marker: boolean;
+}
 
 export interface Mods {
   shift: boolean;
@@ -33,6 +43,7 @@ export interface Core {
   readonly liveCamera: Camera;
   readonly selection: ReadonlySet<string>;
   readonly shapeKind: ShapeKind;
+  readonly stickyColor: string;
   readonly connectorRoute: RouteKind;
   readonly gridSize: number;
   setCamera(c: Camera): void;
@@ -49,10 +60,27 @@ export interface Core {
   expandUnits(ids: Iterable<string>): string[];
   /** Touch editing (the phone): glue targets are found from further away, a finger being what it is. */
   readonly touch?: boolean;
+  /** The pen's color, width and kind. */
+  readonly inkStyle: InkStyle;
+  /** The size a click of the «Фрейм» tool places. */
+  readonly frameSize: { readonly w: number; readonly h: number };
+  /** The title a new frame gets («Фрейм 3»). */
+  nextFrameTitle(): string;
+  /** The eraser's radius, screen px. */
+  readonly eraserPx: number;
+  /** Shows the stroke in progress (null: none); `dirty` is the world rect that changed since the last call (null: all of it). */
+  previewInk(ink: InkPreview | null, dirty: Rect | null): void;
+  /** A create was refused by the document (the object or state limit): said to the user, not swallowed. */
+  refuseCreate(): void;
+  /** A «continue» line released on empty canvas: the line stays and the drop menu opens at its end. */
+  openQuickDrop(src: string, side: ConcreteSide, from: Point, at: Point): void;
+  /** A drag starts moving these: the renderer may paint them as one sprite until `dropMoving` (Renderer.liftObjects). */
+  liftMoving?(ids: readonly string[]): void;
+  dropMoving?(): void;
 }
 
 export interface Gesture {
-  readonly kind: 'pan' | 'move' | 'resize' | 'rotate' | 'marquee' | 'create' | 'wire' | 'endpoint' | 'pinch' | 'tap';
+  readonly kind: 'pan' | 'move' | 'resize' | 'rotate' | 'marquee' | 'create' | 'wire' | 'endpoint' | 'pinch' | 'tap' | 'draw' | 'erase' | 'quick';
   move(w: Point, s: Point, m: Mods): void;
   end(w: Point, s: Point, m: Mods): void;
   cancel(): void;
@@ -196,9 +224,16 @@ export class MoveGesture implements Gesture {
     private readonly fromScreen: Point,
     private readonly onClickOnly: () => void,
     private readonly slop = DRAG_PX,
+    /**
+     * A sticky pad's drag: makes the objects that move instead (a new sticky pulled off the pad), inside the drag's
+     * gesture, so Esc or undo takes it back. Alt-drag moves the pad itself. Works on a locked pad too.
+     */
+    private readonly spawn?: () => string[],
   ) {
-    // Locked objects stay where they are, whatever else moves with them.
-    this.ids = Array.from(ids).filter((id) => !core.scene.get(id)?.locked);
+    // Locked objects stay where they are, whatever else moves with them. A frame takes what it holds along (computed
+    // now: an object dragged in or out later is simply in or out).
+    const free = (id: string): boolean => !core.scene.get(id)?.locked;
+    this.ids = core.scene.withFrameMembers(Array.from(ids).filter(free)).filter(free);
     this.capture();
   }
 
@@ -227,9 +262,22 @@ export class MoveGesture implements Gesture {
     if (!this.started) {
       if (Math.hypot(s.x - this.fromScreen.x, s.y - this.fromScreen.y) < this.slop) return;
       this.started = true;
-      if (this.ids.length === 0) return;
+      const pull = m.alt ? undefined : this.spawn;
+      if (this.ids.length === 0 && !pull) return;
       this.core.doc.beginGesture();
-      if (m.alt) {
+      if (pull) {
+        const made = pull();
+        this.selectedBefore = [...this.core.selection];
+        this.ids = made;
+        if (made.length > 0) this.core.setSelection(made);
+        this.capture();
+        if (made.length === 0) {
+          this.core.doc.cancelGesture();
+          // The object limit: said, not swallowed.
+          this.core.refuseCreate();
+          return;
+        }
+      } else if (m.alt && !this.spawn) {
         const copies = duplicate(this.core.scene, this.core.doc, this.ids, 0, 0);
         if (copies.length > 0) {
           this.selectedBefore = [...this.core.selection];
@@ -238,6 +286,7 @@ export class MoveGesture implements Gesture {
           this.capture();
         }
       }
+      this.core.liftMoving?.(this.ids);
     }
     let dx = w.x - this.fromWorld.x;
     let dy = w.y - this.fromWorld.y;
@@ -272,6 +321,7 @@ export class MoveGesture implements Gesture {
     }
     if (this.ids.length === 0) return;
     this.core.live.commit();
+    this.core.dropMoving?.();
     this.core.doc.endGesture();
     this.core.setOverlay({ guides: [] });
   }
@@ -279,6 +329,7 @@ export class MoveGesture implements Gesture {
   cancel(): void {
     if (!this.started || this.ids.length === 0) return;
     this.core.live.drop();
+    this.core.dropMoving?.();
     // Takes back the Alt-copies, if any; the move itself was never written.
     this.core.doc.cancelGesture();
     if (this.selectedBefore) this.core.setSelection(this.selectedBefore);
@@ -336,8 +387,9 @@ export class ResizeGesture implements Gesture {
       p = sn.p;
       guides = sn.guides;
     }
-    const minW = isText ? DEFAULTS.minTextW : DEFAULTS.minBox;
-    const minH = isText ? 1 : DEFAULTS.minBox;
+    const isFrame = single?.kind === 'frame';
+    const minW = isText ? DEFAULTS.minTextW : isFrame ? DEFAULTS.minFrame : DEFAULTS.minBox;
+    const minH = isText ? 1 : isFrame ? DEFAULTS.minFrame : DEFAULTS.minBox;
     const patches = new Map<string, ObjectPatch>();
     if (single) {
       const r = resizeRotated(single, rot, handle, p, { keepAspect, minW, minH });
@@ -394,7 +446,8 @@ export class RotateGesture implements Gesture {
     const rects: Rect[] = [];
     for (const id of ids) {
       const o = core.scene.get(id);
-      if (!o || o.locked) continue;
+      // A frame never turns.
+      if (!o || o.locked || o.kind === 'frame') continue;
       if (isConnector(o)) {
         const f: { from?: Point; to?: Point } = {};
         if (!isBound(o.from)) f.from = { x: o.from.x, y: o.from.y };
@@ -494,7 +547,28 @@ export class MarqueeGesture implements Gesture {
 
 // ── create (sticky / text / shape) ──────────────────────────────────────────
 
-export type CreateKind = 'sticky' | 'text' | 'shape';
+export type CreateKind = 'sticky' | 'text' | 'shape' | 'frame';
+
+/** The steps a new object's size takes with the zoom (`createScale`): tidy sizes, not one per wheel tick. */
+const CREATE_STEPS: readonly number[] = [0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8];
+
+/**
+ * How much bigger (in world units) a new object is made so that it looks about as big on screen as at 100 % (owner
+ * 30.10: zoomed out, a new sticky was a speck): `worldPerPx` is the world size of a screen pixel; the nearest step in
+ * log scale, 0.5 (zoomed in) … 8 (zoomed far out).
+ */
+export function createScale(worldPerPx: number): number {
+  const want = Math.log(Math.max(1e-6, worldPerPx));
+  let best = 1;
+  for (const s of CREATE_STEPS) if (Math.abs(Math.log(s) - want) < Math.abs(Math.log(best) - want)) best = s;
+  return best;
+}
+
+/** The text size fields of a new sticky or shape made `k` times bigger (none at 1: the default token). */
+export function scaledFont(kind: 'sticky' | 'shape', k: number): { fontPx?: number } {
+  if (k === 1) return {};
+  return { fontPx: Math.min(DEFAULTS.maxTextSize, Math.round((kind === 'sticky' ? STICKY_TEXT_SIZE : SHAPE_TEXT_SIZE) * k)) };
+}
 
 export class CreateGesture implements Gesture {
   readonly kind = 'create';
@@ -524,22 +598,41 @@ export class CreateGesture implements Gesture {
     const doc = this.core.doc;
     doc.checkpoint();
     let id: string | null;
+    if (this.what === 'frame') {
+      // A drag draws it; a click places the armed size centered on the pointer. Neither opens a text editor.
+      const r = this.dragged ? this.rect(w, m) : null;
+      const fk = createScale(this.core.px(1));
+      const fw = this.core.frameSize.w * fk;
+      const fh = this.core.frameSize.h * fk;
+      id = doc.create(r
+        ? { kind: 'frame', x: r.x, y: r.y, w: Math.max(r.w, DEFAULTS.minFrame), h: Math.max(r.h, DEFAULTS.minFrame), title: this.core.nextFrameTitle() }
+        : { kind: 'frame', x: snapTo(this.from.x - fw / 2, this.core.gridSize || 1), y: snapTo(this.from.y - fh / 2, this.core.gridSize || 1), w: fw, h: fh, title: this.core.nextFrameTitle() });
+      this.core.finishCreate(id ? [id] : [], false);
+      return;
+    }
+    // Sized for the zoom: a click zoomed out makes a sticky that looks like one at 100 %, its text too.
+    const k = createScale(this.core.px(1));
+    const textSize = Math.min(DEFAULTS.maxTextSize, Math.round(DEFAULTS.textSize * k));
     if (this.dragged) {
       const r = this.rect(w, m);
       const bw = Math.max(r.w, this.what === 'text' ? DEFAULTS.minTextW : DEFAULTS.minBox);
       const bh = Math.max(r.h, DEFAULTS.minBox);
       id = this.what === 'sticky'
-        ? doc.create({ kind: 'sticky', x: r.x, y: r.y, w: bw, h: bh })
+        ? doc.create({ kind: 'sticky', color: this.core.stickyColor, x: r.x, y: r.y, w: bw, h: bh, ...scaledFont('sticky', k) })
         : this.what === 'text'
-          ? doc.create({ kind: 'text', x: r.x, y: r.y, w: bw })
-          : doc.create({ kind: 'shape', shape: this.core.shapeKind, x: r.x, y: r.y, w: bw, h: bh });
+          ? doc.create({ kind: 'text', x: r.x, y: r.y, w: bw, size: textSize })
+          : doc.create({ kind: 'shape', shape: this.core.shapeKind, x: r.x, y: r.y, w: bw, h: bh, ...scaledFont('shape', k) });
     } else {
       const c = this.core.gridSize && !m.mod ? { x: snapTo(this.from.x, this.core.gridSize), y: snapTo(this.from.y, this.core.gridSize) } : this.from;
+      const sw = DEFAULTS.stickySize * k;
       id = this.what === 'sticky'
-        ? doc.create({ kind: 'sticky', x: c.x - DEFAULTS.stickySize / 2, y: c.y - DEFAULTS.stickySize / 2 })
+        ? doc.create({ kind: 'sticky', color: this.core.stickyColor, x: c.x - sw / 2, y: c.y - sw / 2, w: sw, h: sw, ...scaledFont('sticky', k) })
         : this.what === 'text'
-          ? doc.create({ kind: 'text', x: c.x - 8, y: c.y - DEFAULTS.textSize })
-          : doc.create({ kind: 'shape', shape: this.core.shapeKind, x: c.x - DEFAULTS.shapeW / 2, y: c.y - DEFAULTS.shapeH / 2 });
+          ? doc.create({ kind: 'text', x: c.x - 8 * k, y: c.y - textSize, w: DEFAULTS.textW * k, size: textSize })
+          : doc.create({
+            kind: 'shape', shape: this.core.shapeKind, x: c.x - (DEFAULTS.shapeW * k) / 2, y: c.y - (DEFAULTS.shapeH * k) / 2,
+            w: DEFAULTS.shapeW * k, h: DEFAULTS.shapeH * k, ...scaledFont('shape', k),
+          });
     }
     this.core.finishCreate(id ? [id] : [], true);
   }
@@ -563,7 +656,8 @@ interface GlueTarget {
 /** Object under the pointer to glue to, with the side if the pointer is on one of its anchors. */
 export function glueAt(core: Core, w: Point, exclude?: string): GlueTarget | null {
   // By area, not by what selection picks: an unfilled frame is a target everywhere inside it (selection stays outline-only).
-  const o = core.scene.hitArea(w, core.px(core.touch ? TOUCH_GLUE_PX : GLUE_PX), (x) => isBox(x) && x.id !== exclude) ?? (core.touch ? nearestBox(core, w, exclude) : null);
+  // A freehand stroke is no target: a scribble has no sides to route to.
+  const o = core.scene.hitArea(w, core.px(core.touch ? TOUCH_GLUE_PX : GLUE_PX), (x) => isBox(x) && x.kind !== 'ink' && x.id !== exclude) ?? (core.touch ? nearestBox(core, w, exclude) : null);
   if (!o || !isBox(o)) return null;
   const anchors = SIDES.map((s) => ({ side: s, p: anchorOf(o, s) }));
   let best: { side: ConcreteSide; p: Point } | null = null;
@@ -578,7 +672,7 @@ function nearestBox(core: Core, w: Point, exclude: string | undefined): BoxRec |
   let best: BoxRec | null = null;
   let bestD = Infinity;
   for (const o of core.scene.query({ x: w.x - tol, y: w.y - tol, w: 2 * tol, h: 2 * tol })) {
-    if (!isBox(o) || o.id === exclude) continue;
+    if (!isBox(o) || o.kind === 'ink' || o.id === exclude) continue;
     const dx = Math.max(o.x - w.x, 0, w.x - (o.x + o.w));
     const dy = Math.max(o.y - w.y, 0, w.y - (o.y + o.h));
     const d = Math.hypot(dx, dy);
@@ -632,6 +726,99 @@ export class WireGesture implements Gesture {
   }
 }
 
+// ── «continue» drag (engine/quick.ts) ───────────────────────────────────────
+
+/**
+ * Pressed on a «continue» dot. A click (no drag) is the quick copy beside the source (`click`). A drag pulls a wire
+ * out of that side — a dashed line that follows the pointer, nothing else is drawn on the way: over another object it
+ * glues to it and the release just connects the two; released on empty canvas, the line stays and the drop menu
+ * opens at its end (the engine's `openQuickDrop`: what to put there). Esc puts the dots back.
+ */
+export class QuickGesture implements Gesture {
+  readonly kind = 'quick';
+  private dragged = false;
+  private target: GlueTarget | null = null;
+  private at: Point | null = null;
+
+  constructor(
+    private readonly core: Core,
+    private readonly src: StickyRec | ShapeRec,
+    private readonly side: ConcreteSide,
+    private readonly fromScreen: Point,
+    private readonly click: () => void,
+    private readonly restore: () => void,
+  ) {}
+
+  move(w: Point, s: Point, m: Mods): void {
+    if (!this.dragged && Math.hypot(s.x - this.fromScreen.x, s.y - this.fromScreen.y) < DRAG_PX * 2) return;
+    this.dragged = true;
+    const a = edgeMid(this.src, this.side);
+    // A frame or zone the source sits in is the place, not a target: the line ends on empty canvas there.
+    const hit = glueAt(this.core, w, this.src.id);
+    const holder = hit ? this.core.scene.get(hit.id) : undefined;
+    const src = this.src;
+    const holds = !!holder && !isConnector(holder) && holder.x <= src.x && holder.y <= src.y && holder.x + holder.w >= src.x + src.w && holder.y + holder.h >= src.y + src.h;
+    this.target = hit && holder && holder.kind !== 'frame' && !holds ? hit : null;
+    if (this.target) {
+      this.at = null;
+      this.core.setOverlay({ quick: null, ghost: null, wire: this.glued(this.target), ...glueOverlay(this.target) });
+      return;
+    }
+    const g = m.mod ? 0 : this.core.gridSize;
+    this.at = g ? { x: snapTo(w.x, g), y: snapTo(w.y, g) } : w;
+    this.core.setOverlay({ quick: null, ghost: null, wire: this.arc(a, this.at), glue: null });
+  }
+
+  /** Over a target: exactly the connector that release creates (same ends, same route), so nothing jumps on drop. */
+  private glued(t: GlueTarget): number[] {
+    const lookup = (id: string): BoxRec | undefined => {
+      const o = this.core.scene.get(id);
+      return o && isBox(o) ? o : undefined;
+    };
+    return routeConnector({ id: this.src.id, side: this.side }, { id: t.id, side: t.side }, QUICK_ROUTE, lookup).points;
+  }
+
+  /**
+   * The free line as an arc: it leaves the source along its side's normal and arrives heading straight from the start.
+   * That end direction turns continuously with the pointer (a curved connector's free end snaps to an axis, which
+   * flips the arc by 90° on the diagonal).
+   */
+  private arc(a: Point, b: Point): number[] {
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    const from = { p: a, dir: SIDE_DIR[this.side], target: null, side: null };
+    const to = { p: b, dir: { x: (a.x - b.x) / d, y: (a.y - b.y) / d }, target: null, side: null };
+    const [c1, c2] = curveControls(from, to);
+    return flattenCubic(a, c1, c2, b);
+  }
+
+  end(): void {
+    if (!this.dragged) {
+      this.click();
+      return;
+    }
+    if (this.target) {
+      this.core.setOverlay({ wire: null, glue: null });
+      this.core.doc.checkpoint();
+      const from = { id: this.src.id, side: this.side };
+      const id = this.core.doc.create({ kind: 'connector', from, to: { id: this.target.id, side: this.target.side }, arrow: 'end', route: QUICK_ROUTE });
+      this.core.finishCreate(id ? [id] : [], false);
+      return;
+    }
+    if (!this.at) {
+      this.core.setOverlay({ wire: null, glue: null });
+      this.restore();
+      return;
+    }
+    // The line stays drawn while the menu is open.
+    this.core.openQuickDrop(this.src.id, this.side, edgeMid(this.src, this.side), this.at);
+  }
+
+  cancel(): void {
+    this.core.setOverlay({ ghost: null, wire: null, glue: null });
+    this.restore();
+  }
+}
+
 /** Dragging one end of the selected connector: re-glues it live. */
 export class EndpointGesture implements Gesture {
   readonly kind = 'endpoint';
@@ -672,5 +859,172 @@ export class EndpointGesture implements Gesture {
 
   settle(): void {
     this.end();
+  }
+}
+
+// ── draw (pen / marker) ─────────────────────────────────────────────────────
+
+/**
+ * A freehand stroke (ADR-0127 addendum 2026-10-29). The points are collected in world units and shown by the overlay
+ * (each move repaints only the stroke's tail); the document is written once, on release: one object, one undo step.
+ * Points closer than half a screen pixel to the last one are skipped; past INK_RAW_MAX the rest of the drag is not
+ * recorded.
+ */
+export class DrawGesture implements Gesture {
+  readonly kind = 'draw';
+  private readonly pts: number[] = [];
+  private readonly style: InkStyle;
+  private done = false;
+
+  constructor(private readonly core: Core, from: Point) {
+    this.style = core.inkStyle;
+    this.pts.push(from.x, from.y);
+    core.previewInk(this.preview(), null);
+  }
+
+  private preview(): InkPreview {
+    return { points: this.pts, color: this.style.color, width: this.style.width, marker: this.style.marker };
+  }
+
+  /** World points collected so far (tests). */
+  get points(): readonly number[] {
+    return this.pts;
+  }
+
+  move(w: Point): void {
+    if (this.done || this.pts.length >= 2 * INK_RAW_MAX) return;
+    const lx = this.pts[this.pts.length - 2] ?? 0;
+    const ly = this.pts[this.pts.length - 1] ?? 0;
+    if (Math.hypot(w.x - lx, w.y - ly) < this.core.px(0.5)) return;
+    this.pts.push(w.x, w.y);
+    // One more point reshapes the last two spline pieces (the one before it bends toward it): the last four points' hull.
+    this.core.previewInk(this.preview(), tailRect(this.pts, 4, this.style.width / 2 + this.core.px(2)));
+  }
+
+  end(w: Point): void {
+    if (this.done) return;
+    this.move(w);
+    this.done = true;
+    this.core.previewInk(null, null);
+    const ink = inkFromStroke(this.pts, this.core.px(INK_EPS_PX));
+    if (!ink) return;
+    const doc = this.core.doc;
+    doc.checkpoint();
+    const id = doc.create({ kind: 'ink', ...ink, stroke: this.style.color, strokeWidth: this.style.width, ...(this.style.marker ? { marker: true } : {}) });
+    doc.checkpoint();
+    if (!id) this.core.refuseCreate();
+  }
+
+  cancel(): void {
+    this.done = true;
+    this.core.previewInk(null, null);
+  }
+
+  /** A finger's lost release: the line it drew is kept. */
+  settle(): void {
+    const x = this.pts[this.pts.length - 2] ?? 0;
+    const y = this.pts[this.pts.length - 1] ?? 0;
+    this.end({ x, y });
+  }
+}
+
+// ── eraser ──────────────────────────────────────────────────────────────────
+
+/**
+ * The area eraser (ADR-0127 addendum 2026-10-29): the drag is a swath as wide as the ring the cursor shows, and each
+ * stroke under it keeps the part of the swath that touches it (`erase` on the stroke, cut out when drawn): exactly the
+ * covered area goes, a wide marker included, and the stroke stays one object. Shown at once through the live layer,
+ * written once on release (one undo step); a stroke the swaths cover entirely is deleted instead. Locked strokes and
+ * other kinds are left alone.
+ */
+export class EraseGesture implements Gesture {
+  readonly kind = 'erase';
+  private last: Point;
+  private began = false;
+  /** Per stroke: the swaths this drag added, in its stored frame. */
+  private readonly added = new Map<string, number[]>();
+  private done = false;
+
+  constructor(private readonly core: Core, from: Point) {
+    this.last = from;
+    this.swath(from, from);
+  }
+
+  /** Strokes this drag has cut so far (tests). */
+  get touched(): ReadonlySet<string> {
+    return new Set(this.added.keys());
+  }
+
+  /** Adds the swath a → b (world) to every stroke it touches and shows the result. */
+  private swath(a: Point, b: Point): void {
+    const r = this.core.px(this.core.eraserPx);
+    const box = { x: Math.min(a.x, b.x) - r, y: Math.min(a.y, b.y) - r, w: Math.abs(b.x - a.x) + 2 * r, h: Math.abs(b.y - a.y) + 2 * r };
+    let changed = false;
+    for (const o of this.core.scene.query(box)) {
+      if (o.kind !== 'ink' || o.locked) continue;
+      const center = rectCenter(o);
+      const la = o.rot ? rotatePoint(a, center, -o.rot) : a;
+      const lb = o.rot ? rotatePoint(b, center, -o.rot) : b;
+      const pa = { x: la.x - o.x, y: la.y - o.y };
+      const pb = { x: lb.x - o.x, y: lb.y - o.y };
+      if (inkSegDistance(pa, pb, o.points) > r + o.strokeWidth / 2) continue;
+      const m = this.core.doc.objects.get(o.id);
+      const raw = inkPoints(m?.get('points'));
+      if (!raw) continue;
+      const mine = this.added.get(o.id) ?? [];
+      const had = inkErase(m?.get('erase'))?.length ?? 0;
+      if ((had + mine.length) / 5 >= INK_MAX_ERASE) continue;
+      mine.push(...swathToStored(raw, o.w, o.h, pa.x, pa.y, pb.x, pb.y, r));
+      this.added.set(o.id, mine);
+      changed = true;
+    }
+    if (!changed) return;
+    if (!this.began) {
+      this.began = true;
+      this.core.doc.beginGesture();
+    }
+    const patches = new Map<string, ObjectPatch>();
+    for (const [id, mine] of this.added) {
+      const had = inkErase(this.core.doc.objects.get(id)?.get('erase')) ?? [];
+      patches.set(id, { erase: [...had, ...mine] });
+    }
+    this.core.live.preview(patches);
+  }
+
+  move(w: Point): void {
+    if (this.done) return;
+    // A swath is a capsule: no sampling, one piece per third of the radius moved (fewer swaths for a slow drag).
+    if (dist(this.last, w) < this.core.px(this.core.eraserPx) / 3) return;
+    this.swath(this.last, w);
+    this.last = w;
+  }
+
+  end(w: Point): void {
+    if (this.done) return;
+    if (dist(this.last, w) > 0) this.swath(this.last, w);
+    this.done = true;
+    if (!this.began) return;
+    this.core.live.commit();
+    // What the swaths took whole goes away (an invisible stroke would still be picked and counted).
+    const gone: string[] = [];
+    for (const id of this.added.keys()) {
+      const o = this.core.scene.get(id);
+      if (o?.kind === 'ink' && o.erase && swathsCover(o.points, o.strokeWidth, o.erase)) gone.push(id);
+    }
+    // Connectors never glue to a stroke (`glueAt`); should one end point at it anyway, it stays where it was.
+    if (gone.length) this.core.doc.remove(gone, (c, end) => this.core.scene.pointOf(c, end));
+    this.core.doc.endGesture();
+  }
+
+  cancel(): void {
+    if (this.done) return;
+    this.done = true;
+    if (!this.began) return;
+    this.core.live.drop();
+    this.core.doc.cancelGesture();
+  }
+
+  settle(): void {
+    this.end(this.last);
   }
 }

@@ -10,6 +10,7 @@ import { StreamPicker } from '../voice/StreamPicker';
 import { QuickSwitcher } from './QuickSwitcher';
 import { NewDmDialog } from '../dm/NewDmDialog';
 import { ForwardDialog } from '../chat/ForwardDialog';
+import { ReportDialog } from '../people/ReportDialog';
 import { sendCanvasToChats } from '../../services/canvasLink';
 import { sendPageToChats } from '../../services/wiki';
 import { isFolder } from '../../lib/disk';
@@ -31,6 +32,7 @@ import { useSession } from '../../stores/session';
 import { useTaskTabs } from '../../stores/taskTabs';
 import { EventDialog } from '../calendar/EventDialog';
 import { JoinConfirmHost } from '../calendar/JoinConfirm';
+import { AppSignInHost } from '../webapps/AppSignIn';
 import { SETTINGS_DIALOG_KINDS } from './SettingsScreen';
 import { AppDialog } from '../webapps/AppDialog';
 import { PlansDialog } from '../workspace/billing/PlansDialog';
@@ -97,6 +99,9 @@ export function Dialogs(): ReactNode {
         break;
       case 'forward':
         node = <ForwardDialog roomId={d.roomId} messageId={d.messageId} onClose={close} />;
+        break;
+      case 'report':
+        node = <ReportDialog key={d.userId + d.messageId} userId={d.userId} workspaceId={d.workspaceId} messageId={d.messageId} onClose={close} />;
         break;
       case 'wiki-send':
         node = (
@@ -226,6 +231,7 @@ export function Dialogs(): ReactNode {
       <AchievementLayers />
       <ConfirmHost />
       <JoinConfirmHost />
+      <AppSignInHost />
     </>
   );
 }

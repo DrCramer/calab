@@ -187,7 +187,8 @@ test('canvas-screen', async ({ open, win, mock, shot, theme }) => {
 
   if (theme === 'dark') {
     // 5c. The connector tool's route menu: three routes with their icons.
-    await win.getByTestId('canvas-tool-connector').locator('..').getByRole('button', { name: 'Выбрать вариант' }).click();
+    // A tool's variants open from the tool itself (Miro-style flyouts).
+    await win.getByTestId('canvas-tool-connector').click();
     await expect(win.getByTestId('canvas-route-menu')).toBeVisible();
     await checkpoint(shot, 'canvas-route-menu');
     await win.keyboard.press('Escape');
@@ -301,14 +302,68 @@ test('canvas-screen', async ({ open, win, mock, shot, theme }) => {
   await checkpoint(shot, 'canvas-comments');
 
   if (theme === 'dark') {
+    // 8a. A pin opens its thread in a window at the pin (owner 30.10): «Решено», the rows, the reply field.
+    await win.getByTestId('canvas-comments-close').click();
+    await win.getByTestId('canvas-comment-pin').first().click();
+    const popover = win.getByTestId('canvas-comment-popover');
+    await expect(popover).toBeVisible();
+    await expect(popover.getByTestId('canvas-comment-input')).toBeVisible();
+    await win.mouse.move(10, 10);
+    await win.waitForTimeout(300);
+    await checkpoint(shot, 'canvas-comment-popover');
+    await win.keyboard.press('Escape');
+    // 8b. The comment tool opens a new thread's field in that window, at the new pin.
     await win.getByTestId('canvas-tool-comment').click();
     const at = await atWorld(win, 60, 260);
     await win.mouse.click(at.x, at.y);
-    await expect(panel.getByTestId('canvas-comment-draft')).toBeVisible();
+    await expect(win.getByTestId('canvas-comment-popover').getByTestId('canvas-comment-input')).toBeVisible();
     await win.keyboard.type('Новая ветка про @');
     await expect(win.getByRole('option')).not.toHaveCount(0);
     await win.waitForTimeout(200);
     await checkpoint(shot, 'canvas-comments-draft');
+    await win.keyboard.press('Escape');
+    await win.keyboard.press('Escape');
+  }
+
+  if (theme === 'dark') {
+    // 8c. What came with canvas-polish (owner 29–30.10): a frame with sticky pads under names, a sticky with
+    // centred text, pen and marker strokes (the marker with an eraser hole); the Frames panel, the pencil's
+    // panel and the «continue» dots of a selected sticky (a synthetic hover does not raise a dot's preview here).
+    await open();
+    mock.canvas.put({ workspaceId: IDS.workspaces.main, name: 'Новинки', ownerId: IDS.users.anna }, (d) => {
+      d.create({ kind: 'frame', x: 0, y: 0, w: 560, h: 300, title: 'Стикеры по людям' });
+      ['Ирина', 'Тимофей', 'Тимур'].forEach((name, i) => {
+        d.create({ kind: 'text', x: 30 + i * 175, y: 40, w: 150, text: name });
+        d.create({ kind: 'sticky', x: 30 + i * 175, y: 90, w: 150, h: 150, color: ['pink', 'sky', 'orange'][i], pad: true });
+      });
+      d.create({ kind: 'sticky', x: 640, y: 40, w: 180, h: 180, color: 'yellow', text: 'Текст стикера по центру, переносится по ширине' });
+      d.create({ kind: 'ink', x: 0, y: 360, w: 400, h: 120, points: [0, 60, 60, 0, 130, 110, 200, 10, 270, 120, 340, 20, 400, 80], stroke: 'blue', strokeWidth: 4 });
+      d.create({ kind: 'ink', x: 460, y: 380, w: 480, h: 60, points: [0, 30, 160, 0, 320, 60, 480, 20], stroke: 'yellow', strokeWidth: 32, marker: true, erase: [240, -20, 240, 80, 18] });
+    });
+    await win.getByTestId('section-canvas').click();
+    await win.getByTestId('canvas-node').filter({ hasText: 'Новинки' }).getByTestId('canvas-node-open').click();
+    await expect(win.getByTestId('canvas-title')).toHaveText('Новинки');
+    await expect(win.getByTestId('canvas-connecting')).toHaveCount(0);
+    await win.getByTestId('canvas-tree-toggle').click();
+    await fitted(win);
+    await checkpoint(shot, 'canvas-frames-pad');
+    await win.getByTestId('canvas-frames-toggle').click();
+    await expect(win.getByTestId('canvas-frames-panel')).toBeVisible();
+    await win.waitForTimeout(400);
+    await checkpoint(shot, 'canvas-frames-panel');
+    await win.getByTestId('canvas-frames-close').click();
+    await win.getByTestId('canvas-tool-pen').click();
+    await expect(win.getByTestId('canvas-ink-menu')).toBeVisible();
+    await checkpoint(shot, 'canvas-ink-menu');
+    await win.keyboard.press('Escape');
+    await win.getByTestId('canvas-tool-select').click();
+    // The fit of this board in the 960 × 600 window is fixed (56 %, the tree folded): the yellow sticky is at
+    // (533, 285) on screen, its right edge at 584; the right «continue» dot hangs 22 px off it.
+    await win.mouse.click(533, 285);
+    await expect(win.getByTestId('canvas-props')).toBeVisible();
+    await win.mouse.move(584 + 22, 285);
+    await win.waitForTimeout(400);
+    await checkpoint(shot, 'canvas-quick-dots', { keepPointer: true });
   }
 
   // In a call: the island folded into my avatar with the call mark (ADR-0146).
