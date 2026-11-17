@@ -12,12 +12,33 @@ import (
 	"github.com/google/uuid"
 )
 
+const addMemberRolesIfExist = `-- name: AddMemberRolesIfExist :exec
+INSERT INTO member_roles (workspace_id, user_id, role_id)
+SELECT wr.workspace_id, $1::uuid, wr.id FROM workspace_roles wr
+WHERE wr.workspace_id = $2::uuid AND wr.id = ANY ($3::uuid[]) AND wr.builtin IS NULL
+ON CONFLICT DO NOTHING
+`
+
+type AddMemberRolesIfExistParams struct {
+	UserID      uuid.UUID
+	WorkspaceID uuid.UUID
+	RoleIds     []uuid.UUID
+}
+
+// Custom roles given to a member who has just been added or joined by an invitation (ADR-0026
+// addendum 2026-11-10), checked by the caller (inviteRoles / GiveInviteRoles); one deleted in
+// between is skipped.
+func (q *Queries) AddMemberRolesIfExist(ctx context.Context, arg AddMemberRolesIfExistParams) error {
+	_, err := q.db.Exec(ctx, addMemberRolesIfExist, arg.UserID, arg.WorkspaceID, arg.RoleIds)
+	return err
+}
+
 const consumeInvite = `-- name: ConsumeInvite :one
 UPDATE workspace_invites SET uses = uses + 1
 WHERE code = $1
   AND (expires_at IS NULL OR expires_at > now())
   AND (max_uses = 0 OR uses < max_uses)
-RETURNING id, workspace_id, code, created_by, max_uses, uses, expires_at, created_at
+RETURNING id, workspace_id, code, created_by, max_uses, uses, expires_at, created_at, role_ids
 `
 
 // Atomically takes one use of a valid invite; no row = invalid / expired / used up.
@@ -33,6 +54,7 @@ func (q *Queries) ConsumeInvite(ctx context.Context, code string) (WorkspaceInvi
 		&i.Uses,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.RoleIds,
 	)
 	return i, err
 }
@@ -50,9 +72,9 @@ func (q *Queries) CountWorkspaceMembers(ctx context.Context, workspaceID uuid.UU
 }
 
 const createInvite = `-- name: CreateInvite :one
-INSERT INTO workspace_invites (workspace_id, code, created_by, max_uses, expires_at)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, workspace_id, code, created_by, max_uses, uses, expires_at, created_at
+INSERT INTO workspace_invites (workspace_id, code, created_by, max_uses, expires_at, role_ids)
+VALUES ($1, $2, $3, $4, $5, coalesce($6::uuid[], '{}'))
+RETURNING id, workspace_id, code, created_by, max_uses, uses, expires_at, created_at, role_ids
 `
 
 type CreateInviteParams struct {
@@ -61,6 +83,7 @@ type CreateInviteParams struct {
 	CreatedBy   uuid.UUID
 	MaxUses     int32
 	ExpiresAt   *time.Time
+	RoleIds     []uuid.UUID
 }
 
 func (q *Queries) CreateInvite(ctx context.Context, arg CreateInviteParams) (WorkspaceInvite, error) {
@@ -70,6 +93,7 @@ func (q *Queries) CreateInvite(ctx context.Context, arg CreateInviteParams) (Wor
 		arg.CreatedBy,
 		arg.MaxUses,
 		arg.ExpiresAt,
+		arg.RoleIds,
 	)
 	var i WorkspaceInvite
 	err := row.Scan(
@@ -81,6 +105,7 @@ func (q *Queries) CreateInvite(ctx context.Context, arg CreateInviteParams) (Wor
 		&i.Uses,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.RoleIds,
 	)
 	return i, err
 }
@@ -102,8 +127,29 @@ func (q *Queries) DeleteInvite(ctx context.Context, arg DeleteInviteParams) (int
 	return result.RowsAffected(), nil
 }
 
+const getInvite = `-- name: GetInvite :one
+SELECT id, workspace_id, code, created_by, max_uses, uses, expires_at, created_at, role_ids FROM workspace_invites WHERE id = $1
+`
+
+func (q *Queries) GetInvite(ctx context.Context, id uuid.UUID) (WorkspaceInvite, error) {
+	row := q.db.QueryRow(ctx, getInvite, id)
+	var i WorkspaceInvite
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Code,
+		&i.CreatedBy,
+		&i.MaxUses,
+		&i.Uses,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.RoleIds,
+	)
+	return i, err
+}
+
 const getInviteByCode = `-- name: GetInviteByCode :one
-SELECT id, workspace_id, code, created_by, max_uses, uses, expires_at, created_at FROM workspace_invites WHERE code = $1
+SELECT id, workspace_id, code, created_by, max_uses, uses, expires_at, created_at, role_ids FROM workspace_invites WHERE code = $1
 `
 
 func (q *Queries) GetInviteByCode(ctx context.Context, code string) (WorkspaceInvite, error) {
@@ -118,12 +164,13 @@ func (q *Queries) GetInviteByCode(ctx context.Context, code string) (WorkspaceIn
 		&i.Uses,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.RoleIds,
 	)
 	return i, err
 }
 
 const listInvites = `-- name: ListInvites :many
-SELECT id, workspace_id, code, created_by, max_uses, uses, expires_at, created_at FROM workspace_invites i
+SELECT id, workspace_id, code, created_by, max_uses, uses, expires_at, created_at, role_ids FROM workspace_invites i
 WHERE i.workspace_id = $1 AND NOT EXISTS (SELECT 1 FROM email_invites e WHERE e.invite_id = i.id)
 ORDER BY i.created_at DESC
 `
@@ -147,6 +194,7 @@ func (q *Queries) ListInvites(ctx context.Context, workspaceID uuid.UUID) ([]Wor
 			&i.Uses,
 			&i.ExpiresAt,
 			&i.CreatedAt,
+			&i.RoleIds,
 		); err != nil {
 			return nil, err
 		}

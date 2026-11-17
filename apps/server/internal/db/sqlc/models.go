@@ -885,14 +885,17 @@ type DiskItem struct {
 }
 
 type DiskLink struct {
-	ID        uuid.UUID
-	ItemID    uuid.UUID
-	Code      string
-	CreatedBy *uuid.UUID
-	CreatedAt time.Time
-	ExpiresAt *time.Time
-	RevokedAt *time.Time
-	Downloads int32
+	ID              uuid.UUID
+	ItemID          uuid.UUID
+	Code            string
+	CreatedBy       *uuid.UUID
+	CreatedAt       time.Time
+	ExpiresAt       *time.Time
+	RevokedAt       *time.Time
+	Downloads       int32
+	PasswordHash    *string
+	PasswordVersion int32
+	ViewOnly        bool
 }
 
 type DiskPermission struct {
@@ -2027,6 +2030,7 @@ type TaskNoticeLog struct {
 	DueOn       string
 	DaysLeft    int32
 	CreatedAt   time.Time
+	Dismissed   bool
 }
 
 type TaskRelation struct {
@@ -2101,6 +2105,9 @@ type User struct {
 	TaskNotifyBots                 []uuid.UUID
 	CalendarZones                  []byte
 	DeletedAt                      *time.Time
+	VoiceMuted                     bool
+	VoiceDeafened                  bool
+	VoiceMuteAt                    *time.Time
 }
 
 type UserAttribution struct {
@@ -2507,6 +2514,7 @@ type WorkspaceInvite struct {
 	Uses        int32
 	ExpiresAt   *time.Time
 	CreatedAt   time.Time
+	RoleIds     []uuid.UUID
 }
 
 type WorkspaceMember struct {

@@ -45,6 +45,10 @@ type Config struct {
 	// LostGrace: how long a seat outlives an involuntary LiveKit drop (VOICE_LOST_GRACE,
 	// ADR-0150); 0 = the seat goes with the drop.
 	LostGrace time.Duration
+	// IdentityTransientGrace: how long the identity sweep keeps a participant whose check
+	// keeps failing transiently (database timeout, 5xx) before it evicts anyway
+	// (RTC_IDENTITY_TRANSIENT_GRACE); 0 = the default identityTransientGrace.
+	IdentityTransientGrace time.Duration
 }
 
 // Service implements the rtc endpoints and background sync.
@@ -308,8 +312,20 @@ func (s *Service) join(w http.ResponseWriter, r *http.Request) error {
 		CanVideo:   acc.Bits.Has(perm.Video) && media.GetCameraLimit() > 0,
 		Pending:    pending,
 		PlanLimits: room.Plan.Proto(),
+		SelfMute:   s.selfMute(r.Context(), id.UserID),
 	})
 	return nil
+}
+
+// selfMute is the user's stored mic / sound choice (ADR-0168) for the join answer; nil when never
+// chosen or unreadable — the client then keeps its own last value.
+func (s *Service) selfMute(ctx context.Context, uid uuid.UUID) *v1.VoiceMute {
+	row, err := s.db.Q.GetUserVoiceMute(ctx, uid)
+	if err != nil {
+		slog.WarnContext(ctx, "voice join: stored mute", "err", err)
+		return nil
+	}
+	return pbconv.VoiceMute(row.VoiceMuted, row.VoiceDeafened, row.VoiceMuteAt)
 }
 
 // recordPending records the device in the room as pending under the workspace voice lock

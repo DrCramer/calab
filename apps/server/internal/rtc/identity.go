@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/httpx"
@@ -104,10 +105,22 @@ type identitySweepState struct {
 
 type failureRun struct{ first, last time.Time }
 
-// identityTransientGrace: how long the gate may keep failing transiently for one
-// participant before the sweep evicts anyway. A blip of the shared database (seconds)
-// must not empty every call, while an outage still cannot keep a revoked session for long.
-const identityTransientGrace = 30 * time.Second
+// identityTransientGrace: the default of Config.IdentityTransientGrace
+// (RTC_IDENTITY_TRANSIENT_GRACE) — how long the gate may keep failing transiently for one
+// participant before the sweep evicts anyway. Network stalls between the cluster and the
+// shared database last minutes, not seconds (2–5 min, several a day in production): a
+// shorter grace emptied every call on each of them while the media path was healthy. A
+// decision of the gate (revoked session, denied, gone) still evicts at once; the cost is
+// that a session revoked during an outage keeps its call until the grace runs out.
+const identityTransientGrace = 10 * time.Minute
+
+// identityGrace is the configured transient grace, the default when unset.
+func (s *Service) identityGrace() time.Duration {
+	if s.cfg.IdentityTransientGrace > 0 {
+		return s.cfg.IdentityTransientGrace
+	}
+	return identityTransientGrace
+}
 
 func (st *identitySweepState) clock() time.Time {
 	if st.now != nil {
@@ -117,8 +130,8 @@ func (st *identitySweepState) clock() time.Time {
 }
 
 // transientFailureExpired records a transient failure for key and reports whether its
-// unbroken run has lasted identityTransientGrace.
-func (st *identitySweepState) transientFailureExpired(key string) bool {
+// unbroken run has lasted grace.
+func (st *identitySweepState) transientFailureExpired(key string, grace time.Duration) bool {
 	now := st.clock()
 	st.failMu.Lock()
 	defer st.failMu.Unlock()
@@ -131,7 +144,7 @@ func (st *identitySweepState) transientFailureExpired(key string) bool {
 	}
 	run.last = now
 	st.failing[key] = run
-	return now.Sub(run.first) >= identityTransientGrace
+	return now.Sub(run.first) >= grace
 }
 
 func (st *identitySweepState) clearFailure(key string) {
@@ -141,8 +154,8 @@ func (st *identitySweepState) clearFailure(key string) {
 }
 
 // pruneFailures forgets runs not seen for a while: the participant left the SFU.
-func (st *identitySweepState) pruneFailures() {
-	cutoff := st.clock().Add(-10 * identityTransientGrace)
+func (st *identitySweepState) pruneFailures(grace time.Duration) {
+	cutoff := st.clock().Add(-10 * grace)
 	st.failMu.Lock()
 	for key, run := range st.failing {
 		if run.last.Before(cutoff) {
@@ -169,7 +182,7 @@ func transientIdentityError(err error) bool {
 // EnforceIdentity enumerates the SFU independently of Redis. Lost pubsub, a lost webhook
 // and an unavailable voice-state store cannot keep a denied participant connected.
 // A denial from the gate evicts at once; a transient gate failure (timeout, 5xx) evicts
-// only after identityTransientGrace of unbroken failures, so a short database stall does
+// only after identityGrace of unbroken failures, so a short database stall does
 // not drop everyone in every call. SFU removal failures remain visible and are retried.
 func (s *Service) EnforceIdentity(ctx context.Context) error {
 	state := &s.identitySweep
@@ -183,7 +196,7 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	state.pruneFailures()
+	state.pruneFailures(s.identityGrace())
 	rooms, err := s.lk.ListRooms(ctx)
 	if err != nil {
 		return err
@@ -286,11 +299,23 @@ func (s *Service) EnforceIdentity(ctx context.Context) error {
 						return
 					}
 					if transientIdentityError(err) {
-						if !state.transientFailureExpired(runKey) {
+						if !state.transientFailureExpired(runKey, s.identityGrace()) {
 							slog.DebugContext(ctx, "RTC identity check undecided, keeping participant", "room", job.room, "err", err)
 							continue
 						}
-						slog.WarnContext(ctx, "RTC identity check undecided past grace, evicting", "room", job.room, "grace", identityTransientGrace, "err", err)
+						slog.WarnContext(ctx, "RTC identity check undecided past grace, evicting", "room", job.room, "grace", s.identityGrace(), "err", err)
+						// Without a verdict (ADR-0166): the device is told first, so it takes the removal
+						// for an outage and rejoins by itself, not for a moderator's kick (a companion
+						// has no voice of its own). Best effort: the gateway may already be resyncing;
+						// the client falls back on its own view of the server (gateway down / API 503).
+						if _, _, device := voice.ParseIdentity(person.Identity); device && s.events != nil {
+							s.events.User(ctx, uid, &v1.DispatchEvent{Event: &v1.DispatchEvent_VoiceDisconnected{VoiceDisconnected: &v1.VoiceDisconnected{
+								WorkspaceId: scopeWS(job.ws, job.rid),
+								RoomId:      job.rid.String(),
+								SessionId:   sid.String(),
+								Reason:      v1.VoiceDisconnectReason_VOICE_DISCONNECT_REASON_ACCESS_UNDECIDED,
+							}}})
+						}
 					}
 					remove, done := context.WithTimeout(ctx, 2*time.Second)
 					err = s.lk.RemoveParticipant(remove, job.room, person.Identity)

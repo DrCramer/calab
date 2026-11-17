@@ -51,7 +51,7 @@ describe('TaskFilter round trip', () => {
     const f = addCond(EMPTY_FILTER, TaskField.STATUS);
     expect(complete(f.conds[0] as never)).toBe(false);
     expect(toTaskFilter(f).conditions).toHaveLength(0);
-    const unknown = create(TaskFilterSchema, { conditions: [{ field: 99 as TaskField, op: TaskOp.IS, values: ['x'] }] });
+    const unknown = create(TaskFilterSchema, { conditions: [{ field: 99 as unknown as TaskField, op: TaskOp.IS, values: ['x'] }] });
     expect(fromTaskFilter(unknown).conds).toHaveLength(0);
   });
 
@@ -116,6 +116,9 @@ describe('matchTask', () => {
     expect(m(t, [{ field: TaskField.RELATION, op: TaskOp.IS, values: ['blocked'] }])).toBe(true);
     expect(m(t, [{ field: TaskField.TEXT, op: TaskOp.CONTAINS, values: ['ЭХО windows'] }])).toBe(true);
     expect(m(t, [{ field: TaskField.TEXT, op: TaskOp.CONTAINS, values: ['cal-1'] }])).toBe(true);
+    // «е» = «ё» both ways (CBF-169).
+    expect(m(task({ title: 'Позвонить Фёдорову' }), [{ field: TaskField.TEXT, op: TaskOp.CONTAINS, values: ['федоров'] }])).toBe(true);
+    expect(m(task({ title: 'Позвонить Федорову' }), [{ field: TaskField.TEXT, op: TaskOp.CONTAINS, values: ['Фёдоров'] }])).toBe(true);
     expect(m(t, [{ field: TaskField.CREATED_AT, op: TaskOp.BETWEEN, values: ['2026-01-10', '2026-01-12'] }])).toBe(true);
     // AND by default, OR with `any`.
     const two: FilterState['conds'] = [

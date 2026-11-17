@@ -1,14 +1,17 @@
 package disk
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
+	"github.com/calaba/calaba/server/internal/auth"
 	"github.com/calaba/calaba/server/internal/db"
 	"github.com/calaba/calaba/server/internal/db/sqlc"
 	"github.com/calaba/calaba/server/internal/diskacl"
@@ -237,8 +240,115 @@ func newCode() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// createLink: POST /api/disk/items/{id}/link — turns the public link of a file on (the owner or
-// DISK_MANAGE); a live link is answered as is (200), a new one with 201.
+// hashLinkPassword and verifyLinkPassword are auth.HashPassword / auth.VerifyPassword; variables
+// so that a test can count the argon2 runs and act between the pre-check and the tx.
+var (
+	hashLinkPassword   = auth.HashPassword
+	verifyLinkPassword = auth.VerifyPassword
+)
+
+// errLinkMoved: the live link whose password the request repeated was switched off or got another
+// password between the check outside the tx and the tx; createLink hashes the password and retries.
+var errLinkMoved = errors.New("disk: link changed since the password check")
+
+// linkPassword validates a requested link password and hashes it (argon2id) only after a cheap
+// rights pre-check outside the tx, so a member without the right to change the link cannot spend
+// argon2 slots on any item id (review CBF-168); the tx checks the rights again. reuse (POST on a
+// live link): a password the live link already has is not hashed again and changes nothing,
+// so a repeated POST keeps the visitors' unlocks — then same is the stored hash it matched, and
+// the tx must find the live link still holding exactly that hash (errLinkMoved otherwise: a link
+// switched off meanwhile would be turned on again without the password asked for). An empty
+// password returns nil, nil.
+func (s *Service) linkPassword(r *http.Request, id uuid.UUID, pw string, reuse bool) (hash, same *string, err error) {
+	if pw == "" {
+		return nil, nil, nil
+	}
+	if err := validPassword(pw); err != nil {
+		return nil, nil, err
+	}
+	ctx := r.Context()
+	a, err := resolve(r, s.db.Q, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !a.mayChange() {
+		return nil, nil, errNotSharer
+	}
+	if reuse {
+		l, err := s.db.Q.GetDiskLinkByItem(ctx, id)
+		if err != nil && !db.IsNotFound(err) {
+			return nil, nil, err
+		}
+		if err == nil && l.PasswordHash != nil {
+			ok, err := verifyLinkPassword(ctx, pw, *l.PasswordHash)
+			if err != nil {
+				return nil, nil, err
+			}
+			if ok {
+				return nil, l.PasswordHash, nil
+			}
+		}
+	}
+	h, err := hashLinkPassword(ctx, pw)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &h, nil, nil
+}
+
+// protection is a change of a live link's password and «Без скачивания» (ADR-0167).
+type protection struct {
+	setPassword bool    // set hash as the password (nil removes it)
+	hash        *string // the new password's hash
+	viewOnly    *bool   // nil leaves view_only as it is
+}
+
+// protect applies p to the live link inside the caller's tx: a password set, changed or removed
+// bumps password_version (every unlock ends) and is journaled (link_password_on, after.changed
+// for a replaced one / link_password_off), so is a switch of view_only (link_view_only_on /
+// _off). Removing a password the link does not have changes nothing.
+func (s *Service) protect(ctx context.Context, q *sqlc.Queries, a access, link sqlc.DiskLink, p protection) (sqlc.DiskLink, bool, error) {
+	changed := false
+	var err error
+	if p.setPassword && (p.hash != nil || link.PasswordHash != nil) {
+		had := link.PasswordHash != nil
+		if link, err = q.SetDiskLinkPassword(ctx, sqlc.SetDiskLinkPasswordParams{ID: link.ID, PasswordHash: p.hash}); err != nil {
+			return link, false, err
+		}
+		changed = true
+		kind, after := "link_password_off", snap(nil)
+		if p.hash != nil {
+			kind = "link_password_on"
+			if had {
+				after = snap{"changed": true}
+			}
+		}
+		if err := s.journal(ctx, q, a.item, &a.c.uid, kind, nil, after); err != nil {
+			return link, false, err
+		}
+	}
+	if p.viewOnly != nil && *p.viewOnly != link.ViewOnly {
+		if link, err = q.SetDiskLinkViewOnly(ctx, sqlc.SetDiskLinkViewOnlyParams{ID: link.ID, ViewOnly: *p.viewOnly}); err != nil {
+			return link, false, err
+		}
+		changed = true
+		kind := "link_view_only_off"
+		if link.ViewOnly {
+			kind = "link_view_only_on"
+		}
+		if err := s.journal(ctx, q, a.item, &a.c.uid, kind, nil, nil); err != nil {
+			return link, false, err
+		}
+	}
+	return link, changed, nil
+}
+
+// createLink: POST /api/disk/items/{id}/link — turns the public link of a file or a folder
+// (ADR-0165) on (the owner or MANAGE on the item), with an optional password and «Без
+// скачивания» (ADR-0167); a new link answers 201. A live link answers 200 with the request's
+// password and view_only applied like PATCH would: a non-empty password sets or replaces it (the
+// same password changes nothing), view_only=true switches it on; an empty password and
+// view_only=false leave the link as it is. Calling it twice is the same as calling it once.
 func (s *Service) createLink(w http.ResponseWriter, r *http.Request) error {
 	id, err := httpx.PathUUID(r, "id", "item")
 	if err != nil {
@@ -256,6 +366,10 @@ func (s *Service) createLink(w http.ResponseWriter, r *http.Request) error {
 		}
 		expires = &t
 	}
+	hash, same, err := s.linkPassword(r, id, req.GetPassword(), true)
+	if err != nil {
+		return err
+	}
 	code, err := newCode()
 	if err != nil {
 		return err
@@ -263,16 +377,13 @@ func (s *Service) createLink(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	var link sqlc.DiskLink
 	var a access
-	fresh := false
-	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
+	fresh, changed := false, false
+	apply := func(q *sqlc.Queries) error {
 		if a, err = resolve(r, q, id); err != nil {
 			return err
 		}
 		if err := writable(ctx, q, a.item.WorkspaceID); err != nil {
 			return err
-		}
-		if a.item.Kind != "file" {
-			return httpx.Conflict("only files can have a public link")
 		}
 		if !a.mayChange() {
 			return errNotSharer
@@ -281,13 +392,26 @@ func (s *Service) createLink(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		link, err = q.GetDiskLinkByItem(ctx, id)
+		if same != nil && (err != nil || link.PasswordHash == nil || *link.PasswordHash != *same) {
+			if err != nil && !db.IsNotFound(err) {
+				return err
+			}
+			return errLinkMoved
+		}
 		if err == nil {
-			return nil
+			p := protection{setPassword: hash != nil, hash: hash}
+			if req.GetViewOnly() {
+				on := true
+				p.viewOnly = &on
+			}
+			link, changed, err = s.protect(ctx, q, a, link, p)
+			return err
 		}
 		if !db.IsNotFound(err) {
 			return err
 		}
-		if link, err = q.UpsertDiskLink(ctx, sqlc.UpsertDiskLinkParams{ItemID: id, Code: code, CreatedBy: &a.c.uid, ExpiresAt: expires}); err != nil {
+		if link, err = q.UpsertDiskLink(ctx, sqlc.UpsertDiskLinkParams{ItemID: id, Code: code, CreatedBy: &a.c.uid, ExpiresAt: expires,
+			PasswordHash: hash, ViewOnly: req.GetViewOnly()}); err != nil {
 			return err
 		}
 		fresh = true
@@ -295,17 +419,85 @@ func (s *Service) createLink(w http.ResponseWriter, r *http.Request) error {
 		if expires != nil {
 			after["expires_at"] = expires.UTC().Format(time.RFC3339)
 		}
+		if hash != nil {
+			after["password"] = true
+		}
+		if link.ViewOnly {
+			after["view_only"] = true
+		}
 		return s.journal(ctx, q, a.item, &a.c.uid, "link_on", nil, after)
-	})
+	}
+	err = s.db.Tx(ctx, apply)
+	if errors.Is(err, errLinkMoved) {
+		// The link the password was compared with is gone or has another one: hash it and apply.
+		if hash, same, err = s.linkPassword(r, id, req.GetPassword(), false); err != nil {
+			return err
+		}
+		err = s.db.Tx(ctx, apply)
+	}
 	if err != nil {
 		return err
 	}
 	status := http.StatusOK
 	if fresh {
 		status = http.StatusCreated
+	}
+	if fresh || changed {
 		s.publish(ctx, a.item.WorkspaceID, []*v1.DispatchEvent{upsertEvent(a.item, a.nodes(), nil)})
 	}
 	httpx.Write(w, status, &v1.DiskLinkResponse{Link: linkProto(link), Url: s.publicURL(link.Code)})
+	return nil
+}
+
+// updateLink: PATCH /api/disk/items/{id}/link — the password and «Без скачивания» of the live
+// link (ADR-0167, see protect): the same rights as createLink; 404 without a live link.
+func (s *Service) updateLink(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathUUID(r, "id", "item")
+	if err != nil {
+		return err
+	}
+	var req v1.UpdateDiskLinkRequest
+	if err := httpx.DecodeStrict(w, r, &req); err != nil {
+		return err
+	}
+	hash, _, err := s.linkPassword(r, id, req.GetPassword(), false)
+	if err != nil {
+		return err
+	}
+	ctx := r.Context()
+	var link sqlc.DiskLink
+	var a access
+	changed := false
+	err = s.db.Tx(ctx, func(q *sqlc.Queries) error {
+		if a, err = resolve(r, q, id); err != nil {
+			return err
+		}
+		if err := writable(ctx, q, a.item.WorkspaceID); err != nil {
+			return err
+		}
+		if !a.mayChange() {
+			return errNotSharer
+		}
+		if _, err := q.GetDiskItemForUpdate(ctx, id); err != nil {
+			return err
+		}
+		link, err = q.GetDiskLinkByItem(ctx, id)
+		if db.IsNotFound(err) {
+			return httpx.NotFound("link")
+		}
+		if err != nil {
+			return err
+		}
+		link, changed, err = s.protect(ctx, q, a, link, protection{setPassword: req.Password != nil, hash: hash, viewOnly: req.ViewOnly})
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if changed {
+		s.publish(ctx, a.item.WorkspaceID, []*v1.DispatchEvent{upsertEvent(a.item, a.nodes(), nil)})
+	}
+	httpx.Write(w, http.StatusOK, &v1.DiskLinkResponse{Link: linkProto(link), Url: s.publicURL(link.Code)})
 	return nil
 }
 

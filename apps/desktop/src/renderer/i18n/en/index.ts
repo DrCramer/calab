@@ -173,7 +173,7 @@ export const en: Dict = {
 
   // gateway
   'gateway.connecting': 'Connecting…',
-  'gateway.reconnecting': 'Lost connection to the server — reconnecting…',
+  'gateway.reconnecting': 'No connection to the server — recovering…',
 
   // shell
   'shell.pickRoom': 'Pick a room on the left',
@@ -595,6 +595,8 @@ export const en: Dict = {
   'app.onCloseHint': 'Minimized Calab stays in voice and keeps listening for push-to-talk',
   'app.onCloseTray': 'Minimize to tray',
   'app.onCloseQuit': 'Quit',
+  'app.monoTray': 'Monochrome tray icon',
+  'app.monoTrayHint': 'White or black, following the Windows taskbar theme',
   'app.devStats': 'Audio and video stats',
   'app.devStatsHint': 'Bitrates, codecs and load — in the voice panel',
 
@@ -699,6 +701,8 @@ export const en: Dict = {
   'ws.role': 'Role: {name}',
   'invite.new': 'New invite',
   'invite.createHint': 'The link is copied to the clipboard as soon as it’s created.',
+  'invite.roles': 'Roles',
+  'invite.rolesHint': 'Given on joining by the invite',
   'invite.active': 'Active invites',
 
   // core (review fixes: links, mic loss, insecure server)

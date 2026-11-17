@@ -23,9 +23,13 @@ export interface SessionState {
   emailInvitePending: boolean;
   /** READY.billing_self_serve (ADR-0080): owners may start billing — the plan badge asks the server only then. */
   billingSelfServe: boolean;
+  /** READY.max_file_mb (MAX_FILE_SIZE_MB): one file's limit in DMs, notes and workspaces without their own; 0 = unknown. */
+  maxFileMb: number;
   gateway: GatewayStatus;
   /** «Нет соединения с сервером» banner (lib/gateway/banner.ts decides). */
   reconnectBanner: boolean;
+  /** The API answers with outages (network errors, 502/503/504): the same banner (services/serverHealth.ts, ADR-0166). */
+  serverDegraded: boolean;
   /** Gateway READY received at least once for this login. */
   ready: boolean;
   /** Close 4008 before READY: too many active devices. */
@@ -49,8 +53,10 @@ export const useSession = create<SessionState>()((set) => ({
   emailVerificationOptional: false,
   emailInvitePending: false,
   billingSelfServe: false,
+  maxFileMb: 0,
   gateway: 'idle',
   reconnectBanner: false,
+  serverDegraded: false,
   ready: false,
   tooManySessions: false,
   loggedOutReason: null,

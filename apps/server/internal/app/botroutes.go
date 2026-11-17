@@ -84,8 +84,14 @@ var botRouteGroups = []botRouteGroup{
 		"POST /api/public/forms/{code}/submissions",
 		"POST /api/public/forms/{code}/files",
 		"GET /api/public/disk/{code}",
+		"POST /api/public/disk/{code}/unlock",
 		"GET /api/public/disk/{code}/content",
 		"GET /api/public/disk/{code}/thumbnail",
+		"GET /api/public/disk/{code}/office",
+		"GET /api/public/disk/{code}/items",
+		"GET /api/public/disk/{code}/items/{id}/content",
+		"GET /api/public/disk/{code}/items/{id}/thumbnail",
+		"GET /api/public/disk/{code}/archive",
 		"GET /api/office/file/{token}",
 		"POST /api/office/callback/{token}",
 		"GET /api/public/wiki/{code}",
@@ -332,6 +338,7 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/me/tasks",
 		"GET /api/me/task-notices",
 		"GET /api/workspaces/{id}/tasks/search",
+		"GET /api/workspaces/{id}/recent-tasks",
 	}},
 	{access: botAllow, why: "board forms: MANAGE_BOARD to manage, the form's access list to submit (a closed form needs the bot in allowedUserIds)", routes: []string{
 		"GET /api/boards/{id}/forms",
@@ -363,6 +370,7 @@ var botRouteGroups = []botRouteGroup{
 		"GET /api/disk/items/{id}/permissions",
 		"PUT /api/disk/items/{id}/permissions",
 		"POST /api/disk/items/{id}/link",
+		"PATCH /api/disk/items/{id}/link",
 		"DELETE /api/disk/items/{id}/link",
 	}},
 	{access: botAllow, why: "Wiki (ADR-0096 §2 addendum): the wiki bits of the roles and the page overrides", routes: []string{
@@ -530,6 +538,7 @@ var botRouteGroups = []botRouteGroup{
 	// tool's REST call is then checked on behalf like any other (onBehalfRoutes).
 	{access: botAllow, why: "MCP for bots (CBF-48, ADR-0156): bot tokens only (the handler refuses people's sessions); every tool calls a REST route of this table in process with the same token and Calab-On-Behalf, so it has exactly the rights of the bot, or of the person it acts for", routes: []string{
 		"/api/mcp",
+		"/mcp", // the same endpoint at the short address (CBF-183)
 	}},
 
 	// ---------------------------------------------------------------- deny: people only
@@ -595,9 +604,11 @@ var botRouteGroups = []botRouteGroup{
 	{access: botPublic, why: "MCP without a bot (ADR-0158): the OAuth server's metadata, client registration, authorize, token and revocation read no user or bot token — a bot is anonymous there", routes: []string{
 		"GET /.well-known/oauth-protected-resource",
 		"GET /.well-known/oauth-protected-resource/api/mcp",
+		"GET /.well-known/oauth-protected-resource/mcp",
 		"GET /.well-known/oauth-authorization-server",
 		"OPTIONS /.well-known/oauth-protected-resource",
 		"OPTIONS /.well-known/oauth-protected-resource/api/mcp",
+		"OPTIONS /.well-known/oauth-protected-resource/mcp",
 		"OPTIONS /.well-known/oauth-authorization-server",
 		"POST /api/mcp/oauth/register",
 		"OPTIONS /api/mcp/oauth/register",
@@ -606,6 +617,10 @@ var botRouteGroups = []botRouteGroup{
 		"OPTIONS /api/mcp/oauth/token",
 		"POST /api/mcp/oauth/revoke",
 		"OPTIONS /api/mcp/oauth/revoke",
+	}},
+	{access: botPublic, why: "signed file URLs of the MCP tools (CBF-185/187, ADR-0158 addendum): no bearer, the token in the path is a 10-minute capability bound to the tool's caller; the handler replays GET /api/files/{id} or the upload route in process as that caller, through this table and the identity gate again", routes: []string{
+		"GET /api/mcp/file/{token}",
+		"POST /api/mcp/upload/{token}",
 	}},
 	{access: botDeny, why: "MCP without a bot (ADR-0158): the consent is a person's — a bot has its own token and needs none", routes: []string{
 		"POST /api/mcp/oauth/requests/{request}/bind",
@@ -738,6 +753,7 @@ var botRouteGroups = []botRouteGroup{
 		"PATCH /api/notes/{id}",
 		"DELETE /api/notes/{id}",
 		"PATCH /api/me/status",
+		"PUT /api/me/voice-mute",
 		"PUT /api/workspaces/{id}/notifications",
 		"PUT /api/rooms/{id}/notifications",
 		"PATCH /api/dms/{id}/state",

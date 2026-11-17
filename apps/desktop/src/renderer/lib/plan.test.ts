@@ -314,6 +314,11 @@ describe('plan caps for workspace voice defaults (#42)', () => {
     expect(clampToCap(1, 3)).toBe(1);
     expect(clampToCap(6, 0)).toBe(6);
   });
+  it('workspace preset defaults use quality ordering with an optional plan cap', () => {
+    expect(allowedStreamPreset(ScreenSharePreset.H720_30, UNSPECIFIED, ORIGINAL)).toBe(ScreenSharePreset.H720_30);
+    expect(allowedStreamPreset(ORIGINAL, UNSPECIFIED, ScreenSharePreset.H720_30)).toBe(ScreenSharePreset.H720_30);
+    expect(allowedStreamPreset(ScreenSharePreset.H2160_60, UNSPECIFIED, UNSPECIFIED)).toBe(ScreenSharePreset.H2160_60);
+  });
   it('capMax limits the selectable range', () => {
     expect(capMax(10, 1)).toBe(1);
     expect(capMax(10, 0)).toBe(10);

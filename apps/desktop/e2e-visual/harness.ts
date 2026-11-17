@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { create } from '@bufbuild/protobuf';
 import { TimestampSchema } from '@bufbuild/protobuf/wkt';
-import { TaskAssigneeSchema, TaskReleaseSchema } from '@calaba/protocol';
+import { TaskAssigneeSchema, TaskNoticeKind, TaskReleaseSchema } from '@calaba/protocol';
 import AxeBuilder from '@axe-core/playwright';
 import { _electron as electron, expect, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import { IDS, startMockServer, type MockServer } from '../e2e-support/mock-server';
@@ -396,6 +396,18 @@ export function seedReleases(mock: MockServer): void {
 }
 
 /**
+ * «Недавние» (CBF-179): Анна's notices of CAL-3 (Борис commented; unread), CAL-4 (approved, read)
+ * and MKT-2 (a status change by Борис, read), an hour apart before NOW. Written straight into the
+ * mock, after open().
+ */
+export function seedRecentNotices(mock: MockServer): void {
+  const { anna, boris } = IDS.users;
+  mock.boards.seedNotice(anna, 'MKT-2', { kind: TaskNoticeKind.STATUS, actorId: boris }, NOW.getTime() - 3 * 3600_000);
+  mock.boards.seedNotice(anna, 'CAL-4', { kind: TaskNoticeKind.APPROVED, actorId: boris }, NOW.getTime() - 2 * 3600_000);
+  mock.boards.seedNotice(anna, 'CAL-3', { kind: TaskNoticeKind.COMMENT, actorId: boris }, NOW.getTime() - 3600_000);
+}
+
+/**
  * Labels past the card width (docs/08 «Лейблы»): CAL-1 two (one row), CAL-2 five (two rows),
  * CAL-4 all eleven (the «+N» group). Written straight into the mock, after open().
  */
@@ -496,7 +508,7 @@ export async function expectToolbarHeights(bar: Locator, name: string): Promise<
       if (el.getAttribute('role') !== 'radiogroup' && Math.abs(inner - el.getBoundingClientRect().height - 4) < 0.6 && el.parentElement?.matches('div, span')) return; // a segment inside its 2 px padded track
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0 || getComputedStyle(el).visibility === 'hidden') return;
-      out.push({ what: el.getAttribute('data-testid') ?? el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 20) ?? el.tagName, h: r.height, mid: r.top + r.height / 2 - (rb.top + rb.height / 2) });
+      out.push({ what: el.getAttribute('data-testid') ?? el.getAttribute('aria-label') ?? el.textContent.trim().slice(0, 20), h: r.height, mid: r.top + r.height / 2 - (rb.top + rb.height / 2) });
     });
     return out;
   });

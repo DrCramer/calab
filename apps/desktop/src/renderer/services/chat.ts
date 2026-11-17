@@ -3,13 +3,14 @@ import { timestampNow } from '@bufbuild/protobuf/wkt';
 import { MessageSchema, type FileMeta, type Message, type UnfurlResponse } from '@calaba/protocol';
 import { t } from '../i18n';
 import { ApiError } from '../lib/api/client';
-import { errorText } from '../lib/api/errors';
+import { errorText, fileTooLarge } from '../lib/api/errors';
 import { api, uploadFile, uploadPath, type UploadHandle } from '../lib/api/endpoints';
 import { sendSticker } from './stickers';
 import { voiceQuery, type VoiceMeta } from '../lib/voiceNote';
 import { attachmentFile } from '../lib/image';
 import { canToggleReaction } from '../features/chat/reactionLimit';
 import { reportPlanError } from './plan';
+import { tooLargeError } from './uploadLimit';
 import { log } from '../lib/log';
 import { findByKey, lastSentId, messageById, useMessages, type ChatMessage, type PendingUpload } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
@@ -352,21 +353,67 @@ export async function resyncPins(): Promise<void> {
 // ---- link previews: one request per URL per session (the server caches for everyone)
 
 const unfurlCache = new Map<string, Promise<UnfurlResponse | null>>();
+// The answers already in, by URL (same keys as unfurlCache): a row the virtualised feed remounts
+// draws its preview at its final height on the first render (GitHub #313, peekUnfurl).
+const unfurlDone = new Map<string, UnfurlResponse | null>();
 const UNFURL_CACHE_MAX = 300;
+
+/** Pauses before the retries of a transient unfurl failure (429 / 5xx / network); a test shrinks them. */
+export const unfurlRetryMs = { delays: [2000, 6000] };
+
+// 404 is the server's «no preview» (cached there too); any other 4xx but 408 / 429 is no card either.
+const isNoPreview = (e: unknown): boolean => e instanceof ApiError && e.status >= 400 && e.status < 500 && e.status !== 429 && e.status !== 408;
+
+/** The card, null for «no preview», undefined when the request kept failing for a transient reason. */
+async function fetchUnfurl(url: string): Promise<UnfurlResponse | null | undefined> {
+  for (let i = 0; ; i++) {
+    try {
+      const r = await api.unfurl.get(url);
+      return r.title || r.description || r.imageUrl || r.task || r.board ? r : null;
+    } catch (e) {
+      if (isNoPreview(e)) return null;
+      const delay = unfurlRetryMs.delays[i];
+      if (delay === undefined) return undefined;
+      await new Promise((res) => setTimeout(res, delay));
+    }
+  }
+}
 
 export function unfurl(url: string): Promise<UnfurlResponse | null> {
   const hit = unfurlCache.get(url);
   if (hit) return hit;
-  const p = api.unfurl.get(url).then(
-    (r) => (r.title || r.description || r.imageUrl || r.task || r.board ? r : null),
-    () => null,
-  );
+  // A bot's fresh link is asked for the moment its message lands, and the answer can be a 429 /
+  // 503 / dropped request that is gone seconds later. It used to be remembered as «no preview» for
+  // the whole session (CBF-176): retry, and when it still fails forget it, so the next mount of
+  // the row asks again instead of reading a stale «none».
+  const p: Promise<UnfurlResponse | null> = fetchUnfurl(url).then((r) => {
+    // Not if the cache was cleared (sign-out, revoked rooms) or the entry evicted meanwhile.
+    if (unfurlCache.get(url) === p) {
+      if (r === undefined) unfurlCache.delete(url);
+      else unfurlDone.set(url, r);
+    }
+    return r ?? null;
+  });
   unfurlCache.set(url, p);
   if (unfurlCache.size > UNFURL_CACHE_MAX) {
     const oldest = unfurlCache.keys().next().value;
-    if (oldest !== undefined) unfurlCache.delete(oldest);
+    if (oldest !== undefined) {
+      unfurlCache.delete(oldest);
+      unfurlDone.delete(oldest);
+    }
   }
   return p;
+}
+
+/**
+ * The preview of `url` if its answer is already in (null: there is none), undefined if not asked or
+ * still on its way. A row remounted by the virtualised feed (scrolled back into its overscan) used
+ * to draw no preview on its first render and the card a render later, even with the answer cached:
+ * every remount grew the row after Virtuoso had measured it, which restarted Virtuoso's scroll to
+ * the bottom while opening a room — a room of links never settled and stayed hidden (GitHub #313).
+ */
+export function peekUnfurl(url: string): UnfurlResponse | null | undefined {
+  return unfurlDone.get(url);
 }
 
 export interface OutgoingFile {
@@ -420,10 +467,15 @@ export async function sendMessage(
     createdAt: timestampNow(),
   });
   const existing = findMessage(roomId, key);
-  if (existing) useMessages.getState().patchPending(roomId, key, { status: 'pending', uploads, error: '' });
+  if (existing) useMessages.getState().patchPending(roomId, key, { status: 'pending', uploads, error: '', final: false });
   else useMessages.getState().addPending(roomId, { key, msg, status: 'pending', uploads } satisfies ChatMessage);
 
   try {
+    // A file above the known limit is refused here, not after uploading it (CBF-191).
+    for (const f of files) {
+      const big = tooLargeError(workspaceId, f.file.size);
+      if (big) throw big;
+    }
     const metas: FileMeta[] = [];
     const handles: UploadHandle[] = [];
     for (const [i, f] of files.entries()) {
@@ -459,16 +511,28 @@ export async function sendMessage(
       useRooms.getState().setLastMessage(roomId, res.message.id);
       useRooms.getState().setRead(roomId, res.message.id);
     }
+    failedFiles.delete(key);
   } catch (e) {
     log.warn('send failed', e);
-    useMessages.getState().patchPending(roomId, key, { status: 'failed', error: errText(e) });
+    // «Повторить» uploads the same files again; a file too large for the limit cannot succeed.
+    if (files.length > 0) failedFiles.set(key, files);
+    useMessages.getState().patchPending(roomId, key, { status: 'failed', error: errText(e), final: fileTooLarge(e) });
     // 413 FILE_QUOTA_EXCEEDED: how full the storage is, and «Связаться» when the plan is the cause (ADR-0024).
     reportPlanError(e, workspaceId);
   }
 }
 
-/** Retry keeps the same nonce, so the server never creates a duplicate. */
-export function retrySend(workspaceId: string, roomId: string, c: ChatMessage, files: OutgoingFile[] = []): Promise<void> {
+/** The files of failed messages by message key, for «Повторить» (the store keeps only names and sizes). */
+const failedFiles = new Map<string, OutgoingFile[]>();
+
+/** «Удалить» on a failed message: it goes, and so do its files kept for a retry. */
+export function dropFailed(roomId: string, key: string): void {
+  failedFiles.delete(key);
+  useMessages.getState().dropPending(roomId, key);
+}
+
+/** Retry keeps the same nonce, so the server never creates a duplicate; it uploads the same files again. */
+export function retrySend(workspaceId: string, roomId: string, c: ChatMessage, files: OutgoingFile[] = failedFiles.get(c.key) ?? []): Promise<void> {
   if (c.msg.sticker) return sendSticker(workspaceId, roomId, c.msg.sticker, c.msg.replyToId || undefined, c.msg.nonce);
   return sendMessage(workspaceId, roomId, c.msg.content, files, c.msg.replyToId || undefined, c.msg.nonce);
 }
@@ -542,6 +606,7 @@ export function resetChatCaches(): void {
   newerLoading.clear();
   pinsLoading.clear();
   unfurlCache.clear();
+  unfurlDone.clear();
   sentRead.clear();
   pendingRead.clear();
   lastTyping.clear();
@@ -563,4 +628,5 @@ export function clearChatRooms(ids: ReadonlySet<string>): void {
     readTimers.delete(id);
   }
   unfurlCache.clear();
+  unfurlDone.clear();
 }

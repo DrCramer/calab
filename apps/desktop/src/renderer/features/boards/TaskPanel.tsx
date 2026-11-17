@@ -1,5 +1,5 @@
 import * as Dropdown from '../../components/radix/dropdown-menu';
-import { BoardFeature, MessageKind, Permission, TaskRelationKind, WorkspaceRole, taskRoomPermissions, type FileMeta, type Room, type Task } from '@calaba/protocol';
+import { BoardFeature, MessageKind, Permission, TaskRelationKind, WorkspaceRole, taskRoomPermissions, type FileMeta, type Room, type Task, BoardStatusType } from '@calaba/protocol';
 import {
   Archive,
   ArchiveRestore,
@@ -92,6 +92,7 @@ import { linkChoices, taskChoices } from './taskChoices';
 import { doneType, editLockKey, hasBit, mayArchiveTask, mayEditTask, mayRestoreTask, CREATE_TASKS, MANAGE_BOARD } from './model';
 import { useDisabledFeatures, useEstimateScale } from './useBoardView';
 import { useBoardScoped, useTaskPerms } from './useTaskPerms';
+import { fittingFiles } from '../../services/uploadLimit';
 import { PRIORITY_LABEL, PriorityIcon, StatusIcon, formatDue, isOverdue } from './visuals';
 
 const TITLE_MAX = 200;
@@ -705,7 +706,7 @@ export function Properties({ task, canEdit, perms, scoped, disabled, bare = fals
       <Prop label={t('boards.f.status')}>
         <StatusMenu boardId={task.boardId} value={task.statusId} blocked={blocked} blockedNote={blockedNote} overridable={manage} onPick={(s) => void pickStatus(task.id, s, manage)} {...req('status')}>
           <button type="button" disabled={!canEdit} className={valueBtn} data-testid="prop-status">
-            <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} /> <span className="truncate">{status?.name ?? ''}</span>
+            <StatusIcon type={status?.type ?? BoardStatusType.UNSPECIFIED} color={status?.color ?? 0} icon={status?.icon} /> <span className="truncate">{status?.name ?? ''}</span>
           </button>
         </StatusMenu>
       </Prop>
@@ -1057,7 +1058,7 @@ function TaskLine({ id }: { id: string }): ReactNode {
   if (!x) return null;
   return (
     <button type="button" onClick={() => useBoardsUi.getState().openTask(id)} className="flex h-8 w-full min-w-0 items-center gap-2 rounded-[var(--radius-row)] px-2 text-left text-control hover:bg-hover" data-testid="task-line">
-      <StatusIcon type={status?.type ?? 0} color={status?.color ?? 0} icon={status?.icon} />
+      <StatusIcon type={status?.type ?? BoardStatusType.UNSPECIFIED} color={status?.color ?? 0} icon={status?.icon} />
       <span className="shrink-0 text-caption tabular-nums text-muted">{x.key}</span>
       <span className={cx('min-w-0 flex-1 truncate', doneType(status?.type) && 'text-muted line-through')}>{x.title}</span>
       {x.assignees[0] ? <MemberAvatar workspaceId={x.workspaceId} userId={x.assignees[0].userId} size={18} /> : null}
@@ -1358,7 +1359,14 @@ export function CommentBox({ task, room, perms, commentsOff, className, autoFocu
   const roomPerms = useMemo(() => taskRoomPermissions(perms ?? 0n, !!task.archivedAt, commentsOff), [perms, task.archivedAt, commentsOff]);
   const [files, setFiles] = useState<OutgoingFile[]>([]);
   const canAttach = (roomPerms & BigInt(Permission.ATTACH_FILES)) !== 0n;
-  const addFiles = useCallback((list: File[]) => canAttach && setFiles((cur) => [...cur, ...list.map(toOutgoing)].slice(0, 20)), [canAttach]);
+  const addFiles = useCallback(
+    (list: File[]) => {
+      if (!canAttach) return;
+      const fit = fittingFiles(task.workspaceId, list);
+      if (fit.length > 0) setFiles((cur) => [...cur, ...fit.map(toOutgoing)].slice(0, 20));
+    },
+    [canAttach, task.workspaceId],
+  );
   const [dragging, drop] = useFileDrop(canAttach, addFiles);
   if (!(roomPerms & BigInt(Permission.SEND_MESSAGES))) return null;
   return (

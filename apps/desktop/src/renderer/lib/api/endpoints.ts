@@ -128,6 +128,7 @@ import {
   GetMeResponseSchema,
   GetRoomResponseSchema,
   JoinVoiceResponseSchema,
+  VoiceCompanionResponseSchema,
   JoinWorkspaceResponseSchema,
   ListInvitesResponseSchema,
   ListBirthdaysResponseSchema,
@@ -150,6 +151,7 @@ import {
   UpdateMemberBirthdayRequestSchema,
   UpdateMemberBirthdayResponseSchema,
   UpdateMeResponseSchema,
+  VoiceMuteSchema,
   UsernameAvailabilityResponseSchema,
   UpdateMemberRequestSchema,
   UpdateMemberResponseSchema,
@@ -313,6 +315,9 @@ export const api = {
     /** Custom status (text + emoji, optional expiry); empty text and emoji clear it. */
     setStatus: (init: MessageInitShape<typeof UpdateStatusRequestSchema>) =>
       call('PATCH', '/api/me/status', UpdateMeResponseSchema, body(UpdateStatusRequestSchema, init)),
+    /** ADR-0168: my own mic / sound choice for the next voice session on any device (last writer wins). */
+    setVoiceMute: (init: { muted: boolean; deafened: boolean }) =>
+      call('PUT', '/api/me/voice-mute', VoiceMuteSchema, body(VoiceMuteSchema, init)),
     /** Messages mentioning me in rooms I can view, newest first (cursor `before`, limit ≤ 100). */
     mentions: (p: { limit?: number; before?: string; workspace_id?: string }, signal?: AbortSignal) =>
       call('GET', `/api/me/mentions${qs(p)}`, ListMessagesResponseSchema, undefined, signal),
@@ -369,17 +374,17 @@ export const api = {
     /** Invitations by email (ADR-0023): MANAGE_WORKSPACE + a verified address of the caller. */
     lookupInvitee: (id: string, email: string, signal?: AbortSignal) =>
       call('POST', `/api/workspaces/${id}/invites/lookup`, InviteLookupResponseSchema, body(InviteLookupRequestSchema, { email }), signal),
-    /** 201: a found (verified) account becomes a member at once; 409 = already a member. */
-    addMember: (id: string, userId: string) =>
-      call('POST', `/api/workspaces/${id}/members`, AddMemberResponseSchema, body(AddMemberRequestSchema, { userId })),
+    /** 201: a found (verified) account becomes a member at once (with custom `roleIds`, CBF-174); 409 = already a member. */
+    addMember: (id: string, userId: string, roleIds: readonly string[] = []) =>
+      call('POST', `/api/workspaces/${id}/members`, AddMemberResponseSchema, body(AddMemberRequestSchema, { userId, roleIds: [...roleIds] })),
     emailInvites: (id: string) => call('GET', `/api/workspaces/${id}/invites/email`, ListEmailInvitesResponseSchema),
-    /** 201; 429 + Retry-After = the same address was invited < 24 h ago. */
-    createEmailInvite: (id: string, email: string, role?: WorkspaceRole) =>
+    /** 201; 429 + Retry-After = the same address was invited < 24 h ago. `roleIds`: custom roles given on joining (CBF-174). */
+    createEmailInvite: (id: string, email: string, role?: WorkspaceRole, roleIds: readonly string[] = []) =>
       call(
         'POST',
         `/api/workspaces/${id}/invites/email`,
         CreateEmailInviteResponseSchema,
-        body(CreateEmailInviteRequestSchema, role === undefined ? { email } : { email, role }),
+        body(CreateEmailInviteRequestSchema, role === undefined ? { email, roleIds: [...roleIds] } : { email, role, roleIds: [...roleIds] }),
       ),
     revokeEmailInvite: (id: string, inviteId: string) => callEmpty('DELETE', `/api/workspaces/${id}/invites/email/${inviteId}`),
     /** Bans (docs/09 #32; MANAGE_WORKSPACE): newest first. */
@@ -933,6 +938,11 @@ export const api = {
     join: (roomId: string) => call('POST', `/api/rooms/${roomId}/join`, JoinVoiceResponseSchema),
     /** Takes this device out of the room at once, pending or connected (idempotent, 204). */
     leave: (roomId: string) => callEmpty('POST', `/api/rooms/${roomId}/voice/leave`),
+    /**
+     * The web companion's token (ADR-0149 §3, iPhone with native room audio): subscribe + data only,
+     * TTL 10 min, needs this device's seat in the room (409 without one); never creates or changes a seat.
+     */
+    companion: (roomId: string) => call('POST', `/api/rooms/${roomId}/voice/companion`, VoiceCompanionResponseSchema),
     /** → the granted preset and fps: ≤ the room's and the plan's limits (ADR-0024). */
     requestStream: (roomId: string, preset: ScreenSharePreset) =>
       call('POST', `/api/rooms/${roomId}/stream/request`, RequestStreamResponseSchema, body(RequestStreamRequestSchema, { preset })),

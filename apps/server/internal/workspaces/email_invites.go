@@ -144,6 +144,10 @@ func (h *Handlers) addMember(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return httpx.Validation("userId", "invalid user id")
 	}
+	roles, err := inviteRoles(r, h.db.Q, wsID, req.GetRoleIds())
+	if err != nil {
+		return err
+	}
 	if err := take(r.Context(), h.email.Send, uid(r).String()); err != nil {
 		return err
 	}
@@ -183,6 +187,10 @@ func (h *Handlers) addMember(w http.ResponseWriter, r *http.Request) error {
 		}
 		// The paid seat (ADR-0080): the inviter spends the balance the owner keeps (§13).
 		if err := h.limits.Plans.AdmitSeat(r.Context(), q, wsID, target, uid(r), m.Role); err != nil {
+			return err
+		}
+		// Checked above (inviteRoles); one deleted meanwhile is skipped.
+		if err := q.AddMemberRolesIfExist(r.Context(), sqlc.AddMemberRolesIfExistParams{UserID: target, WorkspaceID: wsID, RoleIds: roles}); err != nil {
 			return err
 		}
 		// A pending email invitation of the same address is moot now: revoke its link.
@@ -239,12 +247,46 @@ func mailSender(ctx context.Context, q *sqlc.Queries, actor sqlc.User, ws sqlc.W
 	return mail.OnBehalfOfBot(locale, ws.Name, actor.DisplayName), locale
 }
 
-func emailInvitePB(e sqlc.EmailInvite) *v1.EmailInvite {
+func emailInvitePB(e sqlc.EmailInvite, roles []uuid.UUID) *v1.EmailInvite {
 	return &v1.EmailInvite{
 		Id: e.ID.String(), WorkspaceId: e.WorkspaceID.String(), Email: e.Email, Role: perm.Role(e.Role).Proto(),
 		InvitedBy: e.InvitedBy.String(), CreatedAt: timestamppb.New(e.CreatedAt), ExpiresAt: timestamppb.New(e.ExpiresAt),
-		LastSentAt: timestamppb.New(e.LastSentAt),
+		LastSentAt: timestamppb.New(e.LastSentAt), RoleIds: perm.IDStrings(roles),
 	}
+}
+
+// GiveInviteRoles gives user, who has just joined by invitation inv (inside the join's
+// transaction, after the membership row), its custom roles (ADR-0026 addendum 2026-11-10): those
+// its author may give *now*, by the rules of inviteRoles against the author's current roles — a
+// standing link is a delegated grant, so a demoted or departed author's links hand out nothing,
+// and a role raised above the author since is skipped like a deleted one. The author joining by
+// their own link gets nothing: the self rule of memberRolesGuard (ADR-0029) would otherwise be
+// walked around by leaving and coming back. Skipped roles are silent, like deleted ones.
+func GiveInviteRoles(ctx context.Context, q *sqlc.Queries, inv sqlc.WorkspaceInvite, user uuid.UUID) error {
+	if len(inv.RoleIds) == 0 || inv.CreatedBy == user {
+		return nil
+	}
+	author, ok, err := perm.LoadMember(ctx, q, inv.WorkspaceID, inv.CreatedBy)
+	if err != nil {
+		return err
+	}
+	if !ok || !mayAssignRoles(author) {
+		return nil
+	}
+	rows, err := q.ListWorkspaceRoles(ctx, inv.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	give := make([]uuid.UUID, 0, len(inv.RoleIds))
+	for _, rr := range rows {
+		if rr.Builtin == nil && slices.Contains(inv.RoleIds, rr.ID) && checkAssignable(author, rr) == nil {
+			give = append(give, rr.ID)
+		}
+	}
+	if len(give) == 0 {
+		return nil
+	}
+	return q.AddMemberRolesIfExist(ctx, sqlc.AddMemberRolesIfExistParams{UserID: user, WorkspaceID: inv.WorkspaceID, RoleIds: give})
 }
 
 // createEmailInvite: POST /api/workspaces/{id}/invites/email {email, role?}.
@@ -276,6 +318,10 @@ func (h *Handlers) createEmailInvite(w http.ResponseWriter, r *http.Request) err
 		default:
 			return httpx.Validation("role", "role must be MEMBER or ADMIN")
 		}
+	}
+	roles, err := inviteRoles(r, h.db.Q, wsID, req.GetRoleIds())
+	if err != nil {
+		return err
 	}
 	var existing uuid.UUID // the address's account, if any
 	if u, err := h.db.Q.GetUserByEmail(r.Context(), &email); err == nil {
@@ -325,7 +371,7 @@ func (h *Handlers) createEmailInvite(w http.ResponseWriter, r *http.Request) err
 			}
 		}
 		inv, err := q.CreateInvite(r.Context(), sqlc.CreateInviteParams{
-			WorkspaceID: wsID, Code: code, CreatedBy: uid(r), MaxUses: 1, ExpiresAt: &expires,
+			WorkspaceID: wsID, Code: code, CreatedBy: uid(r), MaxUses: 1, ExpiresAt: &expires, RoleIds: roles,
 		})
 		if err != nil {
 			return err
@@ -366,7 +412,7 @@ func (h *Handlers) createEmailInvite(w http.ResponseWriter, r *http.Request) err
 	}
 	h.email.Mail.Wake()
 	slog.InfoContext(r.Context(), "email invite sent", "workspace_id", wsID, "actor", uid(r), "email_ref", emailRef(email))
-	httpx.Write(w, http.StatusCreated, &v1.CreateEmailInviteResponse{Invite: emailInvitePB(out)})
+	httpx.Write(w, http.StatusCreated, &v1.CreateEmailInviteResponse{Invite: emailInvitePB(out, roles)})
 	return nil
 }
 
@@ -381,7 +427,7 @@ func (h *Handlers) listEmailInvites(w http.ResponseWriter, r *http.Request) erro
 	}
 	out := &v1.ListEmailInvitesResponse{Invites: make([]*v1.EmailInvite, len(rows))}
 	for i, e := range rows {
-		out.Invites[i] = emailInvitePB(e)
+		out.Invites[i] = emailInvitePB(e.EmailInvite, e.RoleIds)
 	}
 	httpx.Write(w, http.StatusOK, out)
 	return nil
@@ -567,6 +613,13 @@ func acceptEmailInvite(ctx context.Context, tx pgx.Tx, q *sqlc.Queries, pl *plan
 		if plans.SeatRefused(err) {
 			return m, false, nil // the deferred rollback undoes this join only
 		}
+		return m, false, err
+	}
+	inv, err := sq.GetInvite(ctx, ei.InviteID)
+	if err != nil {
+		return m, false, err
+	}
+	if err := GiveInviteRoles(ctx, sq, inv, user); err != nil {
 		return m, false, err
 	}
 	return m, true, sp.Commit(ctx)

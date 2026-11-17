@@ -75,18 +75,22 @@ func (DiskItemKind) EnumDescriptor() ([]byte, []int) {
 type DiskActivityKind int32
 
 const (
-	DiskActivityKind_DISK_ACTIVITY_KIND_UNSPECIFIED DiskActivityKind = 0
-	DiskActivityKind_DISK_ACTIVITY_KIND_CREATE      DiskActivityKind = 1 // a folder created
-	DiskActivityKind_DISK_ACTIVITY_KIND_UPLOAD      DiskActivityKind = 2
-	DiskActivityKind_DISK_ACTIVITY_KIND_RENAME      DiskActivityKind = 3
-	DiskActivityKind_DISK_ACTIVITY_KIND_MOVE        DiskActivityKind = 4
-	DiskActivityKind_DISK_ACTIVITY_KIND_SHARE       DiskActivityKind = 5 // overrides or restricted changed
-	DiskActivityKind_DISK_ACTIVITY_KIND_LINK_ON     DiskActivityKind = 6
-	DiskActivityKind_DISK_ACTIVITY_KIND_LINK_OFF    DiskActivityKind = 7
-	DiskActivityKind_DISK_ACTIVITY_KIND_TRASH       DiskActivityKind = 8
-	DiskActivityKind_DISK_ACTIVITY_KIND_RESTORE     DiskActivityKind = 9
-	DiskActivityKind_DISK_ACTIVITY_KIND_DELETE      DiskActivityKind = 10 // deleted forever
-	DiskActivityKind_DISK_ACTIVITY_KIND_EDIT        DiskActivityKind = 11 // a saved version (ADR-0143): before / after = file_id, size, sha256 of the files
+	DiskActivityKind_DISK_ACTIVITY_KIND_UNSPECIFIED        DiskActivityKind = 0
+	DiskActivityKind_DISK_ACTIVITY_KIND_CREATE             DiskActivityKind = 1 // a folder created
+	DiskActivityKind_DISK_ACTIVITY_KIND_UPLOAD             DiskActivityKind = 2
+	DiskActivityKind_DISK_ACTIVITY_KIND_RENAME             DiskActivityKind = 3
+	DiskActivityKind_DISK_ACTIVITY_KIND_MOVE               DiskActivityKind = 4
+	DiskActivityKind_DISK_ACTIVITY_KIND_SHARE              DiskActivityKind = 5 // overrides or restricted changed
+	DiskActivityKind_DISK_ACTIVITY_KIND_LINK_ON            DiskActivityKind = 6
+	DiskActivityKind_DISK_ACTIVITY_KIND_LINK_OFF           DiskActivityKind = 7
+	DiskActivityKind_DISK_ACTIVITY_KIND_TRASH              DiskActivityKind = 8
+	DiskActivityKind_DISK_ACTIVITY_KIND_RESTORE            DiskActivityKind = 9
+	DiskActivityKind_DISK_ACTIVITY_KIND_DELETE             DiskActivityKind = 10 // deleted forever
+	DiskActivityKind_DISK_ACTIVITY_KIND_EDIT               DiskActivityKind = 11 // a saved version (ADR-0143): before / after = file_id, size, sha256 of the files
+	DiskActivityKind_DISK_ACTIVITY_KIND_LINK_PASSWORD_ON   DiskActivityKind = 12 // the link's password set (after.changed: replaced one), ADR-0167
+	DiskActivityKind_DISK_ACTIVITY_KIND_LINK_PASSWORD_OFF  DiskActivityKind = 13 // the link's password removed
+	DiskActivityKind_DISK_ACTIVITY_KIND_LINK_VIEW_ONLY_ON  DiskActivityKind = 14 // «Без скачивания» turned on
+	DiskActivityKind_DISK_ACTIVITY_KIND_LINK_VIEW_ONLY_OFF DiskActivityKind = 15 // «Без скачивания» turned off
 )
 
 // Enum value maps for DiskActivityKind.
@@ -104,20 +108,28 @@ var (
 		9:  "DISK_ACTIVITY_KIND_RESTORE",
 		10: "DISK_ACTIVITY_KIND_DELETE",
 		11: "DISK_ACTIVITY_KIND_EDIT",
+		12: "DISK_ACTIVITY_KIND_LINK_PASSWORD_ON",
+		13: "DISK_ACTIVITY_KIND_LINK_PASSWORD_OFF",
+		14: "DISK_ACTIVITY_KIND_LINK_VIEW_ONLY_ON",
+		15: "DISK_ACTIVITY_KIND_LINK_VIEW_ONLY_OFF",
 	}
 	DiskActivityKind_value = map[string]int32{
-		"DISK_ACTIVITY_KIND_UNSPECIFIED": 0,
-		"DISK_ACTIVITY_KIND_CREATE":      1,
-		"DISK_ACTIVITY_KIND_UPLOAD":      2,
-		"DISK_ACTIVITY_KIND_RENAME":      3,
-		"DISK_ACTIVITY_KIND_MOVE":        4,
-		"DISK_ACTIVITY_KIND_SHARE":       5,
-		"DISK_ACTIVITY_KIND_LINK_ON":     6,
-		"DISK_ACTIVITY_KIND_LINK_OFF":    7,
-		"DISK_ACTIVITY_KIND_TRASH":       8,
-		"DISK_ACTIVITY_KIND_RESTORE":     9,
-		"DISK_ACTIVITY_KIND_DELETE":      10,
-		"DISK_ACTIVITY_KIND_EDIT":        11,
+		"DISK_ACTIVITY_KIND_UNSPECIFIED":        0,
+		"DISK_ACTIVITY_KIND_CREATE":             1,
+		"DISK_ACTIVITY_KIND_UPLOAD":             2,
+		"DISK_ACTIVITY_KIND_RENAME":             3,
+		"DISK_ACTIVITY_KIND_MOVE":               4,
+		"DISK_ACTIVITY_KIND_SHARE":              5,
+		"DISK_ACTIVITY_KIND_LINK_ON":            6,
+		"DISK_ACTIVITY_KIND_LINK_OFF":           7,
+		"DISK_ACTIVITY_KIND_TRASH":              8,
+		"DISK_ACTIVITY_KIND_RESTORE":            9,
+		"DISK_ACTIVITY_KIND_DELETE":             10,
+		"DISK_ACTIVITY_KIND_EDIT":               11,
+		"DISK_ACTIVITY_KIND_LINK_PASSWORD_ON":   12,
+		"DISK_ACTIVITY_KIND_LINK_PASSWORD_OFF":  13,
+		"DISK_ACTIVITY_KIND_LINK_VIEW_ONLY_ON":  14,
+		"DISK_ACTIVITY_KIND_LINK_VIEW_ONLY_OFF": 15,
 	}
 )
 
@@ -148,8 +160,11 @@ func (DiskActivityKind) EnumDescriptor() ([]byte, []int) {
 	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{1}
 }
 
-// A public link of a file (ADR-0094 §3). Anyone with the code reads the file without signing
-// in: GET /api/public/disk/{code} (PublicDiskFile) and /api/public/disk/{code}/content.
+// A public link of a file (ADR-0094 §3) or a folder (ADR-0165). Anyone with the code reads the
+// file without signing in: GET /api/public/disk/{code} (PublicDiskFile) and
+// /api/public/disk/{code}/content; a folder link lists the folder's visible subtree
+// (/api/public/disk/{code}/items, PublicDiskFolder) read-only. A link may carry a password and
+// «Без скачивания» (ADR-0167).
 type DiskLink struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`                            // 43 characters, base64url of 32 random bytes
@@ -158,6 +173,8 @@ type DiskLink struct {
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	Downloads     uint32                 `protobuf:"varint,5,opt,name=downloads,proto3" json:"downloads,omitempty"`
 	ItemId        string                 `protobuf:"bytes,6,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	HasPassword   bool                   `protobuf:"varint,7,opt,name=has_password,json=hasPassword,proto3" json:"has_password,omitempty"` // a visitor unlocks it first (the password itself never leaves the server)
+	ViewOnly      bool                   `protobuf:"varint,8,opt,name=view_only,json=viewOnly,proto3" json:"view_only,omitempty"`          // «Без скачивания»: viewing in the browser only, no download or archive
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -234,6 +251,20 @@ func (x *DiskLink) GetItemId() string {
 	return ""
 }
 
+func (x *DiskLink) GetHasPassword() bool {
+	if x != nil {
+		return x.HasPassword
+	}
+	return false
+}
+
+func (x *DiskLink) GetViewOnly() bool {
+	if x != nil {
+		return x.ViewOnly
+	}
+	return false
+}
+
 // A folder or a file of the Disk.
 type DiskItem struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -246,7 +277,7 @@ type DiskItem struct {
 	OwnerId       string                 `protobuf:"bytes,7,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`        // who created it; empty after the account is gone
 	Restricted    bool                   `protobuf:"varint,8,opt,name=restricted,proto3" json:"restricted,omitempty"`                // «Только выбранные»: the roles and the parent give no access
 	Shared        bool                   `protobuf:"varint,9,opt,name=shared,proto3" json:"shared,omitempty"`                        // the item has its own overrides (disk_permissions)
-	Link          *DiskLink              `protobuf:"bytes,10,opt,name=link,proto3" json:"link,omitempty"`                            // the live public link (files only), unset when none
+	Link          *DiskLink              `protobuf:"bytes,10,opt,name=link,proto3" json:"link,omitempty"`                            // the live public link (a file or a folder), unset when none
 	TrashedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=trashed_at,json=trashedAt,proto3" json:"trashed_at,omitempty"` // set while in the trash (with its subtree)
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
@@ -1212,11 +1243,16 @@ func (x *UpdateDiskPermissionsRequest) GetRestricted() bool {
 	return false
 }
 
-// POST /api/disk/items/{id}/link (files only; owner of the file or DISK_MANAGE). A live link is
-// returned as is; expires_at unset = never.
+// POST /api/disk/items/{id}/link (a file or a folder, ADR-0165; the item's owner or MANAGE on
+// it). expires_at unset = never; it applies to a new link only. A live link answers 200 with
+// password and view_only applied like PATCH: a non-empty password sets or replaces it (the same
+// password changes nothing), view_only = true switches it on; an empty password and view_only =
+// false leave the link as it is (PATCH removes them). A repeated call changes nothing.
 type CreateDiskLinkRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`                  // the link's password (4..128 characters); empty = none / unchanged (ADR-0167)
+	ViewOnly      bool                   `protobuf:"varint,3,opt,name=view_only,json=viewOnly,proto3" json:"view_only,omitempty"` // «Без скачивания»; false = off for a new link, unchanged for a live one
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1258,6 +1294,122 @@ func (x *CreateDiskLinkRequest) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *CreateDiskLinkRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+func (x *CreateDiskLinkRequest) GetViewOnly() bool {
+	if x != nil {
+		return x.ViewOnly
+	}
+	return false
+}
+
+// PATCH /api/disk/items/{id}/link — changes the live link (ADR-0167; the same rights as POST).
+// password: set or change it (4..128 characters), "" removes it; every change ends the visitors'
+// unlocks. Unset fields stay as they are. Answers DiskLinkResponse.
+type UpdateDiskLinkRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Password      *string                `protobuf:"bytes,1,opt,name=password,proto3,oneof" json:"password,omitempty"`
+	ViewOnly      *bool                  `protobuf:"varint,2,opt,name=view_only,json=viewOnly,proto3,oneof" json:"view_only,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateDiskLinkRequest) Reset() {
+	*x = UpdateDiskLinkRequest{}
+	mi := &file_calaba_v1_disk_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateDiskLinkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateDiskLinkRequest) ProtoMessage() {}
+
+func (x *UpdateDiskLinkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_disk_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateDiskLinkRequest.ProtoReflect.Descriptor instead.
+func (*UpdateDiskLinkRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *UpdateDiskLinkRequest) GetPassword() string {
+	if x != nil && x.Password != nil {
+		return *x.Password
+	}
+	return ""
+}
+
+func (x *UpdateDiskLinkRequest) GetViewOnly() bool {
+	if x != nil && x.ViewOnly != nil {
+		return *x.ViewOnly
+	}
+	return false
+}
+
+// POST /api/public/disk/{code}/unlock — anonymous: the password of a protected link. 204 with an
+// HttpOnly cookie scoped to the link's path (12 h); a wrong password is 403
+// ERROR_CODE_LINK_PASSWORD_REQUIRED, rate-limited per IP and per link (ADR-0167).
+type UnlockDiskLinkRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Password      string                 `protobuf:"bytes,1,opt,name=password,proto3" json:"password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnlockDiskLinkRequest) Reset() {
+	*x = UnlockDiskLinkRequest{}
+	mi := &file_calaba_v1_disk_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnlockDiskLinkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnlockDiskLinkRequest) ProtoMessage() {}
+
+func (x *UnlockDiskLinkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_disk_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnlockDiskLinkRequest.ProtoReflect.Descriptor instead.
+func (*UnlockDiskLinkRequest) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *UnlockDiskLinkRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
 type DiskLinkResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Link          *DiskLink              `protobuf:"bytes,1,opt,name=link,proto3" json:"link,omitempty"`
@@ -1268,7 +1420,7 @@ type DiskLinkResponse struct {
 
 func (x *DiskLinkResponse) Reset() {
 	*x = DiskLinkResponse{}
-	mi := &file_calaba_v1_disk_proto_msgTypes[15]
+	mi := &file_calaba_v1_disk_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1280,7 +1432,7 @@ func (x *DiskLinkResponse) String() string {
 func (*DiskLinkResponse) ProtoMessage() {}
 
 func (x *DiskLinkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_disk_proto_msgTypes[15]
+	mi := &file_calaba_v1_disk_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1293,7 +1445,7 @@ func (x *DiskLinkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskLinkResponse.ProtoReflect.Descriptor instead.
 func (*DiskLinkResponse) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{15}
+	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *DiskLinkResponse) GetLink() *DiskLink {
@@ -1322,7 +1474,7 @@ type DiskActivityPage struct {
 
 func (x *DiskActivityPage) Reset() {
 	*x = DiskActivityPage{}
-	mi := &file_calaba_v1_disk_proto_msgTypes[16]
+	mi := &file_calaba_v1_disk_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1334,7 +1486,7 @@ func (x *DiskActivityPage) String() string {
 func (*DiskActivityPage) ProtoMessage() {}
 
 func (x *DiskActivityPage) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_disk_proto_msgTypes[16]
+	mi := &file_calaba_v1_disk_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1347,7 +1499,7 @@ func (x *DiskActivityPage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskActivityPage.ProtoReflect.Descriptor instead.
 func (*DiskActivityPage) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{16}
+	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *DiskActivityPage) GetActivities() []*DiskActivity {
@@ -1365,23 +1517,33 @@ func (x *DiskActivityPage) GetNextCursor() string {
 }
 
 // GET /api/public/disk/{code} — anonymous, X-Robots-Tag: noindex. 404 once the link is revoked,
-// expired or the file deleted forever.
+// expired or the item deleted forever (a folder: also while it is in the trash). kind FOLDER:
+// the link is to a folder, the rest of the file fields are unset; its contents are
+// GET /api/public/disk/{code}/items (ADR-0165).
 type PublicDiskFile struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Size          uint64                 `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
-	Mime          string                 `protobuf:"bytes,3,opt,name=mime,proto3" json:"mime,omitempty"`
-	Width         uint32                 `protobuf:"varint,4,opt,name=width,proto3" json:"width,omitempty"`   // images only
-	Height        uint32                 `protobuf:"varint,5,opt,name=height,proto3" json:"height,omitempty"` // images only
-	HasThumbnail  bool                   `protobuf:"varint,6,opt,name=has_thumbnail,json=hasThumbnail,proto3" json:"has_thumbnail,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Name         string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Size         uint64                 `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
+	Mime         string                 `protobuf:"bytes,3,opt,name=mime,proto3" json:"mime,omitempty"`
+	Width        uint32                 `protobuf:"varint,4,opt,name=width,proto3" json:"width,omitempty"`   // images only
+	Height       uint32                 `protobuf:"varint,5,opt,name=height,proto3" json:"height,omitempty"` // images only
+	HasThumbnail bool                   `protobuf:"varint,6,opt,name=has_thumbnail,json=hasThumbnail,proto3" json:"has_thumbnail,omitempty"`
+	ExpiresAt    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	Kind         DiskItemKind           `protobuf:"varint,8,opt,name=kind,proto3,enum=calaba.v1.DiskItemKind" json:"kind,omitempty"`
+	Office       bool                   `protobuf:"varint,9,opt,name=office,proto3" json:"office,omitempty"` // the file opens read-only in the office viewer (GET …/office)
+	Id           string                 `protobuf:"bytes,10,opt,name=id,proto3" json:"id,omitempty"`         // the linked item
+	// The link has a password and this visitor has not unlocked it (ADR-0167): every other field
+	// is unset; the page asks for the password (POST …/unlock). Every other route answers 403
+	// ERROR_CODE_LINK_PASSWORD_REQUIRED meanwhile.
+	Locked        bool `protobuf:"varint,11,opt,name=locked,proto3" json:"locked,omitempty"`
+	ViewOnly      bool `protobuf:"varint,12,opt,name=view_only,json=viewOnly,proto3" json:"view_only,omitempty"` // «Без скачивания»: no download buttons, no archive (ADR-0167)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PublicDiskFile) Reset() {
 	*x = PublicDiskFile{}
-	mi := &file_calaba_v1_disk_proto_msgTypes[17]
+	mi := &file_calaba_v1_disk_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1393,7 +1555,7 @@ func (x *PublicDiskFile) String() string {
 func (*PublicDiskFile) ProtoMessage() {}
 
 func (x *PublicDiskFile) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_disk_proto_msgTypes[17]
+	mi := &file_calaba_v1_disk_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1406,7 +1568,7 @@ func (x *PublicDiskFile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublicDiskFile.ProtoReflect.Descriptor instead.
 func (*PublicDiskFile) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{17}
+	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PublicDiskFile) GetName() string {
@@ -1458,6 +1620,307 @@ func (x *PublicDiskFile) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *PublicDiskFile) GetKind() DiskItemKind {
+	if x != nil {
+		return x.Kind
+	}
+	return DiskItemKind_DISK_ITEM_KIND_UNSPECIFIED
+}
+
+func (x *PublicDiskFile) GetOffice() bool {
+	if x != nil {
+		return x.Office
+	}
+	return false
+}
+
+func (x *PublicDiskFile) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PublicDiskFile) GetLocked() bool {
+	if x != nil {
+		return x.Locked
+	}
+	return false
+}
+
+func (x *PublicDiskFile) GetViewOnly() bool {
+	if x != nil {
+		return x.ViewOnly
+	}
+	return false
+}
+
+// One item of a public folder listing (ADR-0165): what an anonymous visitor may know.
+type PublicDiskEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Kind          DiskItemKind           `protobuf:"varint,3,opt,name=kind,proto3,enum=calaba.v1.DiskItemKind" json:"kind,omitempty"`
+	Size          uint64                 `protobuf:"varint,4,opt,name=size,proto3" json:"size,omitempty"`     // files only
+	Mime          string                 `protobuf:"bytes,5,opt,name=mime,proto3" json:"mime,omitempty"`      // files only
+	Width         uint32                 `protobuf:"varint,6,opt,name=width,proto3" json:"width,omitempty"`   // images only
+	Height        uint32                 `protobuf:"varint,7,opt,name=height,proto3" json:"height,omitempty"` // images only
+	HasThumbnail  bool                   `protobuf:"varint,8,opt,name=has_thumbnail,json=hasThumbnail,proto3" json:"has_thumbnail,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Office        bool                   `protobuf:"varint,10,opt,name=office,proto3" json:"office,omitempty"` // opens read-only in the office viewer
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PublicDiskEntry) Reset() {
+	*x = PublicDiskEntry{}
+	mi := &file_calaba_v1_disk_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PublicDiskEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PublicDiskEntry) ProtoMessage() {}
+
+func (x *PublicDiskEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_disk_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PublicDiskEntry.ProtoReflect.Descriptor instead.
+func (*PublicDiskEntry) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *PublicDiskEntry) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PublicDiskEntry) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PublicDiskEntry) GetKind() DiskItemKind {
+	if x != nil {
+		return x.Kind
+	}
+	return DiskItemKind_DISK_ITEM_KIND_UNSPECIFIED
+}
+
+func (x *PublicDiskEntry) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *PublicDiskEntry) GetMime() string {
+	if x != nil {
+		return x.Mime
+	}
+	return ""
+}
+
+func (x *PublicDiskEntry) GetWidth() uint32 {
+	if x != nil {
+		return x.Width
+	}
+	return 0
+}
+
+func (x *PublicDiskEntry) GetHeight() uint32 {
+	if x != nil {
+		return x.Height
+	}
+	return 0
+}
+
+func (x *PublicDiskEntry) GetHasThumbnail() bool {
+	if x != nil {
+		return x.HasThumbnail
+	}
+	return false
+}
+
+func (x *PublicDiskEntry) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *PublicDiskEntry) GetOffice() bool {
+	if x != nil {
+		return x.Office
+	}
+	return false
+}
+
+// A folder on the way from the linked folder (first) to the listed one (last).
+type PublicDiskCrumb struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PublicDiskCrumb) Reset() {
+	*x = PublicDiskCrumb{}
+	mi := &file_calaba_v1_disk_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PublicDiskCrumb) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PublicDiskCrumb) ProtoMessage() {}
+
+func (x *PublicDiskCrumb) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_disk_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PublicDiskCrumb.ProtoReflect.Descriptor instead.
+func (*PublicDiskCrumb) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *PublicDiskCrumb) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PublicDiskCrumb) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+// GET /api/public/disk/{code}/items?parent=&cursor= — anonymous, a folder link only: the live
+// items of the linked folder (parent unset) or of a folder below it, folders first, then by name.
+// Never above the linked folder; a «Только выбранные» folder below it, an item a role or person is
+// denied DISK_VIEW on, and what is under them are not listed and answer 404 (ADR-0165).
+type PublicDiskFolder struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // the listed folder
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Path          []*PublicDiskCrumb     `protobuf:"bytes,3,rep,name=path,proto3" json:"path,omitempty"` // the linked folder first, the listed folder last
+	Items         []*PublicDiskEntry     `protobuf:"bytes,4,rep,name=items,proto3" json:"items,omitempty"`
+	NextCursor    string                 `protobuf:"bytes,5,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	ViewOnly      bool                   `protobuf:"varint,7,opt,name=view_only,json=viewOnly,proto3" json:"view_only,omitempty"` // «Без скачивания» (ADR-0167)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PublicDiskFolder) Reset() {
+	*x = PublicDiskFolder{}
+	mi := &file_calaba_v1_disk_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PublicDiskFolder) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PublicDiskFolder) ProtoMessage() {}
+
+func (x *PublicDiskFolder) ProtoReflect() protoreflect.Message {
+	mi := &file_calaba_v1_disk_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PublicDiskFolder.ProtoReflect.Descriptor instead.
+func (*PublicDiskFolder) Descriptor() ([]byte, []int) {
+	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *PublicDiskFolder) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PublicDiskFolder) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PublicDiskFolder) GetPath() []*PublicDiskCrumb {
+	if x != nil {
+		return x.Path
+	}
+	return nil
+}
+
+func (x *PublicDiskFolder) GetItems() []*PublicDiskEntry {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+func (x *PublicDiskFolder) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
+}
+
+func (x *PublicDiskFolder) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *PublicDiskFolder) GetViewOnly() bool {
+	if x != nil {
+		return x.ViewOnly
+	}
+	return false
+}
+
 // GET / PUT /api/workspaces/{id}/disk/settings (PUT: DISK_MANAGE).
 type DiskSettings struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1468,7 +1931,7 @@ type DiskSettings struct {
 
 func (x *DiskSettings) Reset() {
 	*x = DiskSettings{}
-	mi := &file_calaba_v1_disk_proto_msgTypes[18]
+	mi := &file_calaba_v1_disk_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1480,7 +1943,7 @@ func (x *DiskSettings) String() string {
 func (*DiskSettings) ProtoMessage() {}
 
 func (x *DiskSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_disk_proto_msgTypes[18]
+	mi := &file_calaba_v1_disk_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1493,7 +1956,7 @@ func (x *DiskSettings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskSettings.ProtoReflect.Descriptor instead.
 func (*DiskSettings) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{18}
+	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *DiskSettings) GetTrashDays() uint32 {
@@ -1517,7 +1980,7 @@ type DiskAccessLevel struct {
 
 func (x *DiskAccessLevel) Reset() {
 	*x = DiskAccessLevel{}
-	mi := &file_calaba_v1_disk_proto_msgTypes[19]
+	mi := &file_calaba_v1_disk_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1529,7 +1992,7 @@ func (x *DiskAccessLevel) String() string {
 func (*DiskAccessLevel) ProtoMessage() {}
 
 func (x *DiskAccessLevel) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_disk_proto_msgTypes[19]
+	mi := &file_calaba_v1_disk_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1542,7 +2005,7 @@ func (x *DiskAccessLevel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskAccessLevel.ProtoReflect.Descriptor instead.
 func (*DiskAccessLevel) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{19}
+	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *DiskAccessLevel) GetRestricted() bool {
@@ -1584,7 +2047,7 @@ type DiskItemUpsert struct {
 
 func (x *DiskItemUpsert) Reset() {
 	*x = DiskItemUpsert{}
-	mi := &file_calaba_v1_disk_proto_msgTypes[20]
+	mi := &file_calaba_v1_disk_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1596,7 +2059,7 @@ func (x *DiskItemUpsert) String() string {
 func (*DiskItemUpsert) ProtoMessage() {}
 
 func (x *DiskItemUpsert) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_disk_proto_msgTypes[20]
+	mi := &file_calaba_v1_disk_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1609,7 +2072,7 @@ func (x *DiskItemUpsert) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskItemUpsert.ProtoReflect.Descriptor instead.
 func (*DiskItemUpsert) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{20}
+	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *DiskItemUpsert) GetWorkspaceId() string {
@@ -1655,7 +2118,7 @@ type DiskItemRemove struct {
 
 func (x *DiskItemRemove) Reset() {
 	*x = DiskItemRemove{}
-	mi := &file_calaba_v1_disk_proto_msgTypes[21]
+	mi := &file_calaba_v1_disk_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1667,7 +2130,7 @@ func (x *DiskItemRemove) String() string {
 func (*DiskItemRemove) ProtoMessage() {}
 
 func (x *DiskItemRemove) ProtoReflect() protoreflect.Message {
-	mi := &file_calaba_v1_disk_proto_msgTypes[21]
+	mi := &file_calaba_v1_disk_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1680,7 +2143,7 @@ func (x *DiskItemRemove) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskItemRemove.ProtoReflect.Descriptor instead.
 func (*DiskItemRemove) Descriptor() ([]byte, []int) {
-	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{21}
+	return file_calaba_v1_disk_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *DiskItemRemove) GetWorkspaceId() string {
@@ -1715,7 +2178,7 @@ var File_calaba_v1_disk_proto protoreflect.FileDescriptor
 
 const file_calaba_v1_disk_proto_rawDesc = "" +
 	"\n" +
-	"\x14calaba/v1/disk.proto\x12\tcalaba.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/file.proto\x1a\x14calaba/v1/room.proto\"\xea\x01\n" +
+	"\x14calaba/v1/disk.proto\x12\tcalaba.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14calaba/v1/file.proto\x1a\x14calaba/v1/room.proto\"\xaa\x02\n" +
 	"\bDiskLink\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x129\n" +
 	"\n" +
@@ -1725,7 +2188,9 @@ const file_calaba_v1_disk_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1c\n" +
 	"\tdownloads\x18\x05 \x01(\rR\tdownloads\x12\x17\n" +
-	"\aitem_id\x18\x06 \x01(\tR\x06itemId\"\xb5\x05\n" +
+	"\aitem_id\x18\x06 \x01(\tR\x06itemId\x12!\n" +
+	"\fhas_password\x18\a \x01(\bR\vhasPassword\x12\x1b\n" +
+	"\tview_only\x18\b \x01(\bR\bviewOnly\"\xb5\x05\n" +
 	"\bDiskItem\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fworkspace_id\x18\x02 \x01(\tR\vworkspaceId\x12\x1b\n" +
@@ -1831,10 +2296,20 @@ const file_calaba_v1_disk_proto_rawDesc = "" +
 	"\n" +
 	"restricted\x18\x02 \x01(\bH\x00R\n" +
 	"restricted\x88\x01\x01B\r\n" +
-	"\v_restricted\"R\n" +
+	"\v_restricted\"\x8b\x01\n" +
 	"\x15CreateDiskLinkRequest\x129\n" +
 	"\n" +
-	"expires_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"M\n" +
+	"expires_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x1a\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x1b\n" +
+	"\tview_only\x18\x03 \x01(\bR\bviewOnly\"u\n" +
+	"\x15UpdateDiskLinkRequest\x12\x1f\n" +
+	"\bpassword\x18\x01 \x01(\tH\x00R\bpassword\x88\x01\x01\x12 \n" +
+	"\tview_only\x18\x02 \x01(\bH\x01R\bviewOnly\x88\x01\x01B\v\n" +
+	"\t_passwordB\f\n" +
+	"\n" +
+	"_view_only\"3\n" +
+	"\x15UnlockDiskLinkRequest\x12\x1a\n" +
+	"\bpassword\x18\x01 \x01(\tR\bpassword\"M\n" +
 	"\x10DiskLinkResponse\x12'\n" +
 	"\x04link\x18\x01 \x01(\v2\x13.calaba.v1.DiskLinkR\x04link\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\"l\n" +
@@ -1843,7 +2318,7 @@ const file_calaba_v1_disk_proto_rawDesc = "" +
 	"activities\x18\x01 \x03(\v2\x17.calaba.v1.DiskActivityR\n" +
 	"activities\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
-	"nextCursor\"\xda\x01\n" +
+	"nextCursor\"\xe4\x02\n" +
 	"\x0ePublicDiskFile\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04size\x18\x02 \x01(\x04R\x04size\x12\x12\n" +
@@ -1852,7 +2327,39 @@ const file_calaba_v1_disk_proto_rawDesc = "" +
 	"\x06height\x18\x05 \x01(\rR\x06height\x12#\n" +
 	"\rhas_thumbnail\x18\x06 \x01(\bR\fhasThumbnail\x129\n" +
 	"\n" +
-	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"-\n" +
+	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12+\n" +
+	"\x04kind\x18\b \x01(\x0e2\x17.calaba.v1.DiskItemKindR\x04kind\x12\x16\n" +
+	"\x06office\x18\t \x01(\bR\x06office\x12\x0e\n" +
+	"\x02id\x18\n" +
+	" \x01(\tR\x02id\x12\x16\n" +
+	"\x06locked\x18\v \x01(\bR\x06locked\x12\x1b\n" +
+	"\tview_only\x18\f \x01(\bR\bviewOnly\"\xb0\x02\n" +
+	"\x0fPublicDiskEntry\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12+\n" +
+	"\x04kind\x18\x03 \x01(\x0e2\x17.calaba.v1.DiskItemKindR\x04kind\x12\x12\n" +
+	"\x04size\x18\x04 \x01(\x04R\x04size\x12\x12\n" +
+	"\x04mime\x18\x05 \x01(\tR\x04mime\x12\x14\n" +
+	"\x05width\x18\x06 \x01(\rR\x05width\x12\x16\n" +
+	"\x06height\x18\a \x01(\rR\x06height\x12#\n" +
+	"\rhas_thumbnail\x18\b \x01(\bR\fhasThumbnail\x129\n" +
+	"\n" +
+	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x16\n" +
+	"\x06office\x18\n" +
+	" \x01(\bR\x06office\"5\n" +
+	"\x0fPublicDiskCrumb\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\x91\x02\n" +
+	"\x10PublicDiskFolder\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12.\n" +
+	"\x04path\x18\x03 \x03(\v2\x1a.calaba.v1.PublicDiskCrumbR\x04path\x120\n" +
+	"\x05items\x18\x04 \x03(\v2\x1a.calaba.v1.PublicDiskEntryR\x05items\x12\x1f\n" +
+	"\vnext_cursor\x18\x05 \x01(\tR\n" +
+	"nextCursor\x129\n" +
+	"\n" +
+	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x1b\n" +
+	"\tview_only\x18\a \x01(\bR\bviewOnly\"-\n" +
 	"\fDiskSettings\x12\x1d\n" +
 	"\n" +
 	"trash_days\x18\x01 \x01(\rR\ttrashDays\"\x8a\x01\n" +
@@ -1875,7 +2382,7 @@ const file_calaba_v1_disk_proto_rawDesc = "" +
 	"\fDiskItemKind\x12\x1e\n" +
 	"\x1aDISK_ITEM_KIND_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15DISK_ITEM_KIND_FOLDER\x10\x01\x12\x17\n" +
-	"\x13DISK_ITEM_KIND_FILE\x10\x02*\x89\x03\n" +
+	"\x13DISK_ITEM_KIND_FILE\x10\x02*\xb1\x04\n" +
 	"\x10DiskActivityKind\x12\"\n" +
 	"\x1eDISK_ACTIVITY_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19DISK_ACTIVITY_KIND_CREATE\x10\x01\x12\x1d\n" +
@@ -1889,7 +2396,11 @@ const file_calaba_v1_disk_proto_rawDesc = "" +
 	"\x1aDISK_ACTIVITY_KIND_RESTORE\x10\t\x12\x1d\n" +
 	"\x19DISK_ACTIVITY_KIND_DELETE\x10\n" +
 	"\x12\x1b\n" +
-	"\x17DISK_ACTIVITY_KIND_EDIT\x10\vB\x97\x01\n" +
+	"\x17DISK_ACTIVITY_KIND_EDIT\x10\v\x12'\n" +
+	"#DISK_ACTIVITY_KIND_LINK_PASSWORD_ON\x10\f\x12(\n" +
+	"$DISK_ACTIVITY_KIND_LINK_PASSWORD_OFF\x10\r\x12(\n" +
+	"$DISK_ACTIVITY_KIND_LINK_VIEW_ONLY_ON\x10\x0e\x12)\n" +
+	"%DISK_ACTIVITY_KIND_LINK_VIEW_ONLY_OFF\x10\x0fB\x97\x01\n" +
 	"\rcom.calaba.v1B\tDiskProtoP\x01Z6github.com/calaba/calaba/server/gen/calaba/v1;calabav1\xa2\x02\x03CXX\xaa\x02\tCalaba.V1\xca\x02\tCalaba\\V1\xe2\x02\x15Calaba\\V1\\GPBMetadata\xea\x02\n" +
 	"Calaba::V1b\x06proto3"
 
@@ -1906,7 +2417,7 @@ func file_calaba_v1_disk_proto_rawDescGZIP() []byte {
 }
 
 var file_calaba_v1_disk_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_calaba_v1_disk_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_calaba_v1_disk_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_calaba_v1_disk_proto_goTypes = []any{
 	(DiskItemKind)(0),                    // 0: calaba.v1.DiskItemKind
 	(DiskActivityKind)(0),                // 1: calaba.v1.DiskActivityKind
@@ -1925,51 +2436,62 @@ var file_calaba_v1_disk_proto_goTypes = []any{
 	(*DiskPermissionsResponse)(nil),      // 14: calaba.v1.DiskPermissionsResponse
 	(*UpdateDiskPermissionsRequest)(nil), // 15: calaba.v1.UpdateDiskPermissionsRequest
 	(*CreateDiskLinkRequest)(nil),        // 16: calaba.v1.CreateDiskLinkRequest
-	(*DiskLinkResponse)(nil),             // 17: calaba.v1.DiskLinkResponse
-	(*DiskActivityPage)(nil),             // 18: calaba.v1.DiskActivityPage
-	(*PublicDiskFile)(nil),               // 19: calaba.v1.PublicDiskFile
-	(*DiskSettings)(nil),                 // 20: calaba.v1.DiskSettings
-	(*DiskAccessLevel)(nil),              // 21: calaba.v1.DiskAccessLevel
-	(*DiskItemUpsert)(nil),               // 22: calaba.v1.DiskItemUpsert
-	(*DiskItemRemove)(nil),               // 23: calaba.v1.DiskItemRemove
-	(*timestamppb.Timestamp)(nil),        // 24: google.protobuf.Timestamp
-	(*FileMeta)(nil),                     // 25: calaba.v1.FileMeta
-	(PermissionTargetType)(0),            // 26: calaba.v1.PermissionTargetType
-	(*structpb.Struct)(nil),              // 27: google.protobuf.Struct
+	(*UpdateDiskLinkRequest)(nil),        // 17: calaba.v1.UpdateDiskLinkRequest
+	(*UnlockDiskLinkRequest)(nil),        // 18: calaba.v1.UnlockDiskLinkRequest
+	(*DiskLinkResponse)(nil),             // 19: calaba.v1.DiskLinkResponse
+	(*DiskActivityPage)(nil),             // 20: calaba.v1.DiskActivityPage
+	(*PublicDiskFile)(nil),               // 21: calaba.v1.PublicDiskFile
+	(*PublicDiskEntry)(nil),              // 22: calaba.v1.PublicDiskEntry
+	(*PublicDiskCrumb)(nil),              // 23: calaba.v1.PublicDiskCrumb
+	(*PublicDiskFolder)(nil),             // 24: calaba.v1.PublicDiskFolder
+	(*DiskSettings)(nil),                 // 25: calaba.v1.DiskSettings
+	(*DiskAccessLevel)(nil),              // 26: calaba.v1.DiskAccessLevel
+	(*DiskItemUpsert)(nil),               // 27: calaba.v1.DiskItemUpsert
+	(*DiskItemRemove)(nil),               // 28: calaba.v1.DiskItemRemove
+	(*timestamppb.Timestamp)(nil),        // 29: google.protobuf.Timestamp
+	(*FileMeta)(nil),                     // 30: calaba.v1.FileMeta
+	(PermissionTargetType)(0),            // 31: calaba.v1.PermissionTargetType
+	(*structpb.Struct)(nil),              // 32: google.protobuf.Struct
 }
 var file_calaba_v1_disk_proto_depIdxs = []int32{
-	24, // 0: calaba.v1.DiskLink.expires_at:type_name -> google.protobuf.Timestamp
-	24, // 1: calaba.v1.DiskLink.created_at:type_name -> google.protobuf.Timestamp
+	29, // 0: calaba.v1.DiskLink.expires_at:type_name -> google.protobuf.Timestamp
+	29, // 1: calaba.v1.DiskLink.created_at:type_name -> google.protobuf.Timestamp
 	0,  // 2: calaba.v1.DiskItem.kind:type_name -> calaba.v1.DiskItemKind
-	25, // 3: calaba.v1.DiskItem.file:type_name -> calaba.v1.FileMeta
+	30, // 3: calaba.v1.DiskItem.file:type_name -> calaba.v1.FileMeta
 	2,  // 4: calaba.v1.DiskItem.link:type_name -> calaba.v1.DiskLink
-	24, // 5: calaba.v1.DiskItem.trashed_at:type_name -> google.protobuf.Timestamp
-	24, // 6: calaba.v1.DiskItem.created_at:type_name -> google.protobuf.Timestamp
-	24, // 7: calaba.v1.DiskItem.updated_at:type_name -> google.protobuf.Timestamp
-	26, // 8: calaba.v1.DiskPermissionEntry.target_type:type_name -> calaba.v1.PermissionTargetType
+	29, // 5: calaba.v1.DiskItem.trashed_at:type_name -> google.protobuf.Timestamp
+	29, // 6: calaba.v1.DiskItem.created_at:type_name -> google.protobuf.Timestamp
+	29, // 7: calaba.v1.DiskItem.updated_at:type_name -> google.protobuf.Timestamp
+	31, // 8: calaba.v1.DiskPermissionEntry.target_type:type_name -> calaba.v1.PermissionTargetType
 	1,  // 9: calaba.v1.DiskActivity.kind:type_name -> calaba.v1.DiskActivityKind
-	27, // 10: calaba.v1.DiskActivity.before:type_name -> google.protobuf.Struct
-	27, // 11: calaba.v1.DiskActivity.after:type_name -> google.protobuf.Struct
-	24, // 12: calaba.v1.DiskActivity.created_at:type_name -> google.protobuf.Timestamp
+	32, // 10: calaba.v1.DiskActivity.before:type_name -> google.protobuf.Struct
+	32, // 11: calaba.v1.DiskActivity.after:type_name -> google.protobuf.Struct
+	29, // 12: calaba.v1.DiskActivity.created_at:type_name -> google.protobuf.Timestamp
 	3,  // 13: calaba.v1.ListDiskItemsResponse.items:type_name -> calaba.v1.DiskItem
 	3,  // 14: calaba.v1.DiskItemResponse.item:type_name -> calaba.v1.DiskItem
 	3,  // 15: calaba.v1.DiskPathResponse.items:type_name -> calaba.v1.DiskItem
 	4,  // 16: calaba.v1.DiskPermissionsResponse.entries:type_name -> calaba.v1.DiskPermissionEntry
 	4,  // 17: calaba.v1.UpdateDiskPermissionsRequest.entries:type_name -> calaba.v1.DiskPermissionEntry
-	24, // 18: calaba.v1.CreateDiskLinkRequest.expires_at:type_name -> google.protobuf.Timestamp
+	29, // 18: calaba.v1.CreateDiskLinkRequest.expires_at:type_name -> google.protobuf.Timestamp
 	2,  // 19: calaba.v1.DiskLinkResponse.link:type_name -> calaba.v1.DiskLink
 	6,  // 20: calaba.v1.DiskActivityPage.activities:type_name -> calaba.v1.DiskActivity
-	24, // 21: calaba.v1.PublicDiskFile.expires_at:type_name -> google.protobuf.Timestamp
-	4,  // 22: calaba.v1.DiskAccessLevel.overrides:type_name -> calaba.v1.DiskPermissionEntry
-	3,  // 23: calaba.v1.DiskItemUpsert.item:type_name -> calaba.v1.DiskItem
-	21, // 24: calaba.v1.DiskItemUpsert.access:type_name -> calaba.v1.DiskAccessLevel
-	21, // 25: calaba.v1.DiskItemUpsert.access_before:type_name -> calaba.v1.DiskAccessLevel
-	21, // 26: calaba.v1.DiskItemRemove.access:type_name -> calaba.v1.DiskAccessLevel
-	27, // [27:27] is the sub-list for method output_type
-	27, // [27:27] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	29, // 21: calaba.v1.PublicDiskFile.expires_at:type_name -> google.protobuf.Timestamp
+	0,  // 22: calaba.v1.PublicDiskFile.kind:type_name -> calaba.v1.DiskItemKind
+	0,  // 23: calaba.v1.PublicDiskEntry.kind:type_name -> calaba.v1.DiskItemKind
+	29, // 24: calaba.v1.PublicDiskEntry.updated_at:type_name -> google.protobuf.Timestamp
+	23, // 25: calaba.v1.PublicDiskFolder.path:type_name -> calaba.v1.PublicDiskCrumb
+	22, // 26: calaba.v1.PublicDiskFolder.items:type_name -> calaba.v1.PublicDiskEntry
+	29, // 27: calaba.v1.PublicDiskFolder.expires_at:type_name -> google.protobuf.Timestamp
+	4,  // 28: calaba.v1.DiskAccessLevel.overrides:type_name -> calaba.v1.DiskPermissionEntry
+	3,  // 29: calaba.v1.DiskItemUpsert.item:type_name -> calaba.v1.DiskItem
+	26, // 30: calaba.v1.DiskItemUpsert.access:type_name -> calaba.v1.DiskAccessLevel
+	26, // 31: calaba.v1.DiskItemUpsert.access_before:type_name -> calaba.v1.DiskAccessLevel
+	26, // 32: calaba.v1.DiskItemRemove.access:type_name -> calaba.v1.DiskAccessLevel
+	33, // [33:33] is the sub-list for method output_type
+	33, // [33:33] is the sub-list for method input_type
+	33, // [33:33] is the sub-list for extension type_name
+	33, // [33:33] is the sub-list for extension extendee
+	0,  // [0:33] is the sub-list for field type_name
 }
 
 func init() { file_calaba_v1_disk_proto_init() }
@@ -1981,13 +2503,14 @@ func file_calaba_v1_disk_proto_init() {
 	file_calaba_v1_room_proto_init()
 	file_calaba_v1_disk_proto_msgTypes[9].OneofWrappers = []any{}
 	file_calaba_v1_disk_proto_msgTypes[13].OneofWrappers = []any{}
+	file_calaba_v1_disk_proto_msgTypes[15].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_calaba_v1_disk_proto_rawDesc), len(file_calaba_v1_disk_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   22,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

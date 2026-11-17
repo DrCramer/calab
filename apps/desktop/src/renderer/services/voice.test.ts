@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { VoiceDisconnectReason } from '@calaba/protocol';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { ScreenSharePreset, VoiceDisconnectReason } from '@calaba/protocol';
 import type { HostCallAudioCapability, HostAudioConnect, HostAudioState } from '../../shared/hostCallAudio';
+import type { HostRoomAudioCapability, HostRoomAudioConnect, HostRoomAudioCue, HostRoomAudioState, HostRoomAudioStatus } from '../../shared/hostRoomAudio';
 
 /**
  * VoiceEngine with LiveKit, the API and the mic pipeline mocked (review test gaps: H1 room
@@ -231,7 +232,11 @@ vi.mock('livekit-client', () => ({
 const joinVoice = vi.fn((roomId: string) => Promise.resolve({ url: 'wss://lk', token: `t-${roomId}`, canSpeak: true, canStream: true, media: { audioBitrateKbps: 32 } }));
 const updateSelf = vi.fn((_b: { muted?: boolean; deafened?: boolean; musician?: boolean; ptt?: boolean }) => Promise.resolve());
 const leaveVoice = vi.fn((_roomId: string) => Promise.resolve());
+/** PUT /api/me/voice-mute (ADR-0168): answers with the server's time. */
+const setVoiceMute = vi.fn((b: { muted: boolean; deafened: boolean }) => Promise.resolve({ ...b, updatedAt: { seconds: BigInt(Math.floor(Date.now() / 1000) + 1), nanos: 0 } }));
 const requestStream = vi.fn((_roomId: string, preset: number) => Promise.resolve({ preset, fps: 0 }));
+/** POST /rooms/{id}/voice/companion (ADR-0149 §3). */
+const companionToken = vi.fn((roomId: string) => Promise.resolve({ url: 'wss://lk', token: `companion-${roomId}`, identity: 'u:s:web' }));
 vi.mock('../lib/api/endpoints', () => ({
   api: {
     voice: {
@@ -239,8 +244,9 @@ vi.mock('../lib/api/endpoints', () => ({
       leave: (id: string) => leaveVoice(id),
       updateSelf: (b: { muted?: boolean; deafened?: boolean; musician?: boolean; ptt?: boolean }) => updateSelf(b),
       requestStream: (id: string, preset: number) => requestStream(id, preset),
+      companion: (id: string) => companionToken(id),
     },
-    me: { update: () => Promise.resolve({}) },
+    me: { update: () => Promise.resolve({}), setVoiceMute: (b: { muted: boolean; deafened: boolean }) => setVoiceMute(b) },
   },
 }));
 
@@ -338,7 +344,12 @@ vi.mock('../lib/media/opusTierPublish', () => ({
 const playSound = vi.fn((_name: string) => undefined);
 const phone = vi.hoisted(() => ({ on: false }));
 vi.mock('../lib/mobile', () => ({ isMobileNow: () => phone.on }));
-vi.mock('../lib/sounds', () => ({ playSound: (name: string) => playSound(name) }));
+/** The cue route a native-audio room installs (lib/sounds routeCues). */
+const cues = vi.hoisted(() => ({ route: null as ((cue: string, volume: number) => void) | null }));
+vi.mock('../lib/sounds', () => ({
+  playSound: (name: string) => (cues.route ? cues.route(name, 1) : playSound(name)),
+  routeCues: (route: ((cue: string, volume: number) => void) | null) => { cues.route = route; },
+}));
 /** The toast store stand-in: what is on screen (ids), so «raised once while shown» can be told. */
 const shown = vi.hoisted(() => ({ ids: [] as number[], next: 1 }));
 const pushToast = vi.hoisted(() =>
@@ -363,11 +374,12 @@ vi.mock('./mediaErrors', () => ({
 }));
 /** platform.ptt.setBinding: the binding the engine asks main for (null = unbound). */
 const setBinding = vi.fn((_b: unknown) => Promise.resolve({}));
-const nativeHost = vi.hoisted(() => ({ audio: undefined as HostCallAudioCapability | undefined }));
+const nativeHost = vi.hoisted(() => ({ audio: undefined as HostCallAudioCapability | undefined, room: undefined as HostRoomAudioCapability | undefined }));
 vi.mock('../platform', () => ({
   platform: {
     kind: 'web',
     get incomingCalls() { return { audio: nativeHost.audio }; },
+    get roomAudio() { return nativeHost.room; },
     ptt: { onEvent: () => () => undefined, setBinding: (b: unknown) => setBinding(b) },
     tray: { setState: () => undefined },
     system: { metrics: () => Promise.resolve({ rendererCpu: null }) },
@@ -380,9 +392,12 @@ let voice: Engine;
 let useVoice: (typeof import('../stores/voice'))['useVoice'];
 let usePrefs: (typeof import('../stores/prefs'))['usePrefs'];
 
+/** The rejoin backoff carries ±25 % jitter (rejoinDelay); the timings asserted below are its middle. */
+let randomSpy: MockInstance<() => number> | null = null;
 beforeEach(async () => {
   vi.useFakeTimers();
   vi.resetModules();
+  randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
   FakeRoom.all = [];
   FakeChannel.all = [];
   FakeLocalAudioTrack.lockMs = 0;
@@ -393,12 +408,17 @@ beforeEach(async () => {
   FakeRoom.disconnectGate = null;
   FakeRoom.onConnect = null;
   nativeHost.audio = undefined;
+  nativeHost.room = undefined;
+  cues.route = null;
   pipelines.length = 0;
   gate = null;
   micStarts.n = 0;
   micStarts.failNext = null;
   gone.clear();
   joinVoice.mockClear();
+  setVoiceMute.mockClear();
+  mem.delete('calab-voice-mute'); // ADR-0168: no stored choice leaks between tests
+  companionToken.mockClear();
   leaveVoice.mockReset();
   leaveVoice.mockImplementation(() => Promise.resolve());
   updateSelf.mockReset();
@@ -421,6 +441,8 @@ beforeEach(async () => {
 });
 afterEach(() => {
   vi.useRealTimers();
+  randomSpy?.mockRestore();
+  randomSpy = null;
 });
 
 const settle = async (): Promise<void> => {
@@ -506,6 +528,442 @@ describe('native incoming call transport', () => {
     expect(voice.onServerDisconnect({ roomId: 'dm', sessionId: 'mine', reason: VoiceDisconnectReason.OTHER_DEVICE })).toBe(true);
     await settle();
     expect(voice.takenOverRoom).toBe('dm'); expect(useVoice.getState().phase).toBe('idle');
+  });
+});
+
+describe('native room audio (ADR-0149)', () => {
+  const doc = document as unknown as { hidden?: boolean };
+  const setHidden = (hidden: boolean): void => {
+    doc.hidden = hidden;
+    for (const fn of docListeners.get('visibilitychange') ?? []) fn({});
+  };
+  afterEach(() => {
+    doc.hidden = false;
+  });
+  function host() {
+    const inputs: HostRoomAudioConnect[] = [];
+    const listeners = new Set<(s: HostRoomAudioState) => void>();
+    const control = vi.fn((_id: string, _c: HostRoomAudioConnect['controls']) => Promise.resolve(true));
+    const cue = vi.fn((_id: string, _cue: HostRoomAudioCue, _v: number) => undefined);
+    const disconnect = vi.fn((_id: string) => undefined);
+    const state = (s: Partial<HostRoomAudioState> = {}): HostRoomAudioState => ({
+      connectionId: inputs.at(-1)?.connectionId ?? '', phase: 'connected', microphoneReady: true, muted: false, canSpeak: true,
+      speaking: false, speakers: [], route: 'speaker', phoneCall: false, ...s,
+    });
+    let reply: (input: HostRoomAudioConnect) => HostRoomAudioStatus = () => ({ supported: true, media: state() });
+    const capability: HostRoomAudioCapability = {
+      connect: (input) => { inputs.push(input); return Promise.resolve(reply(input)); },
+      status: () => Promise.resolve({ supported: true }),
+      control, cue, disconnect,
+      subscribe: (fn) => { listeners.add(fn); return () => { listeners.delete(fn); }; },
+    };
+    nativeHost.room = capability;
+    return {
+      inputs, control, cue, disconnect, state,
+      emit: (s: Partial<HostRoomAudioState>) => { for (const fn of [...listeners]) fn(state(s)); },
+      replyWith: (fn: (input: HostRoomAudioConnect) => HostRoomAudioStatus) => { reply = fn; },
+      lastControls: () => control.mock.lastCall?.[1],
+    };
+  }
+
+  it('one owner per join: native audio, no WebKit capture, no LiveKit Room, no video', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    expect(h.inputs).toHaveLength(1);
+    expect(h.inputs[0]).toMatchObject({ roomId: 'A', url: 'wss://lk', canSpeak: true });
+    expect(FakeRoom.all).toHaveLength(0);
+    expect(pipelines).toHaveLength(0);
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected', audioOnly: true, canVideo: false, canStream: false });
+    await voice.startMicTest();
+    expect(pipelines).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(h.lastControls()?.levels).toBe(true);
+    await voice.leave();
+    expect(h.disconnect).toHaveBeenCalledWith(h.inputs[0]?.connectionId);
+    expect(useVoice.getState()).toMatchObject({ phase: 'idle', audioOnly: false });
+    expect(cues.route).toBeNull();
+    // No web cue after it: a WebKit <audio> would take the session native is releasing.
+    expect(playSound).not.toHaveBeenCalled();
+  });
+
+  it('keeps calls and rooms without the capability on their own engines', async () => {
+    const h = host();
+    await voice.join('dm', '', { call: true });
+    expect(FakeRoom.all).toHaveLength(1);
+    expect(h.inputs).toHaveLength(0);
+  });
+
+  it('phone lines stay on the web path while the host reports roomAudioVersion 1 (ADR-0149 §1)', async () => {
+    const { setPhoneJoin } = await import('../lib/sipInbound');
+    const h = host();
+    // A workspace id and no call flag: only the phone room itself keeps native out. Then as the app joins them (a call).
+    for (const [roomId, call] of [['sipin:c1', false], ['sipout:c2', false], ['sipin:c3', true], ['sipout:c4', true]] as const) {
+      setPhoneJoin(roomId, { url: 'wss://lk', token: 'tok', identity: 'me', canSpeak: true } as never);
+      await voice.join(roomId, 'ws', call ? { call: true } : {});
+      expect(FakeRoom.all.at(-1)?.connectedWith, roomId).not.toBeNull();
+      expect(useVoice.getState(), roomId).toMatchObject({ roomId, audioOnly: false });
+      await voice.leave();
+    }
+    expect(FakeRoom.all).toHaveLength(4);
+    expect(h.inputs).toHaveLength(0);
+    // A one-to-one call with a workspace id too: callMode alone keeps native out.
+    await voice.join('dm', 'ws', { call: true });
+    expect(FakeRoom.all).toHaveLength(5);
+    expect(h.inputs).toHaveLength(0);
+    await voice.leave();
+    // The same host still takes an ordinary workspace room.
+    await voice.join('A', 'ws');
+    expect(h.inputs).toHaveLength(1);
+  });
+
+  it('controls follow the store: mute, deafen, PTT, volumes clamped to 1', async () => {
+    const h = host();
+    const peer = '55555555-5555-4555-8555-555555555555';
+    usePrefs.setState({ userVolumes: { [peer]: 1.8 }, outputVolume: 0.5 });
+    await voice.join('A', 'ws');
+    expect(h.inputs[0]?.controls).toMatchObject({ volume: 0.5, userVolumes: { [peer]: 0.9 } });
+    voice.toggleMute();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(h.lastControls()).toMatchObject({ muted: true, deafened: false });
+    voice.toggleDeafen();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(h.lastControls()).toMatchObject({ deafened: true });
+    usePrefs.setState({ userVolumes: { [peer]: 2 }, outputVolume: 1 });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(h.lastControls()).toMatchObject({ volume: 1, userVolumes: {} });
+    // UI cues went to native by name, never to an <audio>.
+    expect(h.cue.mock.calls.map((c) => c[1])).toEqual(['join', 'mute', 'deafen']);
+    expect(playSound).not.toHaveBeenCalled();
+  });
+
+  it('maps native state into the store: reconnecting, the system holding the mic, speakers, a phone call, a kept mute', async () => {
+    const h = host();
+    const { useSession } = await import('../stores/session');
+    useSession.setState({ me: { user: { id: 'u1' } } } as never);
+    await voice.join('A', 'ws');
+    h.emit({ phase: 'reconnecting' });
+    expect(useVoice.getState().phase).toBe('reconnecting');
+    h.emit({ phase: 'interrupted', microphoneReady: false, muted: true, muteOrigin: 'system', phoneCall: true });
+    expect(useVoice.getState()).toMatchObject({ phase: 'connected', micTrouble: 'recovering', muted: false });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(updateSelf).toHaveBeenCalledWith(expect.objectContaining({ onPhone: true }));
+    h.emit({ muted: true, muteOrigin: 'system', speakers: ['66666666-6666-4666-8666-666666666666'] });
+    expect(useVoice.getState()).toMatchObject({ micTrouble: null, muted: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(updateSelf).toHaveBeenCalledWith(expect.objectContaining({ onPhone: false }));
+    await vi.advanceTimersByTimeAsync(200);
+    expect(useVoice.getState().speaking).toMatchObject({ '66666666-6666-4666-8666-666666666666': true });
+    expect(h.lastControls()?.muted).toBe(true);
+  });
+
+  it('keeps meter levels coming past native’s 30 s and shows silence when native sends none', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    await voice.startMicTest();
+    await vi.advanceTimersByTimeAsync(200);
+    h.control.mockClear();
+    await vi.advanceTimersByTimeAsync(25_000 + 200);
+    expect(h.control.mock.calls.map((c) => c[1].levels)).toEqual([false, true]);
+    h.emit({ level: 10, speaking: true });
+    expect(useVoice.getState()).toMatchObject({ levelDb: -40, gateOpen: true });
+    h.emit({ muted: true, muteOrigin: 'web' });
+    expect(useVoice.getState()).toMatchObject({ levelDb: -80, gateOpen: false });
+    voice.stopMicTest();
+    h.control.mockClear();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.control.mock.calls.every((c) => !c[1].levels)).toBe(true);
+  });
+
+  it('already muted when a phone call ends: the controls go again so native lets its hold go', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    voice.toggleMute();
+    await vi.advanceTimersByTimeAsync(200);
+    const sent = h.control.mock.calls.length;
+    h.emit({ phase: 'interrupted', microphoneReady: false, muted: true, muteOrigin: 'system', phoneCall: true });
+    h.emit({ muted: true, muteOrigin: 'system' });
+    h.emit({ muted: true, muteOrigin: 'system', speakers: ['66666666-6666-4666-8666-666666666666'] });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(h.control.mock.calls.length).toBe(sent + 1);
+    expect(h.lastControls()).toMatchObject({ muted: true });
+    expect(useVoice.getState().muted).toBe(true);
+  });
+
+  it('falls back to the web path once, before capture, after a drained native end', async () => {
+    const h = host();
+    h.replyWith((input) => ({ supported: true, media: h.state({ connectionId: input.connectionId, phase: 'failed', microphoneReady: false, error: 'connection' }) }));
+    await voice.join('A', 'ws');
+    expect(h.inputs).toHaveLength(1);
+    expect(FakeRoom.all).toHaveLength(1);
+    expect(pipelines).toHaveLength(1);
+    expect(useVoice.getState()).toMatchObject({ phase: 'connected', audioOnly: false });
+    expect(joinVoice).toHaveBeenCalledOnce();
+  });
+
+  it('never falls back after a denied microphone or while the page is hidden', async () => {
+    const h = host();
+    h.replyWith((input) => ({ supported: true, media: h.state({ connectionId: input.connectionId, phase: 'failed', microphoneReady: false, error: 'permission' }) }));
+    await voice.join('A', 'ws');
+    expect(FakeRoom.all).toHaveLength(0);
+    expect(useVoice.getState()).toMatchObject({ phase: 'idle', error: 'err' });
+    h.replyWith((input) => ({ supported: true, media: h.state({ connectionId: input.connectionId, phase: 'failed', microphoneReady: false, error: 'connection' }) }));
+    doc.hidden = true;
+    await voice.join('A', 'ws');
+    expect(FakeRoom.all).toHaveLength(0);
+  });
+
+  it('a lost connection rejoins through REST with a fresh connect in foreground', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    const first = h.inputs[0]?.connectionId;
+    h.emit({ phase: 'lost', error: 'network', microphoneReady: false });
+    expect(useVoice.getState().phase).toBe('reconnecting');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(joinVoice).toHaveBeenCalledTimes(2);
+    expect(h.inputs).toHaveLength(2);
+    expect(h.inputs[1]?.connectionId).not.toBe(first);
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected' });
+    expect(FakeRoom.all).toHaveLength(0);
+    expect(h.cue.mock.calls.map((c) => c[1])).toEqual(['join', 'reconnect']);
+  });
+
+  it('a lost connection while hidden waits for the page, then rejoins', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    setHidden(true);
+    h.emit({ phase: 'lost', error: 'network', microphoneReady: false });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(joinVoice).toHaveBeenCalledOnce();
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'reconnecting' });
+    setHidden(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(joinVoice).toHaveBeenCalledTimes(2);
+    expect(useVoice.getState().phase).toBe('connected');
+  });
+
+  it('a page back long after the seat ended leaves instead of rejoining', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    setHidden(true);
+    h.emit({ phase: 'lost', error: 'network', microphoneReady: false });
+    await vi.advanceTimersByTimeAsync(16 * 60_000); // past the 15 min rejoin bound (ADR-0166)
+    setHidden(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(joinVoice).toHaveBeenCalledOnce();
+    expect(leaveVoice).toHaveBeenCalledWith('A');
+    expect(useVoice.getState().phase).toBe('idle');
+  });
+
+  it('skips the web recovery paths (#260): no rejoin under native reconnect, no seat-check rejoin, no page-back rejoin', async () => {
+    const h = host();
+    await voice.join('A', 'ws');
+    setHidden(true);
+    await vi.advanceTimersByTimeAsync(30_000);
+    setHidden(false);
+    h.emit({ phase: 'reconnecting' });
+    voice.checkSeat();
+    voice.onPageShow(true);
+    await vi.advanceTimersByTimeAsync(50_000);
+    expect(joinVoice).toHaveBeenCalledOnce();
+    expect(FakeRoom.all).toHaveLength(0);
+    expect(pipelines).toHaveLength(0);
+    expect(pushToast).not.toHaveBeenCalled();
+    h.emit({ phase: 'connected' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(joinVoice).toHaveBeenCalledTimes(2); // the deferred seat check re-asserts the seat (idempotent /join)
+    expect(h.inputs).toHaveLength(1);
+  });
+
+  it('musician mode stays off on a native join, with the reason', async () => {
+    host();
+    const { toast } = await import('../stores/toasts');
+    await voice.join('A', 'ws');
+    usePrefs.getState().setPrefs({ musicianMode: true });
+    expect(usePrefs.getState().musicianMode).toBe(false);
+    expect(toast.info).toHaveBeenCalled();
+  });
+
+  describe('companion video (ADR-0149 §3)', () => {
+    const ME = '44444444-4444-4444-8444-444444444444';
+    const PEER = '55555555-5555-4555-8555-555555555555';
+    type VPub = { source: string; trackSid: string; kind: string; isMuted: boolean; isSubscribed: boolean; setSubscribed: ReturnType<typeof vi.fn>; setVideoQuality: ReturnType<typeof vi.fn>; setEnabled: () => void };
+    const vpub = (source: string, trackSid: string, kind = 'video'): VPub => ({ source, trackSid, kind, isMuted: false, isSubscribed: false, setSubscribed: vi.fn(), setVideoQuality: vi.fn(), setEnabled: () => undefined });
+    const participant = (identity: string, pubs: VPub[]) => ({
+      identity,
+      trackPublications: new Map(pubs.map((p) => [p.trackSid, p])),
+      getTrackPublication: (source: string) => pubs.find((p) => p.source === source),
+      getTrackPublicationBySid: (sid: string) => pubs.find((p) => p.trackSid === sid),
+    });
+    const publish = (room: FakeRoom, identity: string, pubs: VPub[]): void => {
+      room.remoteParticipants.set(identity, participant(identity, pubs));
+      for (const pub of pubs) room.emit('TrackPublished', pub, room.remoteParticipants.get(identity));
+    };
+    async function seats(states: Record<string, { camera?: boolean; streaming?: boolean }>): Promise<void> {
+      const { useWorkspaces } = await import('../stores/workspaces');
+      const voiceStates = Object.fromEntries(Object.entries(states).map(([id, v]) => [id, { userId: id, roomId: 'A', camera: false, streaming: false, ...v }]));
+      useWorkspaces.setState({ byId: { ws: { ws: {}, voice: voiceStates } } as never });
+      await settle();
+    }
+    async function joined(): Promise<ReturnType<typeof host>> {
+      const h = host();
+      usePrefs.setState({ userVolumes: {}, mutedUsers: {}, deafUsers: {}, outputVolume: 1 });
+      const { useSession } = await import('../stores/session');
+      useSession.setState({ me: { user: { id: ME } } } as never);
+      await seats({ [ME]: {} });
+      await voice.join('A', 'ws');
+      return h;
+    }
+    const companionRoom = (): FakeRoom => {
+      const r = FakeRoom.all.at(-1);
+      if (!r) throw new Error('no companion');
+      return r;
+    };
+
+    it('connects only while someone has a camera or a screen on; cameras show, my native identity is me', async () => {
+      await joined();
+      expect(FakeRoom.all).toHaveLength(0);
+      expect(companionToken).not.toHaveBeenCalled();
+      await seats({ [ME]: {}, [PEER]: { camera: true } });
+      expect(companionToken).toHaveBeenCalledExactlyOnceWith('A');
+      const room = companionRoom();
+      expect(room.connectedWith).toEqual(['wss://lk', 'companion-A']);
+      // My native device is in the companion's room too (and a camera of another device of mine): never a tile.
+      publish(room, `${ME}:native`, [vpub('camera', 'TR_my_cam')]);
+      const cam = vpub('camera', 'TR_peer_cam');
+      publish(room, `${PEER}:dev`, [cam]);
+      room.remoteParticipants.set(`${PEER}:dev:web`, participant(`${PEER}:dev:web`, []));
+      expect(useVoice.getState().cameras.map((c) => c.userId)).toEqual([PEER]);
+      expect(useVoice.getState()).toMatchObject({ audioOnly: true, videoDown: false, canVideo: false });
+      voice.showCamera(PEER, 'high');
+      await settle();
+      expect(cam.setSubscribed).toHaveBeenLastCalledWith(true);
+      // Leaving the room closes it with the join, without a call of its own.
+      await voice.leave();
+      expect(room.disconnects.length).toBeGreaterThan(0);
+      expect(companionToken).toHaveBeenCalledOnce();
+    });
+
+    it('the watched screen share: video through the companion, its audio native with the stream volume, unwatched → gone', async () => {
+      const h = await joined();
+      await seats({ [ME]: {}, [PEER]: { streaming: true } });
+      const room = companionRoom();
+      const screen = vpub('screen_share', 'TR_screen');
+      const screenAudio = vpub('screen_share_audio', 'TR_screen_audio', 'audio');
+      const mic = vpub('microphone', 'TR_mic', 'audio');
+      publish(room, `${PEER}:dev`, [screen, screenAudio, mic]);
+      expect(useVoice.getState().watching).toBe('TR_screen');
+      expect(screen.setSubscribed).toHaveBeenLastCalledWith(true);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.lastControls()?.watched).toEqual({ [PEER]: 1 });
+      voice.setStreamVolume(PEER, 0.4);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.lastControls()?.watched).toEqual({ [PEER]: 0.4 });
+      voice.watch(null);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.lastControls()?.watched).toEqual({});
+      expect(screen.setSubscribed).toHaveBeenLastCalledWith(false);
+      // Never an audio kind on the companion: the WebView stays silent.
+      expect(screenAudio.setSubscribed).not.toHaveBeenCalledWith(true);
+      expect(mic.setSubscribed).not.toHaveBeenCalledWith(true);
+    });
+
+    it('background closes it at once, native keeps the watched stream’s audio; foreground brings the video back to it', async () => {
+      const h = await joined();
+      await seats({ [ME]: {}, [PEER]: { streaming: true } });
+      publish(companionRoom(), `${PEER}:dev`, [vpub('screen_share', 'TR_screen')]);
+      setHidden(true);
+      expect(companionRoom().disconnects).toHaveLength(1);
+      expect(useVoice.getState()).toMatchObject({ streams: [], watching: null });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.lastControls()?.watched).toEqual({ [PEER]: 1 });
+      FakeRoom.onConnect = () => {
+        const r = companionRoom();
+        // Another stream comes first now: the held one is still the one watched.
+        r.remoteParticipants.set('66666666-6666-4666-8666-666666666666:dev', participant('66666666-6666-4666-8666-666666666666:dev', [vpub('screen_share', 'TR_other')]));
+        r.remoteParticipants.set(`${PEER}:dev`, participant(`${PEER}:dev`, [vpub('screen_share', 'TR_screen')]));
+        return Promise.resolve();
+      };
+      setHidden(false);
+      await settle();
+      expect(FakeRoom.all).toHaveLength(2);
+      expect(useVoice.getState().watching).toBe('TR_screen');
+      // The stream ends while the page is away again: native lets its audio go.
+      setHidden(true);
+      await seats({ [ME]: {}, [PEER]: { streaming: false } });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.lastControls()?.watched).toEqual({});
+    });
+
+    it('a stream the user stopped watching stays unwatched after the page was away', async () => {
+      const h = await joined();
+      await seats({ [ME]: {}, [PEER]: { streaming: true } });
+      publish(companionRoom(), `${PEER}:dev`, [vpub('screen_share', 'TR_screen')]);
+      expect(useVoice.getState().watching).toBe('TR_screen');
+      voice.watch(null);
+      setHidden(true);
+      FakeRoom.onConnect = () => {
+        companionRoom().remoteParticipants.set(`${PEER}:dev`, participant(`${PEER}:dev`, [vpub('screen_share', 'TR_screen')]));
+        return Promise.resolve();
+      };
+      setHidden(false);
+      await settle();
+      expect(FakeRoom.all).toHaveLength(2);
+      expect(useVoice.getState()).toMatchObject({ watching: null, streams: [{ trackSid: 'TR_screen' }] });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.lastControls()?.watched).toEqual({});
+    });
+
+    it('held stream audio goes when the companion is not back 10 s after foreground, or is superseded', async () => {
+      const h = await joined();
+      await seats({ [ME]: {}, [PEER]: { streaming: true } });
+      publish(companionRoom(), `${PEER}:dev`, [vpub('screen_share', 'TR_screen')]);
+      setHidden(true);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.lastControls()?.watched).toEqual({ [PEER]: 1 });
+      companionToken.mockImplementationOnce(() => new Promise(() => undefined));
+      setHidden(false);
+      await vi.advanceTimersByTimeAsync(9_000);
+      expect(h.lastControls()?.watched).toEqual({ [PEER]: 1 });
+      await vi.advanceTimersByTimeAsync(1_200);
+      expect(h.lastControls()?.watched).toEqual({});
+    });
+
+    it('a companion that gives up lets the held stream audio go at once', async () => {
+      const h = await joined();
+      await seats({ [ME]: {}, [PEER]: { streaming: true } });
+      publish(companionRoom(), `${PEER}:dev`, [vpub('screen_share', 'TR_screen')]);
+      setHidden(true);
+      const { ApiError } = await import('../lib/api/client');
+      companionToken.mockImplementationOnce(() => Promise.reject(new ApiError('FORBIDDEN', 'no', 403)));
+      setHidden(false);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(useVoice.getState().videoDown).toBe(true);
+      expect(h.lastControls()?.watched).toEqual({});
+    });
+
+    it('a superseded companion lets the held stream audio go at once', async () => {
+      const h = await joined();
+      await seats({ [ME]: {}, [PEER]: { streaming: true } });
+      publish(companionRoom(), `${PEER}:dev`, [vpub('screen_share', 'TR_screen')]);
+      setHidden(true);
+      FakeRoom.onConnect = () => {
+        companionRoom().emit('Disconnected', 'DUPLICATE_IDENTITY');
+        return Promise.reject(new Error('superseded'));
+      };
+      setHidden(false);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(h.lastControls()?.watched).toEqual({});
+    });
+
+    it('a companion that gave up says why; cameras and screens otherwise need no reason', async () => {
+      const { ApiError } = await import('../lib/api/client');
+      companionToken.mockImplementationOnce(() => Promise.reject(new ApiError('NOT_FOUND', 'no', 404)));
+      await joined();
+      await seats({ [ME]: {}, [PEER]: { camera: true } });
+      expect(useVoice.getState().videoDown).toBe(true);
+      await voice.leave();
+      expect(useVoice.getState().videoDown).toBe(false);
+    });
   });
 });
 
@@ -894,6 +1352,42 @@ describe('VoiceEngine', () => {
     expect(useVoice.getState().roomId).toBeNull();
   });
 
+  it('a database stall: /join answers 503 for minutes, the rejoin goes on and gets back in still muted (ADR-0166)', async () => {
+    const { ApiError } = await import('../lib/api/client');
+    await voice.join('A', 'ws');
+    voice.toggleMute();
+    await vi.advanceTimersByTimeAsync(100);
+    let down = true;
+    joinVoice.mockImplementation((roomId: string) =>
+      down
+        ? Promise.reject(new ApiError('ERROR_CODE_UNAVAILABLE', 'service unavailable', 503))
+        : Promise.resolve({ url: 'wss://lk', token: `t-${roomId}`, canSpeak: true, canStream: true, media: { audioBitrateKbps: 32 } }),
+    );
+    FakeRoom.all[0]?.emit('Disconnected', 'SIGNAL_CLOSE');
+    await vi.advanceTimersByTimeAsync(5 * 60_000); // the stall: 5 min of 503
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'reconnecting', muted: true });
+    const tried = joinVoice.mock.calls.length;
+    expect(tried).toBeGreaterThan(10);
+    down = false;
+    await vi.advanceTimersByTimeAsync(16_000); // the next attempt (backoff ≤ 15 s)
+    expect(useVoice.getState()).toMatchObject({ roomId: 'A', phase: 'connected', muted: true }); // never unmuted
+    expect(FakeRoom.all.at(-1)?.published[0]?.isMuted).toBe(true);
+    joinVoice.mockReset();
+    joinVoice.mockImplementation((roomId: string) => Promise.resolve({ url: 'wss://lk', token: `t-${roomId}`, canSpeak: true, canStream: true, media: { audioBitrateKbps: 32 } }));
+  });
+
+  it('a refusal (no access / the room is gone) ends the rejoin at once', async () => {
+    const { ApiError } = await import('../lib/api/client');
+    await voice.join('A', 'ws');
+    joinVoice.mockRejectedValueOnce(new ApiError('ERROR_CODE_NOT_FOUND', 'room not found', 404));
+    FakeRoom.all[0]?.emit('Disconnected', 'SIGNAL_CLOSE');
+    await vi.advanceTimersByTimeAsync(1_100);
+    expect(joinVoice).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(joinVoice).toHaveBeenCalledTimes(2); // no more attempts
+    expect(useVoice.getState().roomId).toBeNull();
+  });
+
   it('a rejoin whose room drops right as connect() resolves is not counted as back: the cycle goes on', async () => {
     await voice.join('A', 'ws');
     // The first rejoin attempt: LiveKit connects, then the room is gone before our connect() returns.
@@ -940,7 +1434,14 @@ describe('VoiceEngine', () => {
     expect(useVoice.getState().link.attempts).toBe(0);
   });
 
-  it('a connect that keeps failing backs off 1/2/4/8 s, then 15 s, for 90 s, ends with the «lost» toast and frees the seat (#255)', async () => {
+  it('the rejoin backoff is jittered ±25 % (a whole room dropped at once must not retry in lockstep, ADR-0166)', async () => {
+    const { rejoinDelay } = await import('./voice');
+    expect([0, 1, 2, 3, 4, 9].map((a) => rejoinDelay(a, 0.5))).toEqual([1000, 2000, 4000, 8000, 15_000, 15_000]);
+    expect(rejoinDelay(9, 0)).toBe(11_250);
+    expect(rejoinDelay(9, 1)).toBe(18_750);
+  });
+
+  it('a connect that keeps failing backs off 1/2/4/8 s, then 15 s, for 15 min, ends with the «lost» toast and frees the seat (#255, ADR-0166)', async () => {
     await voice.join('A', 'ws');
     const { toast } = await import('../stores/toasts');
     vi.mocked(toast.error).mockClear();
@@ -949,17 +1450,24 @@ describe('VoiceEngine', () => {
     await settle();
     // Rejoin attempts so far (the first /join was the user's).
     const attempts = (): number => joinVoice.mock.calls.length - 1;
-    // Attempts at 1, 3, 7, 15, 30, 45, 60, 75 and 90 s; then the cycle gives up (90 s, ADR-0150 hold).
-    const steps: [number, number][] = [[999, 0], [1, 1], [1_999, 1], [1, 2], [3_999, 2], [1, 3], [7_999, 3], [1, 4], [14_999, 4], [1, 5], [14_999, 5], [1, 6], [14_999, 6], [1, 7], [14_999, 7], [1, 8], [14_999, 8], [1, 9]];
+    // Attempts at 1, 3, 7, 15 s, then every 15 s up to 15 min (a database stall, ADR-0166); then
+    // the cycle gives up: 4 + 59 = 63 attempts.
+    const steps: [number, number][] = [[999, 0], [1, 1], [1_999, 1], [1, 2], [3_999, 2], [1, 3], [7_999, 3], [1, 4], [14_999, 4], [1, 5], [14_999, 5], [1, 6]];
     for (const [ms, n] of steps) {
       await vi.advanceTimersByTimeAsync(ms);
       expect(attempts()).toBe(n);
     }
+    await vi.advanceTimersByTimeAsync(900_000 - 45_000 - 1);
+    expect(attempts()).toBe(62);
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+    expect(useVoice.getState()).toMatchObject({ phase: 'reconnecting', roomId: 'A' });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attempts()).toBe(63);
     expect(vi.mocked(toast.error).mock.calls.map((c) => c[0])).toEqual(['Не удалось вернуться в голосовую комнату']);
     expect(useVoice.getState()).toMatchObject({ phase: 'idle', roomId: null });
     expect(leaveVoice).toHaveBeenCalledWith('A');
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(attempts()).toBe(9);
+    expect(attempts()).toBe(63);
   });
 
   it('the CSP blocking the LiveKit host: phase «blocked», the cycle stops, «Повторить» joins again', async () => {
@@ -2264,7 +2772,7 @@ describe('stream codec (ADR-0032)', () => {
       usePrefs.setState({ streamCodec: pref });
       startScreenShare.mockClear();
       pickPublishCodec.mockClear();
-      await voice.startStream({ source, preset: 2, contentHint: 'detail', systemAudio: false });
+      await voice.startStream({ source, preset: ScreenSharePreset.H720, contentHint: 'detail', systemAudio: false });
       expect(pickPublishCodec).toHaveBeenCalledWith('screen', pref);
       expect(startScreenShare).toHaveBeenCalledTimes(1);
       expect(startScreenShare.mock.calls[0]?.[1]).toMatchObject({ codec, preset: 2, contentHint: 'detail' });
@@ -2327,6 +2835,45 @@ describe('VOICE_DISCONNECTED (docs/05 «Несколько устройств»)
     expect(useVoice.getState().phase).toBe('idle');
     expect(await toasts()).toEqual(['Вы подключились с другого устройства']);
     expect(joinVoice).toHaveBeenCalledTimes(1);
+  });
+
+  it('LiveKit removal while the server is out of reach: no verdict — no toast, back into the room by itself (ADR-0166)', async () => {
+    const { useSession } = await import('../stores/session');
+    await voice.join('A', 'ws');
+    voice.toggleMute();
+    await settle();
+    // The gateway session was closed past the identity grace and IDENTIFY fails while the database stalls.
+    useSession.setState({ gateway: 'reconnecting' });
+    FakeRoom.all[0]?.emit('Disconnected', 'PARTICIPANT_REMOVED');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await toasts()).toEqual([]);
+    expect(useVoice.getState()).toMatchObject({ phase: 'reconnecting', roomId: 'A', muted: true });
+    await vi.advanceTimersByTimeAsync(1_100);
+    expect(joinVoice).toHaveBeenCalledTimes(2);
+    expect(useVoice.getState()).toMatchObject({ phase: 'connected', roomId: 'A', muted: true });
+    expect(voice.takenOverRoom).toBeNull();
+    // The API answering with outages is the same signal with the gateway up.
+    useSession.setState({ gateway: 'ready', serverDegraded: true });
+    FakeRoom.all.at(-1)?.emit('Disconnected', 'PARTICIPANT_REMOVED');
+    await vi.advanceTimersByTimeAsync(1_600);
+    expect(await toasts()).toEqual([]);
+    expect(joinVoice).toHaveBeenCalledTimes(3);
+    expect(useVoice.getState()).toMatchObject({ phase: 'connected', roomId: 'A' });
+  });
+
+  it('VOICE_DISCONNECTED with ACCESS_UNDECIDED (the sweep failed closed): rejoin, no toast, not a takeover', async () => {
+    await voice.join('A', 'ws');
+    expect(voice.onServerDisconnect(ev({ reason: VoiceDisconnectReason.ACCESS_UNDECIDED }))).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_100);
+    expect(joinVoice).toHaveBeenCalledTimes(2);
+    expect(useVoice.getState()).toMatchObject({ phase: 'connected', roomId: 'A' });
+    expect(voice.takenOverRoom).toBeNull();
+    expect(await toasts()).toEqual([]);
+    // Told twice (the event, then LiveKit's removal of the old room): one cycle.
+    expect(voice.onServerDisconnect(ev({ reason: VoiceDisconnectReason.ACCESS_UNDECIDED }))).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_100);
+    expect(joinVoice).toHaveBeenCalledTimes(3);
+    expect(useVoice.getState()).toMatchObject({ phase: 'connected', roomId: 'A' });
   });
 
   it('LiveKit removal without the event: a moderator — the toast and the leave after the grace', async () => {
@@ -2559,6 +3106,138 @@ describe('tabs of one browser share the voice seat (#40)', () => {
     expect(useVoice.getState()).toMatchObject({ phase: 'idle', roomId: null });
     expect(leaveVoice).not.toHaveBeenCalled();
     expect(joinVoice).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mic / sound choice across sessions and devices (ADR-0168, CBF-180)', () => {
+  const ts = (sec: number): { seconds: bigint; nanos: number } => ({ seconds: BigInt(sec), nanos: 0 });
+  const joinAnswer = (selfMute?: { muted: boolean; deafened: boolean; updatedAt: { seconds: bigint; nanos: number } }) =>
+    joinVoice.mockImplementationOnce((roomId: string) => Promise.resolve({ url: 'wss://lk', token: `t-${roomId}`, canSpeak: true, canStream: true, pending: true, media: { audioBitrateKbps: 32 }, ...(selfMute ? { selfMute } : {}) }));
+  /** The mic as LiveKit got it at publishTrack: the first thing the others could hear. */
+  const atPublish: { isMuted: boolean; enabled: boolean }[] = [];
+  const watchPublish = (): void => {
+    atPublish.length = 0;
+    FakeRoom.onConnect = () => {
+      const r = FakeRoom.all.at(-1);
+      r?.localParticipant.publishTrack.mockImplementation((t: FakeLocalAudioTrack) => {
+        atPublish.push({ isMuted: t.isMuted, enabled: t.mediaStreamTrack.enabled });
+        r.published.push(t);
+        return Promise.resolve();
+      });
+      return Promise.resolve();
+    };
+  };
+  /** A muted publish waits for LiveKit's mute lock (a timer): drive the clock through the join. */
+  const joinA = async (): Promise<void> => {
+    const p = voice.join('A', 'ws');
+    await vi.advanceTimersByTimeAsync(50);
+    await p;
+  };
+  beforeEach(async () => {
+    const { useSession } = await import('../stores/session');
+    useSession.setState({ me: { user: { id: 'u1' } }, status: 'authed' } as never);
+  });
+
+  it('joins with the stored mic off: published muted, never a moment of an open mic', async () => {
+    watchPublish();
+    joinAnswer({ muted: true, deafened: false, updatedAt: ts(1000) });
+    expect(useVoice.getState().muted).toBe(false); // this device's last state: open
+    await joinA();
+    expect(useVoice.getState()).toMatchObject({ muted: true, deafened: false, phase: 'connected' });
+    expect(atPublish).toEqual([{ isMuted: true, enabled: false }]);
+    // The pending row is right before LiveKit connects, and the server's value is not sent back.
+    expect(updateSelf.mock.calls[0]?.[0]).toMatchObject({ muted: true, deafened: false });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(setVoiceMute).not.toHaveBeenCalled();
+  });
+
+  it('joins deafened from another device; undeafen returns to the stored mic (open)', async () => {
+    joinAnswer({ muted: false, deafened: true, updatedAt: ts(1000) });
+    await joinA();
+    expect(useVoice.getState()).toMatchObject({ muted: true, deafened: true, mutedBeforeDeafen: false });
+    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(true);
+    voice.toggleDeafen();
+    expect(useVoice.getState()).toMatchObject({ muted: false, deafened: false });
+  });
+
+  it('a stored open mic opens a muted device at join (the choice follows the user)', async () => {
+    useVoice.setState({ muted: true });
+    joinAnswer({ muted: false, deafened: false, updatedAt: ts(1000) });
+    await joinA();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(useVoice.getState().muted).toBe(false);
+    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
+  });
+
+  it('no server value (an older server): the local copy of the last session stands in', async () => {
+    mem.set('calab-voice-mute', JSON.stringify({ userId: 'u1', muted: true, deafened: false, dirty: false, at: 5 }));
+    watchPublish();
+    await joinA();
+    expect(useVoice.getState().muted).toBe(true);
+    expect(atPublish).toEqual([{ isMuted: true, enabled: false }]);
+  });
+
+  it('a click not yet stored on the server wins over its older value and is sent', async () => {
+    mem.set('calab-voice-mute', JSON.stringify({ userId: 'u1', muted: false, deafened: true, dirty: true, at: 5 }));
+    joinAnswer({ muted: false, deafened: false, updatedAt: ts(1) });
+    await joinA();
+    expect(useVoice.getState()).toMatchObject({ muted: true, deafened: true });
+    await settle();
+    expect(setVoiceMute.mock.calls).toEqual([[{ muted: false, deafened: true }]]);
+  });
+
+  it('my clicks are stored once per burst; the auto-mute and a moderator mute are not my choice', async () => {
+    usePrefs.getState().setPrefs({ autoMuteSec: 30 });
+    await joinA();
+    voice.toggleMute();
+    voice.toggleMute();
+    voice.toggleMute();
+    expect(setVoiceMute).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(600);
+    expect(setVoiceMute.mock.calls).toEqual([[{ muted: true, deafened: false }]]);
+    voice.toggleMute(); // open again (auto-mute armed)
+    await vi.advanceTimersByTimeAsync(600);
+    expect(setVoiceMute.mock.calls.at(-1)).toEqual([{ muted: false, deafened: false }]);
+    setVoiceMute.mockClear();
+    await vi.advanceTimersByTimeAsync(30_000); // the auto-mute
+    expect(useVoice.getState().muted).toBe(true);
+    voice.toggleMute(); // «Включить»: back to the stored choice, nothing to send
+    // A moderator mute: still not my choice; deafen on top is, with the mic as I had chosen it.
+    voice.reconcileSelfState({ roomId: 'A', muted: true, deafened: false, serverMuted: true });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(setVoiceMute).not.toHaveBeenCalled();
+    voice.toggleDeafen();
+    await vi.advanceTimersByTimeAsync(600);
+    expect(setVoiceMute.mock.calls).toEqual([[{ muted: false, deafened: true }]]);
+    usePrefs.getState().setPrefs({ autoMuteSec: 0 });
+  });
+
+  it('push-to-talk stays per device: the stored choice never touches the mode, a reconnect keeps my state', async () => {
+    usePrefs.getState().setPrefs({ micMode: 'ptt', micModeLocal: true });
+    joinAnswer({ muted: false, deafened: false, updatedAt: ts(1000) });
+    await joinA();
+    expect(usePrefs.getState().micMode).toBe('ptt');
+    expect(FakeRoom.all[0]?.published[0]?.mediaStreamTrack.enabled).toBe(false); // PTT gate closed, not muted
+    expect(FakeRoom.all[0]?.published[0]?.isMuted).toBe(false);
+    const { micModeFromServer } = await import('./profile');
+    const { MicMode } = await import('@calaba/protocol');
+    expect(micModeFromServer({ micMode: 'ptt', micModeLocal: true }, MicMode.VAD)).toEqual({});
+    expect(micModeFromServer({ micMode: 'voice', micModeLocal: false }, MicMode.PUSH_TO_TALK)).toEqual({ micMode: 'ptt', micModeLocal: true });
+    usePrefs.getState().setPrefs({ micMode: 'voice', micModeLocal: false });
+  });
+
+  it('READY / USER_UPDATE apply the stored choice only outside voice; a late echo of an older write is ignored', async () => {
+    const { applyServerVoiceMute } = await import('./voiceMute');
+    const { create } = await import('@bufbuild/protobuf');
+    const { VoiceMuteSchema } = await import('@calaba/protocol');
+    const vm = (muted: boolean, deafened: boolean, sec: number) => create(VoiceMuteSchema, { muted, deafened, updatedAt: ts(sec) });
+    applyServerVoiceMute(vm(true, false, 100));
+    expect(useVoice.getState().muted).toBe(true);
+    applyServerVoiceMute(vm(false, false, 50)); // older than what this device has seen
+    expect(useVoice.getState().muted).toBe(true);
+    await joinA();
+    applyServerVoiceMute(vm(false, true, 200)); // another device, while this one is in voice
+    expect(useVoice.getState()).toMatchObject({ muted: true, deafened: false });
   });
 });
 
@@ -3230,5 +3909,31 @@ describe('the page away and back', () => {
     setHidden(false);
     await vi.advanceTimersByTimeAsync(1_500);
     expect(micStarts.n).toBe(starts + 1);
+  });
+});
+
+describe('a web companion is never a second person (ADR-0149 §3)', () => {
+  const p = (identity: string) => ({ identity, trackPublications: new Map(), getTrackPublication: () => undefined, getTrackPublicationBySid: () => undefined });
+
+  it('no «join» for a companion, and its device leaving still plays «leave»', async () => {
+    const { useSession } = await import('../stores/session');
+    useSession.setState({ me: { user: { id: 'u1' } } } as never);
+    await voice.join('A', 'ws');
+    const room = FakeRoom.all.at(-1);
+    if (!room) throw new Error('no room');
+    room.remoteParticipants.set('u2:s', p('u2:s'));
+    room.emit('ParticipantConnected', p('u2:s'));
+    expect(playSound).toHaveBeenLastCalledWith('join');
+    playSound.mockClear();
+    room.remoteParticipants.set('u2:s:web', p('u2:s:web'));
+    room.emit('ParticipantConnected', p('u2:s:web'));
+    expect(playSound).not.toHaveBeenCalled();
+    room.remoteParticipants.delete('u2:s');
+    room.emit('ParticipantDisconnected', p('u2:s'));
+    expect(playSound).toHaveBeenCalledExactlyOnceWith('leave');
+    playSound.mockClear();
+    room.remoteParticipants.delete('u2:s:web');
+    room.emit('ParticipantDisconnected', p('u2:s:web'));
+    expect(playSound).not.toHaveBeenCalled();
   });
 });

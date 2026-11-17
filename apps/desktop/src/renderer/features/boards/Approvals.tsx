@@ -21,7 +21,7 @@ import {
 } from '../../lib/boards/approvals';
 import { useBoards } from '../../stores/boards';
 import { setApprovers, voteApproval } from '../../services/boards';
-import { myUserId } from '../../stores/session';
+import { myUserId, useSession } from '../../stores/session';
 import { memberName, useMemberName } from '../../stores/workspaces';
 import { FormerChip } from '../people/MemberBits';
 import { DRAG_USER, dragKind } from '../calendar/dragState';
@@ -39,13 +39,17 @@ import { hasBit, MANAGE_BOARD, VIEW_BOARD } from './model';
 
 // ------------------------------------------------------------------ tag (card, list row)
 
+const selectMyUserId = (s: ReturnType<typeof useSession.getState>): string => s.me?.user?.id ?? '';
+
 /**
- * «✓ 3/3» filled green once approved, «2/3» outlined orange while waiting, «✕ 1/3» outlined red
+ * «✓ 3/3» filled green once approved, «2/3» outlined orange while waiting (outlined green when the viewer has voted «за»), «✕ 1/3» outlined red
  * after a veto; nothing without approvers. Reads its task by id through a primitive selector
  * (approvalTagKey): a card's TASK_UPDATE re-renders the tag only when the tag itself changes.
  */
 export const ApprovalTag = memo(function ApprovalTag({ id, compact = false, slot }: { id: string; compact?: boolean; slot?: string }): ReactNode {
-  const key = useBoards((s) => approvalTagKey(s.tasks[id]));
+  // The viewer id is subscribed to, so the green «my vote» outline follows a late session load.
+  const me = useSession(selectMyUserId);
+  const key = useBoards((s) => approvalTagKey(s.tasks[id], me));
   // `slot`: a fixed-width column cell (the list row) that stays, empty, when there is no tag.
   if (slot !== undefined) return <span className={slot}>{key ? <TagView tag={key} id={id} compact={compact} /> : null}</span>;
   return key ? <TagView tag={key} id={id} compact={compact} /> : null;
@@ -55,11 +59,11 @@ export const ApprovalTag = memo(function ApprovalTag({ id, compact = false, slot
 export function TagView({ tag, id, compact }: { tag: string; id: string; compact: boolean }): ReactNode {
   const p = parseApprovalTag(tag);
   if (!p) return null;
-  const { kind, n, m } = p;
+  const { kind, n, m, mine } = p;
   // Who vetoed — only for the tooltip, read once when the tag (re-)renders.
   const task = kind === 'rejected' ? useBoards.getState().tasks[id] : undefined;
   const who = task ? rejecters(task).map((u) => memberName(task.workspaceId, u)).join(', ') : '';
-  const label = kind === 'pending' ? t('boards.approvalProgress', { n, m }) : kind === 'approved' ? t('boards.approvalDoneN', { n, m }) : t('boards.gate.rejected', { name: who });
+  const label = kind === 'pending' ? (mine ? t('boards.approvalPendingMine', { n, m }) : t('boards.approvalProgress', { n, m })) : kind === 'approved' ? t('boards.approvalDoneN', { n, m }) : t('boards.gate.rejected', { name: who });
   return (
     <Tip label={label}>
     <span
@@ -68,12 +72,14 @@ export function TagView({ tag, id, compact }: { tag: string; id: string; compact
       className={cx(
         'inline-flex h-5 shrink-0 items-center gap-0.5 rounded-full border px-1.5 text-micro font-medium tabular-nums',
         kind === 'approved' && 'border-transparent bg-ok-fill text-white',
-        kind === 'pending' && 'border-[color-mix(in_srgb,var(--color-warn-text)_60%,transparent)] text-[var(--color-warn-text)]',
+        kind === 'pending' && !mine && 'border-[color-mix(in_srgb,var(--color-warn-text)_60%,transparent)] text-[var(--color-warn-text)]',
+        kind === 'pending' && mine && 'border-[color-mix(in_srgb,var(--color-green-text)_65%,transparent)] text-[var(--color-green-text)]',
         kind === 'rejected' && 'border-[color-mix(in_srgb,var(--color-red)_55%,transparent)] text-danger-text',
         compact && 'px-1',
       )}
       data-testid="approval-badge"
       data-state={kind}
+      data-mine={mine ? 'approved' : undefined}
     >
       {kind === 'approved' ? <Check className="size-3" strokeWidth={3} aria-hidden /> : kind === 'rejected' ? <X className="size-3" strokeWidth={3} aria-hidden /> : null}
       {n}/{m}

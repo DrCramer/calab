@@ -1,6 +1,8 @@
 import { useCall } from '../stores/call';
 import { HostCallAudioSession } from '../lib/media/hostCallAudio';
+import { HostRoomAudioSession, HostRoomAudioUnavailable, ROOM_LEVELS_REFRESH_MS, roomAudioControls, roomLevelDb } from '../lib/media/hostRoomAudio';
 import { audioUUID, type HostAudioControls } from '../../shared/hostCallAudio';
+import type { HostRoomAudioCapability, HostRoomAudioControls, HostRoomAudioState } from '../../shared/hostRoomAudio';
 import { SCREEN_SHARE_PRESETS, type ConcreteScreenSharePreset, type ScreenShareContentHint, type VoiceDisconnected, type VoiceMoved, VoiceDisconnectReason } from '@calaba/protocol';
 import {
   ConnectionState,
@@ -49,7 +51,7 @@ import { VoiceGate, rmsToDb } from '../lib/media/vad';
 import { denoiseMode, wakeDbFor } from '../lib/media/denoiseSleep';
 import { rnnoiseSupported } from '../lib/media/rnnoiseSupport';
 import { isMobileNow } from '../lib/mobile';
-import { playSound } from '../lib/sounds';
+import { playSound, routeCues } from '../lib/sounds';
 import { SeatCues, joinLeaveCue, joinLeaveSoundMax, type SeatVerdict } from '../lib/media/joinLeaveSound';
 import { PttRelease } from '../lib/pttRelease';
 import { SpeakingDebouncer, speakingUserIds } from '../lib/speaking';
@@ -77,7 +79,7 @@ import { pipCamera } from '../features/voice/tileLayout';
 import { ActiveSpeaker } from '../lib/activeSpeaker';
 import { lastSpoke, speakingStarts } from '../lib/lastSpoke';
 import { cspBlockedHost, describeConnectError, describeDisconnect, hostOfUrl } from '../lib/voiceLink';
-import { seatAction, seatRefused, type SeatView } from '../lib/voiceSeat';
+import { rejoinRefusal, seatAction, seatRefused, type SeatView } from '../lib/voiceSeat';
 import {
   AUDIO_SETTLE_MS,
   MIC_SETTLE_MS,
@@ -95,6 +97,7 @@ import {
 import { SELF_SYNC_LAG_MS, SelfStateSync, type SelfFlags } from '../lib/selfStateSync';
 import { CONNECT_STUCK_MS, ConnectWatchdog, DISCONNECT_WAIT_MS, RECONNECT_STUCK_MS, STOP_STREAM_WAIT_MS, TEARDOWN_WAIT_MS, reconnectVerdict, rejectAfter, settleWithin, type ConnectStage, type StuckKind } from '../lib/voiceWatchdog';
 import { annot } from './annot';
+import { VoiceCompanion, WATCH_TOPIC, isSoleConnection, type CompanionDetach } from './voiceCompanion';
 import { ANNOT_TOPIC } from '../lib/annot/codec';
 import { CameraController, cameraGrantMissing } from './camera';
 import { announceDeviceSwitch } from './deviceToast';
@@ -103,6 +106,7 @@ import { humanMediaError, reportMediaError } from './mediaErrors';
 import { reportPlanError } from './plan';
 import { capAudioKbps, capFps } from '../lib/plan';
 import { sameBinding } from './profile';
+import { rememberVoiceMute, voiceMuteAtJoin } from './voiceMute';
 
 /** A room's voice tier lowered to the workspace plan's cap (`audio_tier_max_kbps`; the server caps /join the same way). */
 function planAudio(workspaceId: string, kbps: number): number {
@@ -121,13 +125,15 @@ function planAudio(workspaceId: string, kbps: number): number {
  */
 
 /** livekit-client's reliable data channel (DataChannelKind.RELIABLE; the enum is exported as a type only). */
+// DataChannelKind is exported as a type only, so the member cannot be referenced by name.
+// eslint-disable-next-line @typescript-eslint/no-unsafe-enum-assignment
 const RELIABLE = 0 as DataChannelKind.RELIABLE;
 const METER_UI_INTERVAL_MS = 50;
 const STATS_INTERVAL_MS = ECHO.statsMs;
 /** Remote SSRC levels are fresh when played out within this window (DTX sends ~every 400 ms). */
 const LEVEL_FRESH_MS = 500;
-/** LiveKit data topic for "who watches my stream" (docs/05: data channels only for in-call ephemera). */
-const WATCH_TOPIC = 'calaba.watch';
+/** Back in foreground, a held stream keeps its native audio this long while the companion reconnects. */
+const HELD_RETURN_MS = 10_000;
 /** A /join waits at most this long for a /voice/leave still in flight. */
 const LEAVE_WAIT_MS = 3000;
 /** Seat check (docs/09 #71): a join / leave in progress is waited out this often, this many times. */
@@ -144,13 +150,22 @@ const SEAT_SELF_GRACE_MS = 3000;
  */
 const REMOVED_GRACE_MS = 500;
 /**
- * Rejoin backoff (#255): 1, 2, 4, 8 s, then at most 15 s apart; at least 5 attempts and 90 s — the
- * server's default seat hold after a drop (VOICE_LOST_GRACE 60 s, removed by the next 30 s
- * reconcile, ADR-0150) — before «Не удалось вернуться в голосовую комнату».
+ * Rejoin backoff (#255): 1, 2, 4, 8 s, then at most 15 s apart; at least 5 attempts and 15 min
+ * before «Не удалось вернуться в голосовую комнату» (ADR-0166: a database stall of the server
+ * lasts minutes, and its /join answers 503 meanwhile; past the server's seat hold, ADR-0150, the
+ * rejoin just takes a new seat). A refusal (no access, the room gone or full) ends it at once.
  */
 const REJOIN_MIN_ATTEMPTS = 5;
 const REJOIN_MAX_BACKOFF_MS = 15_000;
-const REJOIN_GIVE_UP_MS = 90_000;
+export const REJOIN_GIVE_UP_MS = 15 * 60_000;
+/**
+ * The wait before rejoin attempt `attempt`, ±25 % jitter: everyone a server outage dropped at the
+ * same second (an identity sweep evicting a whole room, ADR-0166) must not hit /join in lockstep
+ * every 15 s while the database recovers.
+ */
+export function rejoinDelay(attempt: number, random = Math.random()): number {
+  return Math.round(Math.min(1000 * 2 ** attempt, REJOIN_MAX_BACKOFF_MS) * (0.75 + random * 0.5));
+}
 /** `devicechange` comes in bursts while the OS switches the output: re-bind the elements once it settles (#255). */
 const REBIND_SETTLE_MS = 400;
 /**
@@ -263,7 +278,42 @@ class VoiceEngine {
   private rebindDue = 0;
   private muteFails = 0;
   private room: Room | null = null;
-  private nativeAudio: HostCallAudioSession | null = null;
+  /** The native media owner of this join: CallKit call audio (ADR-0079) or the room audio (ADR-0149). */
+  private nativeAudio: HostCallAudioSession | HostRoomAudioSession | null = null;
+  /** The current user join already fell back from native room audio to the web path (once, ADR-0149 §1). */
+  private roomFellBack = false;
+  /** Native room audio gave the connection up (`lost`) at: the page rejoins in foreground, never while hidden. */
+  private roomLostAt: number | null = null;
+  /** A seat check met native reconnecting by itself: run it again once native is back. */
+  private seatDeferred = false;
+  /** Others' join / leave cues of a native-audio room, from the server's seats (no LiveKit Room here). */
+  private nativeSeatsOff: (() => void) | null = null;
+  /** Re-asks native for meter levels while a meter is shown in a visible page (they stop by themselves after 30 s). */
+  private levelsTimer: number | null = null;
+  /**
+   * The web companion of a native-audio join (ADR-0149 §3): a subscribe-only LiveKit connection
+   * for the cameras, the screen shares and the data topics, never an audio kind.
+   */
+  private readonly companion = new VoiceCompanion({
+    attach: (room) => this.onCompanionAttached(room),
+    detach: (_room, why) => this.onCompanionDetached(why),
+    down: (on) => {
+      setVoice({ videoDown: on });
+      if (on) this.releaseHeld();
+    },
+    superseded: () => this.releaseHeld(),
+  });
+  /** The stream watched when the page went to background: native keeps its audio, the video comes back to it. */
+  private heldWatch: { trackSid: string; userId: string } | null = null;
+  /** Back in foreground with a held stream: its audio goes if the companion is not back by then. */
+  private heldTimer: number | null = null;
+  /**
+   * The streams shown when the companion went (null = none to compare): the first refresh after it
+   * is back treats them as known, so a stream the user stopped watching does not come back on its own.
+   */
+  private knownStreams: Set<string> | null = null;
+  /** The stream watched when the companion went: watched again when it is back (none = the user's «nothing»). */
+  private rewatch: string | null = null;
   private nativeCallEvent: string | undefined;
   private roomId: string | null = null;
   private joinSeq = 0;
@@ -441,6 +491,7 @@ class VoiceEngine {
     if (s.thresholdDb !== p.thresholdDb) {
       this.gate.configure({ thresholdDb: s.thresholdDb });
       this.applyDenoise();
+      if (this.nativeRoom) this.pushNativeControls();
     }
     if (s.micMode !== p.micMode || !sameBinding(s.pttBinding, p.pttBinding)) {
       // A pending release tail belongs to the old binding / mode: off now.
@@ -527,6 +578,8 @@ class VoiceEngine {
     this.takenOverRoom = null;
     this.stuckRetries = 0;
     this.resumedJoin = opts.resumed === true;
+    this.roomFellBack = false;
+    this.roomLostAt = null;
     this.linkDownAt = null; // a new room: not the old one's outage clock
     // «Войти и смотреть» (ADR-0066 §3): the call view opens as soon as the cameras are known.
     this.videoOnJoin = opts.video === true ? roomId : null;
@@ -680,6 +733,11 @@ class VoiceEngine {
       // A move (ADR-0019) comes with a token for the target room: no /join round trip.
       const res = moved ? this.movedJoin(roomId, workspaceId, moved) : await this.requestJoin(roomId, seq);
       if (seq !== this.joinSeq || !res) return;
+      // A fresh room join starts with my stored mic / sound choice (ADR-0168), applied before the
+      // mic is published and before the pending flags below: never a moment of an open mic the
+      // user had closed. A reconnect / move keeps this device's state; a call and an answered
+      // phone line follow their own rule (answering = talking, lib/voiceLogic answerCallSelf).
+      if (!quiet && !moved && !this.callMode && !isPhoneRoom(roomId)) voiceMuteAtJoin('selfMute' in res ? res.selfMute : undefined);
       // The server recorded this device as pending with default flags: tell it my mute /
       // deafen now, so the others' pending row is right before LiveKit connects.
       if ('pending' in res && res.pending) {
@@ -734,6 +792,11 @@ class VoiceEngine {
         this.pushSelfState(); this.syncTray();
         return;
       }
+      const roomAudio = this.roomAudioFor(roomId, workspaceId);
+      if (roomAudio) {
+        attempt.stage = 'signal';
+        if (await this.connectNativeRoom(roomAudio, seq, roomId, res, quiet)) return;
+      }
       const room = new Room({
         adaptiveStream: true,
         dynacast: true,
@@ -767,7 +830,7 @@ class VoiceEngine {
       // Moved: SPEAK comes from the token's grant (it repeats the server's rights in the target).
       const perm = room.localParticipant.permissions;
       const canSpeak = moved ? (perm ? canSpeakFrom(perm) : true) : res.canSpeak;
-      setVoice({ canSpeak, canStream: res.canStream, canVideo: res.canVideo, phase: 'connected' });
+      setVoice({ canSpeak, canStream: res.canStream, canVideo: res.canVideo, audioOnly: false, phase: 'connected' });
       setLink({ attempts: 0, lastError: null, blockedHost: null });
       // After the join LiveKit's rtcConfig carries the TURN servers of the join response.
       this.iceServers = (room.engine as { rtcConfig?: RTCConfiguration } | undefined)?.rtcConfig?.iceServers ?? [];
@@ -813,6 +876,8 @@ class VoiceEngine {
         return;
       }
       log.error('voice join failed', err);
+      // A decision of the server ends a rejoin cycle; an outage (network, 5xx) does not (ADR-0166).
+      if (quiet && err instanceof ApiError && rejoinRefusal(err.status)) this.rejoinRefused = true;
       const line = describeConnectError(err);
       setLink({ attempts: useVoice.getState().link.attempts + 1, lastError: line });
       // Rejoin attempts (quiet) only log: the reconnect notice already tells the user, and the
@@ -847,6 +912,445 @@ class VoiceEngine {
       ...voiceCaps(lapsedPerms(workspaceId, roomPerms(role, me, room)), room),
       media: { audioBitrateKbps: planAudio(workspaceId, room?.media?.audioBitrateKbps || this.audioBitrateKbps) },
     };
+  }
+
+  /**
+   * Native room audio for this join (ADR-0149 §1): the iOS shell offers it, a workspace voice room
+   * (not a one-to-one call, a phone line or a personal call), and this user join has not fallen back.
+   */
+  private roomAudioFor(roomId: string, workspaceId: string | null): HostRoomAudioCapability | null {
+    const cap = platform.roomAudio;
+    if (!cap || this.callMode || !workspaceId || isPhoneRoom(roomId) || this.roomFellBack) return null;
+    return cap;
+  }
+
+  /** The join's audio is native room audio (read through a call: it changes across awaits). */
+  private get nativeRoom(): HostRoomAudioSession | null {
+    return this.nativeAudio instanceof HostRoomAudioSession ? this.nativeAudio : null;
+  }
+
+  /** The LiveKit Room the cameras and screen shares come from: the web join's, or a native join's companion. */
+  private get videoRoom(): Room | null {
+    return this.room ?? (this.nativeRoom ? this.companion.room : null);
+  }
+
+  /**
+   * The companion follows the native join (ADR-0149 §3): in foreground while someone else in the
+   * room has a camera or a screen share on (the watch and annotation topics only serve a screen
+   * share), closed 30 s after none and at once in background.
+   */
+  private syncCompanion(): void {
+    const native = this.nativeRoom;
+    const roomId = native ? this.roomId : null;
+    this.companion.sync({ join: native?.connectionId ?? null, roomId, needed: roomId !== null && this.companionNeeded(roomId), visible: !document.hidden });
+  }
+
+  private companionNeeded(roomId: string): boolean {
+    const ws = useVoice.getState().workspaceId;
+    const me = this.myId();
+    for (const [id, v] of Object.entries((ws ? useWorkspaces.getState().byId[ws]?.voice : undefined) ?? {})) {
+      if (v.roomId === roomId && id !== me && (v.camera || v.streaming)) return true;
+    }
+    return false;
+  }
+
+  /** The companion Room is up: its video and data events, and what it already has. */
+  private onCompanionAttached(room: Room): void {
+    if (!this.nativeRoom) return;
+    log.info('voice: companion video connected');
+    this.clearHeldTimer();
+    annot.attach(room);
+    this.wireCompanion(room);
+    this.refreshStreams();
+    this.refreshCameras();
+    this.camerasPrimed = true;
+    if (this.videoOnJoin === this.roomId) {
+      this.videoOnJoin = null;
+      if (this.anyCamera() && !useVoice.getState().watching) setVoice({ stage: 'expanded', videoPip: true });
+    }
+    setVoice({ trackEpoch: useVoice.getState().trackEpoch + 1 });
+  }
+
+  /**
+   * The companion Room went: nothing from it is shown any more. In background the watched stream is
+   * held (native keeps its audio, the video comes back to it); otherwise it is no longer watched.
+   */
+  private onCompanionDetached(why: CompanionDetach): void {
+    const st = useVoice.getState();
+    const stream = st.streams.find((s) => s.trackSid === st.watching);
+    this.heldWatch = why === 'hidden' && stream ? { trackSid: stream.trackSid, userId: stream.userId } : null;
+    this.knownStreams = new Set([...(this.knownStreams ?? []), ...st.streams.map((s) => s.trackSid)]);
+    if (st.streams.length > 0) this.rewatch = stream?.trackSid ?? null;
+    // Back after the page was away (or a lost link): the cameras on then are not «turned on».
+    if (why !== 'idle') this.camerasPrimed = false;
+    this.wanted.clear();
+    this.announced = null;
+    annot.detach();
+    annot.syncStreams([]);
+    // Away in background: the layout stays for the page coming back; otherwise back to the chat.
+    const chat = why !== 'hidden' && st.stage === 'expanded' && st.camera !== 'on';
+    setVoice({ streams: [], cameras: [], watching: null, focusedTile: null, ...(chat ? { stage: 'pip' as const } : {}), trackEpoch: st.trackEpoch + 1 });
+    if (this.nativeRoom) this.pushNativeControls();
+  }
+
+  /**
+   * The companion's events: video publications, subscriptions and the data topics only. No cues,
+   * speakers or seats here — those are native's and the server's (watchNativeSeats). My native
+   * identity is in this room too and counts as me (refreshCameras).
+   */
+  private wireCompanion(room: Room): void {
+    const live = (): boolean => this.companion.room === room && this.nativeRoom !== null;
+    const video = (src: Track.Source): boolean => src === Track.Source.Camera || src === Track.Source.ScreenShare;
+    room
+      .on(RoomEvent.TrackPublished, (pub) => {
+        if (!live() || !video(pub.source)) return;
+        if (pub.source === Track.Source.ScreenShare) playSound('streamStart');
+        this.refreshStreams();
+        this.refreshCameras();
+      })
+      .on(RoomEvent.TrackUnpublished, (pub, p) => {
+        if (!live() || !video(pub.source)) return;
+        if (pub.source === Track.Source.ScreenShare && room.remoteParticipants.has(p.identity)) playSound('streamEnd');
+        this.refreshStreams();
+        this.refreshCameras();
+      })
+      .on(RoomEvent.TrackSubscribed, (track, pub) => {
+        if (!live() || track.kind !== Track.Kind.Video) return;
+        if (pub.source === Track.Source.ScreenShare) {
+          this.applyQuality(pub);
+          this.syncAnnounce();
+        }
+        if (pub.source === Track.Source.Camera) this.applyCameras();
+        setVoice({ trackEpoch: useVoice.getState().trackEpoch + 1 });
+      })
+      .on(RoomEvent.TrackUnsubscribed, (track, pub) => {
+        if (!live() || track.kind !== Track.Kind.Video) return;
+        if (pub.source === Track.Source.ScreenShare) this.syncAnnounce();
+        setVoice({ trackEpoch: useVoice.getState().trackEpoch + 1 });
+      })
+      .on(RoomEvent.TrackMuted, (pub, p) => {
+        if (live() && p !== room.localParticipant && pub.source === Track.Source.Camera) this.refreshCameras();
+      })
+      .on(RoomEvent.TrackUnmuted, (pub, p) => {
+        if (live() && p !== room.localParticipant && pub.source === Track.Source.Camera) this.refreshCameras();
+      })
+      .on(RoomEvent.ParticipantDisconnected, (p) => {
+        if (!live()) return;
+        annot.participantLeft(p.identity);
+        this.refreshStreams();
+        this.refreshCameras();
+      })
+      .on(RoomEvent.DataReceived, (payload, participant, _kind, topic) => {
+        if (!participant || !live()) return;
+        if (topic === WATCH_TOPIC) this.onWatchMessage(payload, participant);
+        else if (topic === ANNOT_TOPIC) annot.onData(payload, participant);
+      });
+  }
+
+  /** The watched stream's publisher → its stream volume, for native (ADR-0149 §3; none while deafened to them). */
+  private watchedPublishers(): { id: string; volume: number }[] {
+    const st = useVoice.getState();
+    const stream = st.streams.find((s) => s.trackSid === st.watching && !s.local);
+    const userId = stream?.userId ?? this.heldWatch?.userId;
+    if (!userId) return [];
+    const audio = remoteAudio({ ...prefs(), deafened: false, userId, stream: true, streamVolume: st.streamVolume });
+    return audio.muted ? [] : [{ id: userId, volume: audio.volume }];
+  }
+
+  /** The held stream's audio goes: the companion gave up, was superseded or is not back in time. */
+  private releaseHeld(): void {
+    this.clearHeldTimer();
+    if (!this.heldWatch) return;
+    this.heldWatch = null;
+    if (this.nativeRoom) this.pushNativeControls();
+  }
+
+  private clearHeldTimer(): void {
+    if (this.heldTimer !== null) window.clearTimeout(this.heldTimer);
+    this.heldTimer = null;
+  }
+
+  /** Foreground with a held stream: the companion has HELD_RETURN_MS to bring its video back, else its audio goes. */
+  private syncHeldTimer(): void {
+    if (!this.heldWatch || document.hidden || this.companion.room) {
+      this.clearHeldTimer();
+      return;
+    }
+    this.heldTimer ??= window.setTimeout(() => {
+      this.heldTimer = null;
+      if (!this.companion.room) this.releaseHeld();
+    }, HELD_RETURN_MS);
+  }
+
+  /**
+   * The room's audio through native (ADR-0149): no getUserMedia, no <audio>; cues and built-in
+   * clips by name. True: done (in the room, or superseded). False: native could not start and this
+   * user join falls back to the web path — once, in foreground, before native ever captured.
+   * Anything else throws into connectOnce's failure path.
+   */
+  private async connectNativeRoom(
+    cap: HostRoomAudioCapability,
+    seq: number,
+    roomId: string,
+    res: { url: string; token: string; canSpeak: boolean },
+    quiet: boolean,
+  ): Promise<boolean> {
+    // Not in v1 on iPhone (ADR-0149 §3); it ends with the call anyway.
+    if (prefs().musicianMode) {
+      usePrefs.getState().setPrefs({ musicianMode: false });
+      toast.info(t('music.audioOnly'));
+    }
+    const session: HostRoomAudioSession = new HostRoomAudioSession(cap, {
+      connectionId: crypto.randomUUID(), roomId, url: res.url, token: res.token,
+      relayOnly: useSession.getState().appInfo?.forceRelay === true, red: prefs().red,
+      canSpeak: res.canSpeak, controls: this.roomControls(),
+    }, (state) => {
+      if (seq === this.joinSeq && this.nativeAudio === session) this.onRoomAudio(session, state);
+    });
+    this.nativeAudio = session;
+    // One capture owner: a settings mic test goes on through native levels, not WebKit.
+    this.stopMicPipeline();
+    routeCues((cue, volume) => session.cue(cue, volume));
+    setVoice({ canSpeak: res.canSpeak, canStream: false, canVideo: false, audioOnly: true });
+    try {
+      await session.start();
+    } catch (e) {
+      if (this.nativeAudio === session) {
+        this.nativeAudio = null;
+        routeCues(null);
+      }
+      if (seq !== this.joinSeq) return true;
+      if (e instanceof HostRoomAudioUnavailable && e.fallback && !quiet && !document.hidden) {
+        log.warn(`voice: native room audio did not start (${e.reason}), this join goes on the web path`);
+        this.roomFellBack = true;
+        return false;
+      }
+      throw e;
+    }
+    if (seq !== this.joinSeq || this.nativeAudio !== session || !session.state) {
+      session.stop();
+      return true;
+    }
+    this.roomLostAt = null;
+    setLink({ attempts: 0, lastError: null, blockedHost: null });
+    // The phase first: the join / reconnect cue below is this connect's, not a link coming back.
+    setVoice({ phase: session.state.phase === 'reconnecting' ? 'reconnecting' : 'connected' });
+    this.applyRoomState(session.state, null);
+    const sv = useWorkspaces.getState().byId[useVoice.getState().workspaceId ?? '']?.voice[this.myId()];
+    if (!session.state.phoneCall) this.pushSelfState(sv?.roomId === roomId && sv.onPhone ? { onPhone: false } : {});
+    this.watchNativeSeats();
+    // Cameras already on at join are not «turned on» (ADR-0066 §3); one that comes later is.
+    this.camerasPrimed = !this.companionNeeded(roomId);
+    this.syncCompanion();
+    const cue = quiet || this.resumedJoin ? 'reconnect' : 'join';
+    if (cue === 'join' || !this.cuesQuiet()) playSound(cue);
+    this.resumedJoin = false;
+    this.pushNativeControls();
+    this.syncTray();
+    return true;
+  }
+
+  /** A native room state after the join (ADR-0149 §2, §7): the end of the connection, or the store follows it. */
+  private onRoomAudio(session: HostRoomAudioSession, state: HostRoomAudioState): void {
+    if (state.phase === 'lost') {
+      this.onRoomLost();
+      return;
+    }
+    if (state.phase !== 'ended' && state.phase !== 'failed') {
+      this.applyRoomState(state, this.roomPrev);
+      return;
+    }
+    log.info(`voice: native room audio ${state.phase}${state.error ? ` (${state.error})` : ''}`);
+    const roomId = this.roomId;
+    if (state.error === 'removed') {
+      // As PARTICIPANT_REMOVED on the web path: VOICE_DISCONNECTED may still be on its way.
+      const ws = useVoice.getState().workspaceId;
+      const text = ws && useWorkspaces.getState().byId[ws]?.ws.suspension ? t('suspended.kicked') : t('mediaErr.voice.kicked');
+      this.clearRemoved();
+      this.removed = { roomId, timer: window.setTimeout(() => {
+        this.removed = null;
+        if (this.nativeAudio !== session) return;
+        if (this.removalUndecided()) {
+          void this.rejoin();
+          return;
+        }
+        toast.info(text);
+        void this.leave();
+      }, REMOVED_GRACE_MS) };
+      return;
+    }
+    if (state.error === 'duplicate') {
+      toast.info(t('mediaErr.voice.duplicate'));
+      this.takenOverRoom = roomId;
+      void this.leave(true, false);
+      return;
+    }
+    if (state.error === 'closed') {
+      if (roomId && isTempRoom(useRooms.getState().byId[roomId])) roomClosedToast(roomId);
+      else toast.info(t('mediaErr.voice.closed'));
+    } else if (state.error === 'audio' || state.error === 'connection' || state.error === 'network') {
+      // The engine or the session could not be rebuilt (ADR-0149 §6): a fresh join, like a lost link.
+      this.onRoomLost();
+      return;
+    } else if (state.error === 'permission') {
+      setVoice({ micError: humanMediaError(new HostRoomAudioUnavailable('permission', false), 'mic').text });
+    }
+    void this.leave();
+  }
+
+  /** The last native room state applied to the store (the next one is compared with it). */
+  private roomPrev: HostRoomAudioState | null = null;
+
+  /** Native room state → the store, primitives only and only what changed (docs/14 «Ререндеры»). */
+  private applyRoomState(s: HostRoomAudioState, prev: HostRoomAudioState | null): void {
+    this.roomPrev = s;
+    const v = useVoice.getState();
+    const phase = s.phase === 'reconnecting' ? 'reconnecting' : 'connected';
+    const patch: Partial<ReturnType<typeof useVoice.getState>> = {};
+    if (phase !== v.phase) {
+      patch.phase = phase;
+      if (phase === 'reconnecting' && v.phase === 'connected' && !this.cuesQuiet()) playSound('disconnect');
+      if (phase === 'connected' && v.phase === 'reconnecting') {
+        if (!this.cuesQuiet()) playSound('reconnect');
+        setLink({ attempts: 0, blockedHost: null });
+      }
+    }
+    if (s.speaking !== v.transmitting) patch.transmitting = s.speaking;
+    if (this.meterShown()) {
+      // No level (muted: native measures nothing then) is silence on the meter, not the last reading.
+      const db = roomLevelDb(s.level ?? 0);
+      if (db !== v.levelDb) patch.levelDb = db;
+      if (s.speaking !== v.gateOpen) patch.gateOpen = s.speaking;
+    }
+    if (Object.keys(patch).length) setVoice(patch);
+    if (s.canSpeak !== v.canSpeak) this.onSpeakPermission(s.canSpeak);
+    // The system holds the microphone (a call, Siri, another app's recording): «Ждём микрофон».
+    this.setMicTrouble(s.phase === 'interrupted' ? 'recovering' : null);
+    // Muted on the device, or kept muted after a phone call (ADR-0149 §6, product decision 1):
+    // the page takes it over as my own mute, and that returns the microphone to the page's controls.
+    // Already muted here: the controls did not change, so they are sent again once — native lets its
+    // hold go only on receiving `muted: true`, else the first unmute after the call would bounce.
+    const held = (x: HostRoomAudioState | null): boolean => x !== null && x.phase !== 'interrupted' && x.muted && (x.muteOrigin === 'system' || x.muteOrigin === 'native');
+    if (held(s)) {
+      if (!v.muted && !v.deafened) {
+        setVoice({ muted: true });
+        this.afterSelfChange();
+      } else if (v.muted && !held(prev)) this.nativeRoom?.resend();
+    }
+    // On the phone (ADR-0133): the others see it while the system call goes on.
+    if (prev ? prev.phoneCall !== s.phoneCall : s.phoneCall) this.pushSelfState({ onPhone: s.phoneCall });
+    if (!prev || prev.speaking !== s.speaking || prev.speakers.join() !== s.speakers.join()) {
+      this.remoteSpeakers = s.speakers;
+      this.selfSpeaking = s.speaking;
+      this.syncSpeaking();
+    }
+    if (phase === 'connected' && this.seatDeferred) {
+      this.seatDeferred = false;
+      this.checkSeat();
+    }
+  }
+
+  /**
+   * Native gave the connection up (ADR-0149 §7): in foreground a rejoin through REST and a fresh
+   * connect now; hidden, nothing until the page is back (onVisibility). The seat stays shown.
+   */
+  private onRoomLost(): void {
+    const v = useVoice.getState();
+    if (!v.roomId || !v.workspaceId) return;
+    this.roomLostAt ??= Date.now();
+    if (v.phase !== 'reconnecting') setVoice({ phase: 'reconnecting' });
+    if (document.hidden) {
+      log.info('voice: native room audio lost while hidden, rejoining when the page is back');
+      return;
+    }
+    if (this.rejoinRoomId === null) void this.rejoin(v.roomId, v.workspaceId, true);
+  }
+
+  /** The page is back while native room audio holds or lost the join: native resumes by itself; a lost one is rejoined. */
+  private onNativeVisible(): void {
+    if (this.roomLostAt === null || this.rejoinRoomId !== null) return;
+    const v = useVoice.getState();
+    if (!v.roomId || !v.workspaceId) return;
+    if (Date.now() - this.roomLostAt > REJOIN_GIVE_UP_MS) {
+      // The server ended the seat long ago (ADR-0150): out, as the web path gives up.
+      this.roomLostAt = null;
+      toast.error(t('mediaErr.voice.lost'));
+      this.sendLeave(v.roomId);
+      void this.teardown(false);
+      return;
+    }
+    void this.rejoin(v.roomId, v.workspaceId, true);
+  }
+
+  /** Others' «join» / «leave» in a native-audio room follow the server's seats (ADR-0150: a kept seat is no leave). */
+  private watchNativeSeats(): void {
+    this.nativeSeatsOff?.();
+    let seated = this.roomSeats();
+    this.nativeSeatsOff = useWorkspaces.subscribe((s, p) => {
+      const ws = useVoice.getState().workspaceId;
+      if (!ws || s.byId[ws]?.voice === p.byId[ws]?.voice) return;
+      const next = this.roomSeats();
+      const me = this.myId();
+      const max = joinLeaveSoundMax(this.roomId ? useRooms.getState().byId[this.roomId]?.media : undefined);
+      for (const who of next) if (who !== me && !seated.has(who) && joinLeaveCue(next, who, me, max)) playSound('join');
+      for (const who of seated) if (who !== me && !next.has(who) && joinLeaveCue(seated, who, me, max)) playSound('leave');
+      seated = next;
+      // A stream held through the background ended meanwhile: native lets its audio go.
+      const held = this.heldWatch;
+      if (held && !s.byId[ws]?.voice[held.userId]?.streaming) {
+        this.heldWatch = null;
+        this.pushNativeControls();
+      }
+      // Cameras and screen shares came or went: the companion follows (ADR-0149 §3).
+      this.syncCompanion();
+    });
+  }
+
+  private roomSeats(): Set<string> {
+    const { workspaceId, roomId } = useVoice.getState();
+    const voice = workspaceId ? useWorkspaces.getState().byId[workspaceId]?.voice : undefined;
+    return new Set(Object.entries(voice ?? {}).flatMap(([id, st]) => (st.roomId === roomId ? [id] : [])));
+  }
+
+  /**
+   * My room controls for native (ADR-0149 §2): mute, deafen, the master and per-user volumes (only
+   * the people I set, the ones in this room first), the voice tier, the gate, and the meter levels
+   * while a meter shows them in foreground.
+   */
+  private roomControls(): HostRoomAudioControls {
+    const v = useVoice.getState();
+    const p = prefs();
+    const here = this.roomSeats();
+    const ids = [...new Set([...Object.keys(p.userVolumes), ...Object.keys(p.mutedUsers), ...Object.keys(p.deafUsers)])]
+      .sort((a, b) => Number(!here.has(a)) - Number(!here.has(b)));
+    const users = ids.map((id) => {
+      const audio = remoteAudio({ ...p, deafened: false, userId: id, stream: false, streamVolume: {} });
+      return { id, volume: audio.muted ? 0 : audio.volume };
+    });
+    return roomAudioControls({
+      muted: v.muted || v.serverMuted, deafened: v.deafened, outputVolume: p.outputVolume, users,
+      bitrateKbps: this.micTier().kbps, mode: this.micMode(), thresholdDb: p.thresholdDb, pttOpen: v.pttDown,
+      levels: this.meterShown() && !document.hidden,
+      watched: this.watchedPublishers(),
+    });
+  }
+
+  /** The native owner's controls follow the store (calls and rooms each with their own contract). */
+  private pushNativeControls(): void {
+    const native = this.nativeAudio;
+    if (native instanceof HostRoomAudioSession) native.control(this.roomControls());
+    else native?.control(this.nativeControls());
+    this.syncLevelsRefresh();
+  }
+
+  /** The levels re-ask runs only while a meter shows them in a visible page of a native-audio join (no idle timer). */
+  private syncLevelsRefresh(): void {
+    const want = this.nativeRoom !== null && this.meterShown() && !document.hidden;
+    if (want && this.levelsTimer === null) this.levelsTimer = window.setInterval(() => this.nativeRoom?.refreshLevels(), ROOM_LEVELS_REFRESH_MS);
+    else if (!want && this.levelsTimer !== null) {
+      window.clearInterval(this.levelsTimer);
+      this.levelsTimer = null;
+    }
   }
 
   /**
@@ -913,7 +1417,7 @@ class VoiceEngine {
         // The backoff ends early when the gateway is back (the network is): checkSeat wakes it.
         await new Promise<void>((r) => {
           // `now`: the page is back after a long hide — the first attempt without the 1 s wait.
-          const timer = setTimeout(r, now && attempt === 0 ? 0 : Math.min(1000 * 2 ** attempt, REJOIN_MAX_BACKOFF_MS));
+          const timer = setTimeout(r, now && attempt === 0 ? 0 : rejoinDelay(attempt));
           this.rejoinWake = () => {
             clearTimeout(timer);
             r();
@@ -921,8 +1425,19 @@ class VoiceEngine {
         });
         this.rejoinWake = null;
         if (gen !== this.rejoinGen) return;
+        // Native room audio never starts capture in the background (ADR-0149 §4, §7): the page coming back rejoins.
+        if (document.hidden && this.roomAudioFor(roomId, wsId)) {
+          this.roomLostAt ??= Date.now();
+          log.info('voice: page hidden, the native room rejoins when it is back');
+          return;
+        }
+        this.rejoinRefused = false;
         await this.connect(roomId, wsId, true, undefined, serverMuted);
         if (gen !== this.rejoinGen) return;
+        if (this.refusedRejoin()) {
+          log.info('voice: the server refuses the rejoin (no access / the room is gone), giving up');
+          break;
+        }
         // A Disconnected between room.connect() resolving and here is ignored by its handler
         // (a rejoin is running): a room that is not Connected now is not back — drop it, go on.
         if (this.room && this.room.state !== ConnectionState.Connected && !this.nativeAudio?.connected) {
@@ -969,6 +1484,11 @@ class VoiceEngine {
     if (!this.attempt && !v.joining && this.roomId === target.roomId && this.room?.state === ConnectionState.Connected) {
       log.warn('voice: phase «connecting» with a connected room and no attempt in flight, fixed');
       setVoice({ phase: 'connected' });
+      return;
+    }
+    // Native room audio settles its own connect (a first microphone prompt may be on screen): bounded there.
+    if (this.nativeRoom && !this.nativeRoom.connected && this.attempt?.stage === 'signal') {
+      this.watchdog.rearm();
       return;
     }
     const stage = this.attempt?.stage ?? 'none';
@@ -1032,6 +1552,11 @@ class VoiceEngine {
    * it; otherwise a reset and one rejoin with a fresh token, and if that is stuck too, out of voice.
    */
   private onReconnectStuck(ms: number): void {
+    // A native room lost while hidden waits for the page (ADR-0149 §7): nothing to reset meanwhile.
+    if (this.roomLostAt !== null && document.hidden) {
+      this.watchdog.rearm();
+      return;
+    }
     const v = useVoice.getState();
     const st = this.seatView().livekit;
     const attempt = this.attempt;
@@ -1079,6 +1604,12 @@ class VoiceEngine {
 
   /** The room a running rejoin loop is trying to get back into (a move may redirect it). */
   private rejoinRoomId: string | null = null;
+  /** The last quiet connect was refused by the server (403/404/409/410): the rejoin cycle stops. */
+  private rejoinRefused = false;
+  /** Read through a call: connect() sets the flag across awaits. */
+  private refusedRejoin(): boolean {
+    return this.rejoinRefused;
+  }
   /** Ends the rejoin loop's current backoff wait (set only while it waits). */
   private rejoinWake: (() => void) | null = null;
 
@@ -1127,7 +1658,8 @@ class VoiceEngine {
   private seatView(): SeatView {
     const v = useVoice.getState();
     const room = this.room;
-    const st = this.nativeAudio?.state?.phase === 'connected' ? ConnectionState.Connected : this.nativeAudio?.state?.phase === 'reconnecting' ? ConnectionState.Reconnecting : room && this.roomId === v.roomId ? room.state : null;
+    const np = this.nativeAudio?.state?.phase;
+    const st = np === 'connected' || np === 'interrupted' ? ConnectionState.Connected : np === 'reconnecting' ? ConnectionState.Reconnecting : room && this.roomId === v.roomId ? room.state : null;
     return {
       seatRoom: v.roomId,
       // A join / switch / leave / move in progress settles the server by itself.
@@ -1153,6 +1685,12 @@ class VoiceEngine {
         this.rejoinWake?.();
         return;
       case 'watch': {
+        // Native room audio reconnects by itself inside the seat grace and says `lost` otherwise
+        // (ADR-0149 §7): no web rejoin under it; the seat is re-asserted once it is back.
+        if (this.nativeRoom) {
+          this.seatDeferred = true;
+          return;
+        }
         // LiveKit is resuming by itself: a moment for it, then a fresh token instead. Visible, its
         // resume gets up to VISIBLE_RESUME_MS in all (a rejoin starts a new session).
         const room = this.room;
@@ -1253,6 +1791,7 @@ class VoiceEngine {
    */
   async leave(sound = true, tellServer = true): Promise<void> {
     this.clearRemoved();
+    this.roomLostAt = null;
     this.rejoinGen++;
     // A stopped rejoin loop only clears this when it is still the current one: a user intent
     // must forget it at once, or a later VOICE_MOVED would pull the user back into voice.
@@ -1626,7 +2165,21 @@ class VoiceEngine {
 
   private async doTeardown(sound: boolean, keepSeat: boolean, park = false): Promise<void> {
     this.joinSeq++;
+    const nativeRoom = this.nativeRoom;
     this.nativeAudio?.stop(); this.nativeAudio = null;
+    if (nativeRoom) {
+      this.heldWatch = null;
+      this.knownStreams = null;
+      this.rewatch = null;
+      this.clearHeldTimer();
+      this.companion.stop();
+      this.syncLevelsRefresh();
+      routeCues(null);
+      this.nativeSeatsOff?.();
+      this.nativeSeatsOff = null;
+      this.roomPrev = null;
+      this.seatDeferred = false;
+    }
     this.endPttTail();
     this.resetSpeaking();
     this.active.reset();
@@ -1665,7 +2218,7 @@ class VoiceEngine {
     annot.detach();
     if (!keepSeat) this.setCallMode(false);
     setVoice({
-      ...(keepSeat ? {} : { roomId: null, workspaceId: null, joinedAt: null, phase: 'idle' as const, serverMuted: false, recording: null, link: { ...useVoice.getState().link, attempts: 0, blockedHost: null } }),
+      ...(keepSeat ? {} : { roomId: null, workspaceId: null, joinedAt: null, phase: 'idle' as const, serverMuted: false, recording: null, audioOnly: false, link: { ...useVoice.getState().link, attempts: 0, blockedHost: null } }),
       transmitting: false,
       speaking: {},
       streams: [],
@@ -1684,6 +2237,8 @@ class VoiceEngine {
       stats: null,
     });
     // My own leave / hang-up: the heavier «disconnect» cue (others leaving play «leave»).
+    // A native-audio join has no web cue after it (ADR-0149 §5): native is releasing the session,
+    // and a WebKit <audio> now would take it; v1 skips the cue there.
     if (sound && room && !this.cuesQuiet()) playSound('disconnect');
     this.syncTray();
   }
@@ -1729,6 +2284,10 @@ class VoiceEngine {
             timer: window.setTimeout(() => {
               this.removed = null;
               if (this.room !== room) return; // a newer join / leave took over meanwhile
+              if (this.removalUndecided()) {
+                void this.rejoin();
+                return;
+              }
               toast.info(text);
               void this.leave();
             }, REMOVED_GRACE_MS),
@@ -1828,12 +2387,13 @@ class VoiceEngine {
         if (pub.source === Track.Source.ScreenShare) this.syncAnnounce();
         if (pub.source === Track.Source.ScreenShare || pub.source === Track.Source.Camera) setVoice({ trackEpoch: useVoice.getState().trackEpoch + 1 });
       })
+      // A web companion (ADR-0149 §3) or a second device is never a person coming or going.
       .on(RoomEvent.ParticipantConnected, (p) => {
-        this.peerCue(room, userIdOf(p.identity), true);
+        if (isSoleConnection(p.identity, room.remoteParticipants.keys())) this.peerCue(room, userIdOf(p.identity), true);
       })
       .on(RoomEvent.ParticipantDisconnected, (p) => {
         const gone = userIdOf(p.identity);
-        const still = [...room.remoteParticipants.values()].some((o) => userIdOf(o.identity) === gone);
+        const still = !isSoleConnection(p.identity, room.remoteParticipants.keys());
         if (!still) this.active.drop(gone);
         if (!still) this.peerCue(room, gone, false);
         for (const set of this.viewers.values()) set.delete(p.identity);
@@ -1941,6 +2501,8 @@ class VoiceEngine {
   }
 
   private subscribe(pub: RemoteTrackPublication, on: boolean): void {
+    // The companion never takes an audio kind (ADR-0149 §3): the WebView stays silent.
+    if (on && pub.kind === Track.Kind.Audio && this.room === null) return;
     const sid = pub.trackSid;
     if (this.wanted.get(sid) === on) return;
     this.wanted.set(sid, on);
@@ -1948,7 +2510,7 @@ class VoiceEngine {
   }
 
   private refreshStreams(): void {
-    const room = this.room;
+    const room = this.videoRoom;
     if (!room) return;
     const streams: RemoteStream[] = [];
     for (const p of room.remoteParticipants.values()) {
@@ -1968,12 +2530,22 @@ class VoiceEngine {
     let watching = st.watching;
     if (watching && !streams.some((s) => s.trackSid === watching)) watching = null;
     // A new stream appears: show it in the PiP tile unless the user already watches another one.
-    const fresh = streams.find((s) => !st.streams.some((o) => o.trackSid === s.trackSid));
-    if (!watching && fresh) watching = fresh.trackSid;
+    // Back after the companion went: the streams known then are not new (a dismissed one stays dismissed).
+    const known = this.knownStreams;
+    const rewatch = this.rewatch;
+    this.knownStreams = null;
+    this.rewatch = null;
+    const fresh = streams.find((s) => !st.streams.some((o) => o.trackSid === s.trackSid) && !known?.has(s.trackSid));
+    // Back from background (a companion again): the stream that was watched, if it is still on.
+    const back = this.heldWatch?.trackSid ?? rewatch;
+    const held = back && streams.some((s) => s.trackSid === back) ? back : null;
+    if (!watching && held) watching = held;
+    else if (!watching && fresh) watching = fresh.trackSid;
+    this.heldWatch = null;
     // Starting to watch (nothing watched before): the room's remembered layout, else expanded when
     // the chat is (nearly) empty — a lone PiP over an empty room looks lost (docs/09 #56). The
     // watched stream ended: back to the chat, unless cameras keep the video stage busy.
-    const stage = !watching ? (st.stage !== 'pip' && this.anyCamera() ? 'expanded' : 'pip') : st.watching ? st.stage : defaultStage(st.roomId);
+    const stage = !watching ? (st.stage !== 'pip' && this.anyCamera() ? 'expanded' : 'pip') : st.watching || held ? st.stage : defaultStage(st.roomId);
     setVoice({ streams, ...(watching !== st.watching ? { watching, stage } : {}) });
     annot.syncStreams(streams);
     this.applyWatching();
@@ -1981,13 +2553,15 @@ class VoiceEngine {
 
   /** Watched stream: video + audio; expanded stage: the others' video for previews; rest off. */
   private applyWatching(): void {
-    const room = this.room;
+    // A native-audio join: the watched stream's own audio is native's (the `watched` control).
+    if (this.nativeRoom) this.pushNativeControls();
+    const room = this.videoRoom;
     if (!room) return;
     const { watching, stage } = useVoice.getState();
     const previews = watching !== null && stage === 'expanded';
     for (const p of room.remoteParticipants.values()) {
       const video = p.getTrackPublication(Track.Source.ScreenShare);
-      const audio = p.getTrackPublication(Track.Source.ScreenShareAudio);
+      const audio = room === this.room ? p.getTrackPublication(Track.Source.ScreenShareAudio) : undefined;
       const on = !!video && video.trackSid === watching;
       if (video) this.subscribe(video, on || previews);
       if (audio) this.subscribe(audio, on && !useVoice.getState().deafened);
@@ -2000,6 +2574,8 @@ class VoiceEngine {
   }
 
   watch(trackSid: string | null): void {
+    this.heldWatch = null;
+    this.rewatch = null;
     setVoice({ watching: trackSid, ...(trackSid ? {} : { stage: 'pip' }) });
     this.applyWatching();
   }
@@ -2046,7 +2622,7 @@ class VoiceEngine {
   }
 
   private remotePub(trackSid: string): RemoteTrackPublication | undefined {
-    for (const p of this.room?.remoteParticipants.values() ?? []) {
+    for (const p of this.videoRoom?.remoteParticipants.values() ?? []) {
       const pub = p.getTrackPublicationBySid(trackSid);
       if (pub) return pub;
     }
@@ -2061,7 +2637,7 @@ class VoiceEngine {
   }
 
   remoteVideo(trackSid: string): RemoteVideoTrack | null {
-    for (const p of this.room?.remoteParticipants.values() ?? []) {
+    for (const p of this.videoRoom?.remoteParticipants.values() ?? []) {
       const t = p.getTrackPublicationBySid(trackSid)?.track;
       if (t && t.kind === Track.Kind.Video) return t as RemoteVideoTrack;
     }
@@ -2078,7 +2654,7 @@ class VoiceEngine {
     // the speaking hold. VAD keeps the hold: the gate flaps between words.
     const instantOff = me && this.micMode() === 'ptt' && !this.selfSpeaking ? new Set([me]) : undefined;
     const remote = [...this.remoteSpeakers, ...this.levelSpeakers.identities()];
-    this.speakers.update(speakingUserIds(remote, local, { userId: me, on: this.selfSpeaking && this.room !== null }), instantOff);
+    this.speakers.update(speakingUserIds(remote, local, { userId: me, on: this.selfSpeaking && (this.room !== null || this.nativeRoom !== null) }), instantOff);
   }
 
   private startLevelSpeaking(): void {
@@ -2137,7 +2713,7 @@ class VoiceEngine {
   private onAutoMute(sec: Exclude<AutoMuteSec, 0>): void {
     if (this.selfSpeaking || !this.autoMuteArmed()) return;
     log.info(`voice: auto-mute after ${sec} s of silence`);
-    this.toggleMute();
+    this.toggleMute(false);
     const room = this.room;
     useToasts.getState().push('info', t(AUTO_MUTE_TOAST[sec]), {
       label: t('autoMute.unmute'),
@@ -2177,13 +2753,14 @@ class VoiceEngine {
 
   /** Remote webcams of the room (a camera muted by the server counts as off). */
   private refreshCameras(): void {
-    const room = this.room;
+    const room = this.videoRoom;
     if (!room) return;
     const cameras: RemoteCamera[] = [];
     for (const p of room.remoteParticipants.values()) {
       const pub = p.getTrackPublication(Track.Source.Camera);
       const userId = userIdOf(p.identity);
-      // My own camera from another device (web + desktop) is not a tile here (review L9).
+      // My own camera from another device (web + desktop) is not a tile here (review L9); on a
+      // companion my native identity is in the room too, and it is me (ADR-0149 §3).
       if (userId === this.myId()) continue;
       if (pub?.trackSid && !pub.isMuted && !cameras.some((c) => c.userId === userId)) cameras.push({ trackSid: pub.trackSid, identity: p.identity, userId });
     }
@@ -2289,7 +2866,7 @@ class VoiceEngine {
 
   private inRoom(userId: string): boolean {
     if (userId === useSession.getState().me?.user?.id) return true;
-    for (const p of this.room?.remoteParticipants.values() ?? []) if (userIdOf(p.identity) === userId) return true;
+    for (const p of this.videoRoom?.remoteParticipants.values() ?? []) if (userIdOf(p.identity) === userId) return true;
     return false;
   }
 
@@ -2316,7 +2893,7 @@ class VoiceEngine {
    * to the tile size and pauses cameras that are not on screen.
    */
   private applyCameras(): void {
-    const room = this.room;
+    const room = this.videoRoom;
     if (!room) return;
     const p = prefs();
     const shown = this.shownCams.ids();
@@ -2409,7 +2986,7 @@ class VoiceEngine {
   }
 
   private applyVolumes(): void {
-    this.nativeAudio?.control(this.nativeControls());
+    this.pushNativeControls();
     this.audioOut.applyAll();
   }
 
@@ -2459,7 +3036,14 @@ class VoiceEngine {
 
   /** Mic test in settings (works outside a call too). */
   async startMicTest(): Promise<void> {
-    if (this.nativeAudio) return; // Native CallKit audio is the sole capture owner.
+    if (this.nativeAudio) {
+      // The native owner is the sole capture: a room's mic test reads native levels (ADR-0149 §5), a CallKit call has none.
+      if (this.nativeRoom) {
+        this.micTesting = true;
+        this.pushNativeControls();
+      }
+      return;
+    }
     this.micTesting = true;
     await this.ensureMic();
     this.applyDenoise();
@@ -2469,6 +3053,7 @@ class VoiceEngine {
     this.micTesting = false;
     if (!this.room) this.stopMicPipeline();
     this.applyDenoise();
+    this.pushNativeControls();
   }
 
   private meters = 0;
@@ -2479,6 +3064,7 @@ class VoiceEngine {
     // The store carries the level only while a meter shows it (onMicReport): start from now.
     if (on) setVoice({ levelDb: this.lastMicDb, gateOpen: this.gate.open });
     this.applyDenoise();
+    if (this.nativeRoom) this.pushNativeControls();
   }
 
   /** A mic meter is on screen, or the mic test runs (its VAD readout). */
@@ -2737,6 +3323,12 @@ class VoiceEngine {
    * and the echo judgement follow at once.
    */
   private onMusicianMode(on: boolean): void {
+    // Not in v1 on a native-audio join (ADR-0149 §5): straight back off, with the reason.
+    if (on && this.nativeRoom) {
+      usePrefs.getState().setPrefs({ musicianMode: false });
+      toast.info(t('music.audioOnly'));
+      return;
+    }
     if (this.mic) void this.restartMic();
     this.applyMicTier();
     this.resetEcho(); // no AEC now (or again): the acoustic path changed
@@ -2751,6 +3343,7 @@ class VoiceEngine {
    * published (listen-only, muted before the first publish): the next publish reads the tier.
    */
   private applyMicTier(): void {
+    if (this.nativeRoom) this.pushNativeControls();
     void this.queueMic(async () => {
       const room = this.room;
       const sender = this.micTrack?.sender;
@@ -2849,7 +3442,7 @@ class VoiceEngine {
    *    The track stays published, so opening is instant.
    */
   private applyTransmit(): void {
-    if (this.nativeAudio) { this.autoMute.cancel(); this.nativeAudio.control(this.nativeControls()); return; }
+    if (this.nativeAudio) { this.autoMute.cancel(); this.pushNativeControls(); return; }
     const t = this.micTrack;
     const d = this.decision();
     // Closing is the latency-critical edge (PTT key-up): silence the sender first, synchronously —
@@ -3013,6 +3606,21 @@ class VoiceEngine {
   }
 
   /**
+   * LiveKit removed this device and no VOICE_DISCONNECTED explained it within the grace. While the
+   * server is out of reach — the gateway is reconnecting (its session was closed past the
+   * identity grace, ADR-0166) or the API answers with outages — the removal is the identity
+   * sweep failing closed without a verdict, not a moderator: the device rejoins by itself and
+   * /join decides. With the server reachable it is a kick, as before.
+   */
+  private removalUndecided(): boolean {
+    const s = useSession.getState();
+    const gatewayDown = s.gateway === 'reconnecting' || s.gateway === 'connecting' || s.gateway === 'resuming';
+    if (!gatewayDown && !s.serverDegraded) return false;
+    log.info(`voice: removed by LiveKit while the server is out of reach (gateway ${s.gateway}, api ${s.serverDegraded ? 'down' : 'up'}): no verdict, rejoining`);
+    return true;
+  }
+
+  /**
    * Gateway VOICE_DISCONNECTED (docs/05 «Несколько устройств»): the server took this device out
    * of voice — the user joined from another device. Out of voice at once, without a reconnect
    * attempt (a rejoin would take the other device out in turn), the island back to idle, a toast
@@ -3034,6 +3642,14 @@ class VoiceEngine {
     const here = removedHere || this.roomId === ev.roomId || v.roomId === ev.roomId || v.joining?.roomId === ev.roomId || this.rejoinRoomId === ev.roomId;
     if (!here) return false; // already elsewhere by my own newer intent
     this.clearRemoved();
+    if (ev.reason === VoiceDisconnectReason.ACCESS_UNDECIDED) {
+      // The server could not verify access for its whole grace (a database stall, ADR-0166) and
+      // took the device out without a verdict: back into the same room by itself, muted as it
+      // was; /join decides once the server answers (a refusal ends the cycle).
+      log.info('voice: taken out by the server without a verdict (its database stalled), rejoining');
+      if (this.rejoinRoomId !== ev.roomId) void this.rejoin(ev.roomId);
+      return true;
+    }
     log.info('voice: taken out by the server, the user joined from another device');
     this.takenOverRoom = ev.roomId;
     if (ev.reason === VoiceDisconnectReason.OTHER_DEVICE) toast.info(t('mediaErr.voice.otherDevice'));
@@ -3127,6 +3743,16 @@ class VoiceEngine {
       this.parkedMoved(toRoomId, workspaceId, false);
       return;
     }
+    // Native room audio follows an SFU move by itself (LiveKit Swift); its state names no room to check it by.
+    if (this.nativeRoom && this.roomId === fromRoomId && fromRoomId !== toRoomId) {
+      this.roomId = toRoomId;
+      setVoice({ roomId: toRoomId, workspaceId });
+      playSound('moved');
+      // The server took the companion out of the old room: a new one for the new room.
+      this.syncCompanion();
+      this.syncTray();
+      return;
+    }
     if (!this.room || this.roomId !== fromRoomId || fromRoomId === toRoomId) return;
     this.roomId = toRoomId;
     setVoice({ roomId: toRoomId, workspaceId });
@@ -3181,6 +3807,8 @@ class VoiceEngine {
     if (!room || room.state !== ConnectionState.Connected) return false;
     const packet = dtmfPacket(key, line);
     if (!packet) return false;
+    // livekit-client bundles its own @livekit/protocol copy, so its DataPacket enums are distinct types from ours.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-assignment
     room.engine.sendDataPacket(packet, RELIABLE).catch((err: unknown) => log.warn('voice: dtmf failed', err));
     return true;
   }
@@ -3196,7 +3824,11 @@ class VoiceEngine {
     return true;
   }
 
-  toggleMute(): void {
+  /**
+   * `user`: the user's own click (button, hotkey, tray, system call controls) — remembered as their
+   * choice for the next session on any device (ADR-0168). The auto-mute is not their choice.
+   */
+  toggleMute(user = true): void {
     if (this.seatElsewhere()) return;
     const v = useVoice.getState();
     // A moderator mute (VoiceState.server_muted) can't be lifted by the user: the server removed
@@ -3210,6 +3842,7 @@ class VoiceEngine {
     setVoice(toggleMute(v));
     playSound(useVoice.getState().muted ? 'mute' : v.deafened ? 'undeafen' : 'unmute');
     this.afterSelfChange();
+    if (user) rememberVoiceMute();
   }
 
   toggleDeafen(): void {
@@ -3217,6 +3850,7 @@ class VoiceEngine {
     setVoice(toggleDeafen(useVoice.getState()));
     playSound(useVoice.getState().deafened ? 'deafen' : 'undeafen');
     this.afterSelfChange();
+    rememberVoiceMute();
   }
 
   private afterSelfChange(): void {
@@ -3286,6 +3920,12 @@ class VoiceEngine {
     // Back from a phone call: the flag must go (the PATCH of the resume may have been lost).
     if (s.onPhone && this.room && s.roomId === this.roomId) {
       this.pushSelfState({ onPhone: false });
+      return;
+    }
+    // Native room audio: the system call is the source of the flag (ADR-0149 §6).
+    const phoneCall = this.nativeRoom?.state?.phoneCall;
+    if (phoneCall !== undefined && s.roomId === this.roomId && (s.onPhone ?? false) !== phoneCall) {
+      this.pushSelfState({ onPhone: phoneCall });
       return;
     }
     if ((!this.room && !this.nativeAudio) || s.roomId !== this.roomId) {
@@ -3429,8 +4069,8 @@ class VoiceEngine {
   /** The server updates our LiveKit grant after /stream/request; wait until it arrives. */
   private async waitForScreenGrant(room: Room): Promise<void> {
     const ok = (): boolean => {
-      const sources = room.localParticipant.permissions?.canPublishSources ?? [];
-      return sources.length === 0 || sources.includes(3 /* SCREEN_SHARE */);
+      const sources: readonly number[] = room.localParticipant.permissions?.canPublishSources ?? [];
+      return sources.length === 0 || sources.includes(3 /* TrackSource.SCREEN_SHARE */);
     };
     if (ok()) return;
     await new Promise<void>((resolve) => {
@@ -3470,7 +4110,7 @@ class VoiceEngine {
    * pop-out) once its video is subscribed — preview tiles in the strip don't count as watching.
    */
   private syncAnnounce(): void {
-    const room = this.room;
+    const room = this.videoRoom;
     if (!room) return;
     const watching = useVoice.getState().watching;
     let next: { owner: string; sid: string } | null = null;
@@ -3488,7 +4128,7 @@ class VoiceEngine {
   }
 
   private announceWatch(owner: string, trackSid: string, on: boolean): void {
-    const room = this.room;
+    const room = this.videoRoom;
     if (!room) return;
     const data = new TextEncoder().encode(JSON.stringify({ sid: trackSid, on }));
     void room.localParticipant.publishData(data, { reliable: true, topic: WATCH_TOPIC, destinationIdentities: [owner] }).catch(() => undefined);
@@ -3564,6 +4204,12 @@ class VoiceEngine {
 
   private onVisibility(): void {
     const now = Date.now();
+    // Levels only for a visible page (ADR-0149 §5); the companion video only in foreground (§3).
+    if (this.nativeRoom && this.meterShown()) this.pushNativeControls();
+    if (this.nativeRoom) {
+      this.syncCompanion();
+      this.syncHeldTimer();
+    }
     if (document.hidden) {
       if (this.hiddenAt !== null) return;
       this.hiddenAt = now;
@@ -3579,6 +4225,11 @@ class VoiceEngine {
     // A new mic episode: whatever held the mic may have let it go.
     this.micResumes = 0;
     this.micRestarts = 0;
+    // A native-owned join: none of the web recovery (#260) — native resumes itself; a lost one is rejoined.
+    if (this.nativeRoom || this.roomLostAt !== null) {
+      this.onNativeVisible();
+      return;
+    }
     this.recoverLink(hiddenMs, false);
     this.afterLinkBack('visible');
   }
@@ -3591,7 +4242,7 @@ class VoiceEngine {
   private recoverLink(hiddenMs: number, settled: boolean): void {
     if (this.settleTimer !== null) window.clearTimeout(this.settleTimer);
     this.settleTimer = null;
-    if (!this.hasSeat()) return;
+    if (!this.hasSeat() || this.nativeRoom) return;
     const livekit = this.seatView().livekit;
     switch (afterVisible({ hiddenMs, livekit, loop: this.rejoinRoomId !== null, waiting: this.rejoinWake !== null, settled })) {
       case 'ok':

@@ -1,5 +1,5 @@
 import * as Popover from '../../components/radix/popover';
-import { type BoardStatus, type EstimateScale, type TaskPriority } from '@calaba/protocol';
+import { type BoardStatus, type EstimateScale, TaskPriority } from '@calaba/protocol';
 import { Check, CircleSlash, Diamond, Plus, Send, UserRound } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -21,10 +21,12 @@ import { myUserId } from '../../stores/session';
 import { useUi } from '../../stores/ui';
 import { useFormerInfo, useResolveUnknown, useWorkspaces } from '../../stores/workspaces';
 import { nameOf } from '../people/members';
+import { searchOf } from '../people/memberPickItems';
 import { MonthPicker } from '../calendar/MonthPicker';
 import { useToday } from '../calendar/MiniCalendar';
 import { doneType } from './model';
 import { Dot, PALETTE, PRIORITIES, PRIORITY_LABEL, PriorityIcon, StatusIcon, colorCss, formatDue } from './visuals';
+import { asEnum } from '../../lib/enums';
 
 /**
  * Property menus of a task (ADR-0042 §5, as in Linear): status, priority, assignees, labels,
@@ -145,7 +147,7 @@ export function ChoiceMenu({
                 {c.icon ? <span className="grid size-5 shrink-0 place-items-center">{c.icon}</span> : null}
                 <span className="flex min-w-0 flex-1 flex-col" {...(c.title ? { title: c.title } : {})}>
                   <span className="truncate">{c.label}</span>
-                  {c.hint ? <span className={cx('truncate text-caption', active ? 'opacity-75' : 'text-muted')}>{c.hint}</span> : null}
+                  {c.hint || c.matchedBy ? <span className={cx('truncate text-caption', active ? 'opacity-75' : 'text-muted')}>{c.hint || c.matchedBy}</span> : null}
                 </span>
                 {c.caption ? <span className={cx('shrink-0 text-caption', active ? 'opacity-75' : 'text-muted')}>{c.caption}</span> : null}
                 {c.note ? <span className={cx('shrink-0 text-caption tabular-nums', active ? 'opacity-75' : 'text-muted')}>{c.note}</span> : null}
@@ -223,7 +225,7 @@ export function PriorityMenu({ value, onPick, ...shell }: MenuShell & { value: T
     ],
     [value],
   );
-  return <ChoiceMenu {...shell} groups={groups} onPick={(c) => onPick(Number(c.id))} placeholder={t('boards.menu.priority')} label={t('boards.f.priority')} digits testId="priority-menu" />;
+  return <ChoiceMenu {...shell} groups={groups} onPick={(c) => onPick(asEnum(TaskPriority, Number(c.id)))} placeholder={t('boards.menu.priority')} label={t('boards.f.priority')} digits testId="priority-menu" />;
 }
 
 // ------------------------------------------------------------------ assignees
@@ -271,7 +273,7 @@ export function AssigneeMenu({
     const me = myUserId();
     const person = (id: string, name: string, fileId: string): Choice => ({
       id,
-      search: id === me ? [name, t('people.you'), t('boards.me')] : [name],
+      ...searchOf(members, id, id === me ? [t('people.you'), t('boards.me')] : []),
       label: name,
       icon: <Avatar userId={id} name={name} {...(fileId ? { fileId } : {})} size={20} />,
       checked: value.includes(id),
@@ -346,7 +348,7 @@ export function ApproverMenu({
       return {
         ...acc,
         id,
-        search: [name],
+        ...searchOf(members, id),
         label: name,
         icon: <Avatar userId={id} name={name} {...(fileId ? { fileId } : {})} size={20} />,
         checked: on,
@@ -415,7 +417,7 @@ export function WatcherMenu({
       return {
         ...accessChoice(access.get(id)),
         id,
-        search: [name],
+        ...searchOf(members, id),
         label: name,
         icon: <Avatar userId={id} name={name} {...(fileId ? { fileId } : {})} size={20} />,
         checked: on,

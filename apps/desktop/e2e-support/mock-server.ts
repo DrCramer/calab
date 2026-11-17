@@ -89,7 +89,7 @@ import {
   type Task,
   type TaskActivity,
   type TaskFilter,
-  type TaskRelationKind,
+  TaskRelationKind,
 } from '@calaba/protocol';
 import { BoardError, BoardsMock, CREATE_TASKS as CREATE_TASKS_BIT, MANAGE_BOARD } from './mock-boards';
 import { DiskError, DiskMock } from './mock-disk';
@@ -121,6 +121,8 @@ import {
   PublicCanvasSchema,
   CreateDiskFolderRequestSchema,
   CreateDiskLinkRequestSchema,
+  UnlockDiskLinkRequestSchema,
+  UpdateDiskLinkRequestSchema,
   DISK_BITS,
   OfficeConfigResponseSchema,
   OfficeCapabilitiesResponseSchema,
@@ -151,6 +153,8 @@ import {
   EmptyWikiTrashResponseSchema,
   ListWikiPagesResponseSchema,
   PublicWikiPageSchema,
+  PublicDiskFileSchema,
+  PublicDiskFolderSchema,
   UpdateWikiPageRequestSchema,
   UpdateWikiPermissionsRequestSchema,
   WIKI_BITS,
@@ -400,6 +404,7 @@ import {
   UpdateRoomInviteResponseSchema,
   RoomAdmissionStatus,
   JoinVoiceResponseSchema,
+  VoiceCompanionResponseSchema,
   SipInboundAcceptResponseSchema,
   TransferSipCallRequestSchema,
   JoinWorkspaceResponseSchema,
@@ -618,6 +623,7 @@ import {
 } from './mock-pbx';
 import { advanceCall, listJournal, mayReadCall, missedCount, seedJournal, type JournalRow } from './mock-journal';
 import { checkContact, exportCsv, importCsv, listContacts, makeContact, numberOwner } from './mock-contacts';
+import { asEnum } from '../src/renderer/lib/enums';
 import { normalizeContactNumber } from '../src/renderer/lib/phoneNumber';
 import { MOCK_SIP_RATE_NUMBER, MOCK_SIP_REFUSED_HOST, MOCK_SIP_UNREACHABLE_HOST, defaultSipSettings, isLiveSipStatus, normalizeCallee, numberAllowed, sipSettingsError } from './mock-sip';
 import {
@@ -792,6 +798,10 @@ export interface MockServer {
   addSound(workspaceId: string, name: string, emoji: string): string;
   /** ADR-0036: `userId` pressed `soundId` (`builtin:<id>` or a workspace sound) in `roomId` → SOUND_PLAY to the room's call. */
   playSound(roomId: string, userId: string, soundId: string): void;
+  /** The LiveKit URL the join responses carry (ADR-0149 mock host: native room audio accepts only `wss://`). */
+  setLivekitUrl(url: string): void;
+  /** `POST /api/rooms/:id/voice/companion` (ADR-0149 §3): `token` = the video-only token (default), `refused` = 403 (the companion gives up). */
+  setCompanion(mode: 'token' | 'refused'): void;
   /** ADR-0025: connects the workspace to GPTunneL as if an admin paired it (`null` = disconnect). */
   setGptunnel(workspaceId: string, pairedBy: string | null): void;
   /**
@@ -1056,6 +1066,8 @@ export async function startMockServer(opts: MockServerOptions = {}): Promise<Moc
     addBackground: (w, name, colors) => impl.addBackground(w, name, colors),
     addSound: (w, name, emoji) => impl.addSound(w, name, emoji),
     playSound: (roomId, u, soundId) => impl.playSound(roomId, u, soundId),
+    setLivekitUrl: (url) => impl.setLivekitUrl(url),
+    setCompanion: (mode) => impl.setCompanion(mode),
     stopCamera: (u, r) => impl.stopCamera(u, r),
     setEmailState: (u, st) => impl.setEmailState(u, st),
     setRecording: (roomId, rec) => impl.setRecording(roomId, rec),
@@ -1199,6 +1211,9 @@ const MOCK_MAX_FILE_MB = 1024;
 const MOCK_MAX_FILE_CAP_MB = 4096;
 /** A Disk upload whose name starts with this answers 429 (Retry-After 600 s). */
 export const MOCK_UPLOAD_RATE_LIMITED = 'rate-limited';
+/** A chat attachment named «proxy-413…» gets the HTML 413 of nginx in front of the API (CBF-191). */
+export const MOCK_UPLOAD_PROXY_413 = 'proxy-413';
+const NGINX_413 = '<html><head><title>413 Request Entity Too Large</title></head><body><center><h1>413 Request Entity Too Large</h1></center><hr><center>nginx</center></body></html>';
 
 /** 429 with Retry-After (seconds), like the server's limits. */
 const tooMany = (what: string, seconds: number): HttpError =>
@@ -1615,6 +1630,7 @@ class MockImpl {
     this.canvas = this.newCanvas();
     this.seedCanvas();
     this.voiceSessions.clear();
+    this.companionMode = 'token';
     this.calls.clear();
     this.userCall.clear();
     this.callSeq = 0;
@@ -2091,6 +2107,7 @@ class MockImpl {
           sessionId: conn.gatewaySessionId,
           me: this.me(u),
           planContact: MOCK_PLAN_CONTACT,
+          maxFileMb: MOCK_MAX_FILE_MB,
           workspaces: wsIds.map((w) => this.withAdmissions(this.snapshot(w, u.user.id), u.user.id)),
           pendingAdmissions: this.ownAdmissions(u.user.id),
           // Every visible room (server contract): never read → empty marker.
@@ -2597,6 +2614,16 @@ class MockImpl {
     this.state.sounds.set(sound.id, sound);
     this.toWorkspace(workspaceId, { event: { case: 'soundCreate', value: { sound } } });
     return sound.id;
+  }
+
+  setLivekitUrl(url: string): void {
+    this.lk.url = url;
+  }
+
+  private companionMode: 'token' | 'refused' = 'token';
+
+  setCompanion(mode: 'token' | 'refused'): void {
+    this.companionMode = mode;
   }
 
   playSound(roomId: string, userId: string, soundId: string): void {
@@ -3733,6 +3760,7 @@ class MockImpl {
         createdBy: me,
         maxUses: b.maxUses,
         uses: 0,
+        roleIds: b.roleIds,
         ...(b.expiresInSeconds ? { expiresAt: timestampFromMs(timestampMs(at) + b.expiresInSeconds * 1000) } : {}),
         createdAt: at,
       });
@@ -4848,13 +4876,14 @@ class MockImpl {
     this.route('POST', '/api/me/inbox/dismiss', (c) => {
       const me = this.uid(c);
       const b = parseBody(c, InboxDismissSchema);
-      if (!b.messageIds.length && !b.noticeIds.length) throw invalid('messageIds', 'nothing to dismiss');
+      if (!b.messageIds.length && !b.noticeIds.length && !b.taskIds.length) throw invalid('messageIds', 'nothing to dismiss');
       if (b.messageIds.length > 100 || b.noticeIds.length > 100) throw invalid('messageIds', 'too many ids');
       const set = s().dismissedMentions.get(me) ?? new Set<string>();
       for (const id of b.messageIds) set.add(id);
       s().dismissedMentions.set(me, set);
       this.boards.dismissNotices(me, b.noticeIds);
-      this.toUser(me, { event: { case: 'inboxDismiss', value: { messageIds: b.messageIds, noticeIds: b.noticeIds } } });
+      this.boards.dismissTasks(me, b.taskIds);
+      this.toUser(me, { event: { case: 'inboxDismiss', value: { messageIds: b.messageIds, noticeIds: b.noticeIds, taskIds: b.taskIds } } });
       noContent(c.res);
     });
 
@@ -5013,6 +5042,10 @@ class MockImpl {
       const me = this.uid(c);
       const { ws } = this.workspaceFor(c.params[0] ?? '', me);
       const f = await parseMultipartFile(c);
+      if (f.name.startsWith(MOCK_UPLOAD_PROXY_413)) {
+        send(c.res, 413, NGINX_413, 'text/html');
+        return;
+      }
       if (f.bytes.length > 50 * 1024 * 1024) throw new HttpError(413, ErrorCode.FILE_TOO_LARGE, 'file too large');
       // Quota = min(workspace quota, plan storage_mb) (ADR-0024).
       const planBytes = this.planLimits(ws.id).storageMb * 1024n * 1024n;
@@ -5701,6 +5734,18 @@ class MockImpl {
       });
     });
 
+    // The web companion of a native-audio join (ADR-0149 §3): a subscribe-only token for `<user>:<session>:web`, only with this device's seat (409 without).
+    this.route('POST', '/api/rooms/:id/voice/companion', async (c) => {
+      const { user, sessionId } = this.auth(c);
+      const me = user.user.id;
+      const room = this.roomFor(c.params[0] ?? '', me);
+      if (this.companionMode === 'refused') throw forbidden('companion refused');
+      if (s().voiceStates.get(me)?.roomId !== room.id || this.voiceSessions.get(me) !== sessionId) throw conflict('no seat in this room');
+      const at = new AccessToken(this.lk.key, this.lk.secret, { identity: `${me}:${sessionId}:web`, name: user.user.displayName, ttl: '10m' });
+      at.addGrant({ roomJoin: true, room: `${livekitRoomPrefix()}${room.id}`, canPublish: false, canSubscribe: true, canPublishData: true });
+      sendMsg(c.res, 200, VoiceCompanionResponseSchema, { url: this.lk.url, token: await at.toJwt() });
+    });
+
     // Leave (docs/05): this device's state in the room goes at once, pending or connected.
     this.route('POST', '/api/rooms/:id/voice/leave', (c) => {
       const { user, sessionId } = this.auth(c);
@@ -5732,7 +5777,7 @@ class MockImpl {
       const b = parseBody(c, RequestCameraRequestSchema);
       const pl = this.planLimits(room.workspaceId);
       const minNz = (x: number, y: number): number => (x && y ? Math.min(x, y) : x || y);
-      sendMsg(c.res, 200, RequestCameraResponseSchema, { preset: minNz(b.preset, pl.cameraMaxPreset), fps: minNz(b.fps, pl.cameraMaxFps) });
+      sendMsg(c.res, 200, RequestCameraResponseSchema, { preset: asEnum(ScreenSharePreset, minNz(b.preset, pl.cameraMaxPreset)), fps: minNz(b.fps, pl.cameraMaxFps) });
     });
     this.route('POST', '/api/rooms/:id/camera/stop', (c) => {
       const me = this.uid(c);
@@ -5749,7 +5794,7 @@ class MockImpl {
         const b = parseBody(c, RequestStreamRequestSchema);
         const preset = b.preset === ScreenSharePreset.UNSPECIFIED || compareScreenSharePresets(b.preset, ScreenSharePreset.H1080) > 0 ? ScreenSharePreset.H1080 : b.preset;
         const own = Object.entries(SCREEN_SHARE_PRESETS).find(([k]) => Number(k) === preset)?.[1].fps ?? 0;
-        sendMsg(c.res, 200, RequestStreamResponseSchema, { preset, fps: b.fps > 0 ? Math.min(b.fps, own) : own });
+        sendMsg(c.res, 200, RequestStreamResponseSchema, { preset: asEnum(ScreenSharePreset, preset), fps: b.fps > 0 ? Math.min(b.fps, own) : own });
         return;
       }
       this.requireRoomPerm(room, me, STREAM);
@@ -5761,7 +5806,7 @@ class MockImpl {
       const own = Object.entries(SCREEN_SHARE_PRESETS).find(([k]) => Number(k) === preset)?.[1].fps ?? 0;
       const planFps = this.planLimits(room.workspaceId).streamMaxFps;
       const fps = [b.fps, planFps].filter((x) => x > 0).reduce((a, x) => Math.min(a, x), own);
-      sendMsg(c.res, 200, RequestStreamResponseSchema, { preset, fps });
+      sendMsg(c.res, 200, RequestStreamResponseSchema, { preset: asEnum(ScreenSharePreset, preset), fps });
     });
 
     this.route('PATCH', '/api/voice/self', (c) => {
@@ -6277,6 +6322,7 @@ class MockImpl {
       createdAt: i.createdAt,
       expiresAt: i.expiresAt,
       lastSentAt: i.lastSentAt,
+      roleIds: i.roleIds ?? [],
     };
   }
 
@@ -7872,6 +7918,7 @@ class MockImpl {
         expiresAt: timestampFromMs(timestampMs(at) + 7 * 86400_000),
         lastSentAt: at,
         lastSentMs: Date.now(),
+        roleIds: b.roleIds,
       };
       s().emailInvites.set(id, rec);
       sendMsg(c.res, 201, CreateEmailInviteResponseSchema, { invite: this.emailInviteOut(rec) });
@@ -8893,7 +8940,7 @@ class MockImpl {
       sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setRelation(c.params[0] ?? '', me, r.relatedId, r.kind, true).task.id, me, true));
     });
     this.boardRoute('DELETE', '/api/tasks/:id/relations', (c, me) => {
-      const kind: TaskRelationKind = Number(q(c, 'kind'));
+      const kind = asEnum(TaskRelationKind, Number(q(c, 'kind')));
       sendMsg(c.res, 200, TaskResponseSchema, taskRes(b().setRelation(c.params[0] ?? '', me, q(c, 'related_id'), kind, false).task.id, me, true));
     });
     // ADR-0076: watchers.
@@ -8923,6 +8970,9 @@ class MockImpl {
       if (q(c, 'after')) throw invalid('after', 'only before is supported');
       const limit = Math.min(100, Math.max(1, Number(q(c, 'limit') || '50') || 50));
       sendMsg(c.res, 200, ListTaskNoticesResponseSchema, b().notices(me, q(c, 'before'), limit));
+    });
+    this.boardRoute('GET', '/api/workspaces/:id/recent-tasks', (c, me) => {
+      sendMsg(c.res, 200, ListTaskNoticesResponseSchema, b().recentTasks(c.params[0] ?? '', me));
     });
     this.boardRoute('GET', '/api/me/tasks', (c, me) => {
       sendMsg(c.res, 200, MyTasksResponseSchema, { tasks: b().mine(q(c, 'workspace_id'), me, q(c, 'scope') || 'assigned', q(c, 'open') === '1'), nextCursor: '' });
@@ -9160,6 +9210,84 @@ class MockImpl {
         mode: edit ? OfficeMode.EDIT : OfficeMode.VIEW, key, format, itemId: it?.id ?? '', fileId: it?.file?.id ?? fileId,
       });
     });
+    // Public Disk links (ADR-0094 §3, ADR-0165): anonymous, the server's contract (internal/disk/public*.go).
+    // A protected link (ADR-0167) answers 403 LINK_PASSWORD_REQUIRED on every route but the meta
+    // (`open` = false) and the unlock until the cookie of POST …/unlock comes along.
+    const pubDisk = (h: (c: Ctx) => void, open = true): ((c: Ctx) => void) => (c) => {
+      try {
+        if (open && !d().linkUnlocked(p0(c), cookies(c.req)['calab_dl'])) throw new HttpError(403, ErrorCode.LINK_PASSWORD_REQUIRED, 'the link needs its password');
+        h(c);
+      } catch (e) {
+        if (e instanceof DiskError) throw new HttpError(e.status, e.code, e.message, e.field);
+        throw e;
+      }
+    };
+    const pubFile = (it: DiskItem) => {
+      const f = it.file;
+      return { id: it.id, name: it.name, kind: it.kind, size: f?.size ?? 0n, mime: f?.mime ?? '', width: f?.width ?? 0, height: f?.height ?? 0, hasThumbnail: !!f?.thumbnailUrl, updatedAt: it.updatedAt, office: this.officeEnabled && !!officeOf(it.name) };
+    };
+    const pubBytes = (c: Ctx, it: DiskItem, thumb: boolean): void => {
+      const f = this.state.files.get(it.file?.id ?? '');
+      const bytes = thumb ? f?.thumbnail?.bytes : f?.bytes;
+      if (!f || !bytes) throw notFound();
+      const viewOnly = d().publicLink(p0(c)).link.viewOnly;
+      // «Без скачивания»: only what the page views in the browser, inline (internal/disk viewable).
+      if (!thumb && viewOnly && !/^(image|video|audio|text)\/|^application\/(pdf|json|xml)$/.test(f.meta.mime) && !/\.(md|markdown|csv|tsv|txt|log|json|ya?ml)$/i.test(it.name))
+        throw new HttpError(403, ErrorCode.FORBIDDEN, 'the link is view-only');
+      send(c.res, 200, bytes, thumb ? (f.thumbnail?.mime ?? 'image/png') : f.meta.mime, {
+        'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow', ...(viewOnly && !thumb ? { 'Content-Disposition': 'inline' } : {}),
+      });
+    };
+    this.route('POST', '/api/public/disk/:code/unlock', pubDisk((c) => {
+      const b = parseBody(c, UnlockDiskLinkRequestSchema);
+      const v = d().unlockLink(p0(c), b.password);
+      if (v) c.res.setHeader('Set-Cookie', `calab_dl=${v}; Path=/api/public/disk/${p0(c)}; HttpOnly; SameSite=Lax; Max-Age=43200`);
+      noContent(c.res);
+    }, false));
+    this.route('GET', '/api/public/disk/:code', pubDisk((c) => {
+      if (!d().linkUnlocked(p0(c), cookies(c.req)['calab_dl'])) {
+        sendMsg(c.res, 200, PublicDiskFileSchema, { locked: true });
+        return;
+      }
+      const { link, item } = d().publicLink(p0(c));
+      const base = { name: item.name, id: item.id, kind: item.kind, viewOnly: link.viewOnly, ...(link.expiresAt ? { expiresAt: link.expiresAt } : {}) };
+      const f = pubFile(item);
+      sendMsg(c.res, 200, PublicDiskFileSchema, item.kind === DiskItemKind.FOLDER ? base : { ...base, size: f.size, mime: f.mime, width: f.width, height: f.height, hasThumbnail: f.hasThumbnail, office: f.office });
+    }, false));
+    this.route('GET', '/api/public/disk/:code/content', pubDisk((c) => pubBytes(c, d().publicFileItem(p0(c), ''), false)));
+    this.route('GET', '/api/public/disk/:code/thumbnail', pubDisk((c) => pubBytes(c, d().publicFileItem(p0(c), ''), true)));
+    this.route('GET', '/api/public/disk/:code/items', pubDisk((c) => {
+      const f = d().publicFolder(p0(c), q(c, 'parent'));
+      const { link } = d().publicLink(p0(c));
+      sendMsg(c.res, 200, PublicDiskFolderSchema, { id: f.id, name: f.name, path: f.path, items: f.items.map(pubFile), viewOnly: link.viewOnly, ...(link.expiresAt ? { expiresAt: link.expiresAt } : {}) });
+    }));
+    this.route('GET', '/api/public/disk/:code/items/:id/content', pubDisk((c) => pubBytes(c, d().publicFileItem(p0(c), c.params[1] ?? ''), false)));
+    this.route('GET', '/api/public/disk/:code/items/:id/thumbnail', pubDisk((c) => pubBytes(c, d().publicFileItem(p0(c), c.params[1] ?? ''), true)));
+    this.route('GET', '/api/public/disk/:code/archive', pubDisk((c) => {
+      d().publicFolder(p0(c), q(c, 'parent'));
+      if (d().publicLink(p0(c)).link.viewOnly) throw new HttpError(403, ErrorCode.FORBIDDEN, 'the link is view-only');
+      if (q(c, 'check') === '1') {
+        c.res.writeHead(204);
+        c.res.end();
+        return;
+      }
+      send(c.res, 200, Buffer.from('PK\x05\x06'.padEnd(22, '\0')), 'application/zip', { 'Content-Disposition': 'attachment; filename="archive.zip"' });
+    }));
+    this.route('GET', '/api/public/disk/:code/office', pubDisk((c) => {
+      officeOn();
+      const it = d().publicFileItem(p0(c), q(c, 'item'));
+      const format = officeOf(it.name);
+      if (!format) throw new HttpError(415, ErrorCode.VALIDATION, 'this file type does not open in the editor');
+      const key = `calab-mock-a-${it.file?.id ?? ''}`;
+      const config = {
+        type: q(c, 'phone') === '1' ? 'mobile' : 'desktop',
+        documentType: format.documentType,
+        document: { fileType: format.extension, key, title: it.name, url: `${origin(c)}/__office/file`, permissions: { edit: false } },
+        editorConfig: { mode: 'view', lang: q(c, 'lang') || 'ru', user: { id: 'anon', name: 'Гость' }, customization: { uiTheme: q(c, 'theme') === 'light' ? 'default-light' : 'default-dark', compactHeader: true }, calabStub: { fault: this.officeFault } },
+        token: 'mock',
+      };
+      sendMsg(c.res, 200, OfficeConfigResponseSchema, { docsUrl: origin(c), hostUrl: `${origin(c)}/web-apps/apps/calab/calab-editor.html`, configJson: JSON.stringify(config), mode: OfficeMode.VIEW, key, format, fileId: it.file?.id ?? '' });
+    }));
     // A copy of `meta` under a new name, stored and filed by `me` in folder `parentId` of `ws` (rights, quota, free name, journal).
     const fileCopy = (ws: string, me: string, parentId: string, meta: FileMeta, name: string, mime = meta.mime): DiskItem => {
       const bytes = this.state.files.get(meta.id)?.bytes ?? Buffer.from('PK mock office file');
@@ -9261,7 +9389,11 @@ class MockImpl {
     });
     this.diskRoute('POST', '/api/disk/items/:id/link', (c, me) => {
       const b = parseBody(c, CreateDiskLinkRequestSchema);
-      sendMsg(c.res, 200, DiskLinkResponseSchema, d().createLink(p0(c), me, b.expiresAt));
+      sendMsg(c.res, 200, DiskLinkResponseSchema, d().createLink(p0(c), me, b.expiresAt, { password: b.password, viewOnly: b.viewOnly }));
+    });
+    this.diskRoute('PATCH', '/api/disk/items/:id/link', (c, me) => {
+      const b = parseBody(c, UpdateDiskLinkRequestSchema);
+      sendMsg(c.res, 200, DiskLinkResponseSchema, d().updateLink(p0(c), me, { password: b.password, viewOnly: b.viewOnly }));
     });
     this.diskRoute('DELETE', '/api/disk/items/:id/link', (c, me) => {
       d().deleteLink(p0(c), me);

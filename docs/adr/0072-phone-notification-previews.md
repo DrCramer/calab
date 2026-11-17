@@ -198,3 +198,48 @@ Implementation contract, following real-device failures; no UI or auth/media dup
   missed-call policy/provider and cold avatar tests; required lint/types, targeted PG17 race
   integration, independent security/protocol reviews and native compile. Actual locked/cold
   two-way audio, avatar rendering and delivery require the matching installed/server versions.
+
+## Amendment: iOS app-icon unread badge (2026-11-09)
+
+This amends the original exclusion of badge counters. The icon matches desktop:
+unread personal DM messages plus mentions (including broadcasts) in visible
+workspace rooms. Muting delivery does not change unread state. Counts use existing
+read queries and the endpoint's exact current session policy, clamped to 99,999.
+APNs alerts carry an absolute `aps.badge`; reads on another client enqueue a
+coalesced, best-effort badge-only APNs update, including zero, without sound/banner.
+Read events wait one second before any DB work; events during that wait join the
+same pass. A user can start at most one pass per second. Per process, at most four
+workers perform DB/provider work and 128 users wait; overflow is debug-logged and
+left to the next alert/foreground reconciliation. Each endpoint gets a 750 ms
+transaction/provider budget within the existing three-second user pass.
+Unchanged counts for the same endpoint version skip APNs using the shared Valkey
+key `push:badge:<device>:<version>` (under `REDIS_KEY_PREFIX`), with a five-minute
+TTL. Both alert and badge-only sends update it under the existing endpoint DB lock.
+Before sending, an atomic operation replaces the old count with a unique pending
+token, which never deduplicates. Completion writes the accepted count, or deletes
+a rejected attempt, only if that token is still current. Thus a provider timeout
+cannot leave an old accepted count, and a late cache completion cannot overwrite
+a newer attempt. A crash/canceled completion leaves a non-deduplicating token
+until the next attempt or expiry; eviction only causes an extra refresh.
+Each cache operation has a 50 ms budget within the endpoint's 750 ms. If preparation
+fails, an ordinary alert still delivers without a badge; a badge-only refresh is
+deferred to the next read/alert/foreground. Cache completion failure leaves the
+pending token, so the next correct refresh is not suppressed. Authorization and
+count calculation are always fresh. No unread ledger, migration, public API,
+periodic polling or background fetch is added.
+The row lock covers the provider call; a same-device ordinary alert can wait for
+that lock and exhaust its own 750 ms budget, then retry through existing delivery.
+
+The iOS host advertises optional `notificationsBadgeVersion: 1`. The existing
+origin/main-frame/document/sequence gate accepts only integer counts 0–99,999.
+The shared web client publishes after READY and on foreground return; native
+writes are serialized, and explicit logout clears the icon. Reload preserves it.
+Old hosts and Android retain existing behavior; VoIP payloads do not change.
+
+Rollout requires a new iOS binary plus the shared web/API release. APNs delivery
+is best effort: dropped/reordered notifications or permission changes are
+reconciled on foreground READY or the next alert. Message deletion/permission
+changes without a read event use that same reconciliation, not proactive pushes.
+In the foreground, a delayed APNs badge can briefly overwrite a newer web count;
+the next web count change or foreground return corrects it.
+Simulator and fixture checks do not establish locked physical-device delivery.

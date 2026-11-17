@@ -53,6 +53,35 @@ type args struct {
 	Sort         string   `json:"sort"`
 	Cursor       string   `json:"cursor"`
 	Mine         bool     `json:"mine"`
+	// get_task_attachment, edit_message, read comments (CBF-182)
+	File     string `json:"file"`
+	Comment  string `json:"comment"`
+	Message  string `json:"message"`
+	Comments int    `json:"comments"`
+	// comment_task, send_message: uploaded files to attach (upload_attachment, CBF-187)
+	Files []string `json:"files"`
+	// CBF-188: calendar, people, inbox, reactions, checklists, task links, approval
+	Action     string   `json:"action"`
+	Event      string   `json:"event"`
+	From       string   `json:"from"`
+	To         string   `json:"to"` // calendar: the window's end; send_message: the person
+	End        *string  `json:"end"`
+	Duration   int      `json:"duration"`
+	AllDay     *bool    `json:"all_day"`
+	All        bool     `json:"all"`
+	WorkHours  *bool    `json:"work_hours"`
+	Repeat     string   `json:"repeat"`
+	Occurrence string   `json:"occurrence"`
+	Scope      string   `json:"scope"`
+	Person     string   `json:"person"`
+	Members    bool     `json:"members"`
+	Emoji      string   `json:"emoji"`
+	Item       string   `json:"item"`
+	Items      []string `json:"items"`
+	Checklist  string   `json:"checklist"`
+	Related    string   `json:"related"`
+	Decision   string   `json:"decision"`
+	Reason     string   `json:"reason"`
 }
 
 type tool struct {
@@ -80,20 +109,25 @@ func def(name, desc string, input map[string]any) map[string]any {
 
 var taskArg = str("task id or key (ABC-12)")
 
+var filesArg = strs("file ids from upload_attachment: your own uploads, not attached yet")
+
 // wsArg narrows a task key to one workspace (a key may repeat across workspaces).
 var wsArg = str("workspace id, when a task key is in several workspaces")
 
 var toolDefs = []tool{
-	{def("find", "Find tasks, messages, rooms or boards the bot can see. Returns ids for the other tools.", schema(nil, map[string]any{
-		"q":         str("words; for rooms/boards a name part, empty = all"),
-		"kind":      map[string]any{"type": "string", "enum": []string{"tasks", "messages", "rooms", "boards"}, "description": "default: all kinds"},
+	{def("find", "Find tasks, messages, rooms, boards or people the bot can see. Returns ids for the other tools.", schema(nil, map[string]any{
+		"q":         str("words; for rooms/boards/people a name part, empty = all"),
+		"kind":      map[string]any{"type": "string", "enum": []string{"tasks", "messages", "rooms", "boards", "people"}, "description": "default: all (people with q)"},
 		"workspace": str("workspace id; default all"),
 		"limit":     map[string]any{"type": "integer", "description": "per kind, 1-20, default 10"},
 	})), find},
-	{def("read", "Read a task (with its board's statuses, labels, Git links and releases) or a room's recent messages. Give task or room.", schema(nil, map[string]any{
+	{def("read", "Read a task (with its board's statuses, labels, checklists, files, Git links, releases, approval, links), a room's recent messages (members=true: who is in it) or a person's profile. Give task, room or person.", schema(nil, map[string]any{
 		"task":      taskArg,
 		"workspace": wsArg,
 		"room":      str("room id (a task's comments: its room)"),
+		"person":    str("me, a user id, a name or a nickname: profile, role, status, timezone"),
+		"members":   map[string]any{"type": "boolean", "description": "room: who can see it"},
+		"comments":  map[string]any{"type": "integer", "description": "task: latest comments, 1-50"},
 		"limit":     map[string]any{"type": "integer", "description": "messages, 1-50, default 20"},
 		"before":    str("message id: older history"),
 		"full":      map[string]any{"type": "boolean", "description": "the full API object"},
@@ -104,23 +138,27 @@ var toolDefs = []tool{
 		"description": str("markdown"),
 		"status":      str("status name or id; default the board's"),
 	})), createTask},
-	{def("comment_task", "Comment on a task.", schema([]string{"task", "text"}, map[string]any{
+	{def("comment_task", "Comment on a task; files: ids from upload_attachment (all attach or nothing is posted).", schema([]string{"task"}, map[string]any{
 		"task":      taskArg,
 		"workspace": wsArg,
-		"text":      str("comment, markdown"),
+		"text":      str("comment, markdown; may be empty with files"),
+		"files":     filesArg,
 	})), commentTask},
 	{def("set_task_status", "Move a task to another status of its board.", schema([]string{"task", "status"}, map[string]any{
 		"task":      taskArg,
 		"workspace": wsArg,
 		"status":    str("status name or id"),
 	})), setTaskStatus},
-	{def("send_message", "Send a message to a room or DM.", schema([]string{"room", "text"}, map[string]any{
-		"room":     str("room id"),
-		"text":     str("markdown, up to 4000 chars"),
-		"reply_to": str("message id"),
+	{def("send_message", "Send a message to a room or to a person (their DM); files: ids from upload_attachment (all attach or nothing is sent).", schema(nil, map[string]any{
+		"room":      str("room id"),
+		"to":        str("instead of room: a user id, a name or a nickname"),
+		"workspace": str("workspace id, to find the person in"),
+		"text":      str("markdown, up to 4000 chars; may be empty with files"),
+		"reply_to":  str("message id"),
+		"files":     filesArg,
 	})), sendMessage},
 	// ADR-0156: the tools a developer's agent needs on a task besides the ones above.
-	{def("list_tasks", "List tasks of a board or of all boards of a workspace by filters, newest update first; mine=true: my tasks (without board/workspace: my open tasks everywhere).", schema(nil, map[string]any{
+	{def("list_tasks", "List tasks of a board or workspace by filters; mine=true: my tasks (no board/workspace: my open tasks everywhere).", schema(nil, map[string]any{
 		"board":     str("board id or key (DEV)"),
 		"workspace": str("workspace id (when no board)"),
 		"q":         str("words or a key; empty = filters only"),
@@ -128,21 +166,21 @@ var toolDefs = []tool{
 		"assignee":  str("me, a user id, a name or a nickname"),
 		"labels":    strs("label names (any of them)"),
 		"state":     map[string]any{"type": "string", "enum": []string{"open", "done", "all"}, "description": "default open"},
-		"sort":      str("default newest update first (relevance with q); updated | created | key | priority | due, -updated etc. for descending"),
-		"mine":      map[string]any{"type": "boolean", "description": "assignee me; without board/workspace: my open tasks on every board, other filters ignored"},
+		"sort":      str("default newest update first (relevance with q); updated|created|key|priority|due, -x = descending"),
+		"mine":      map[string]any{"type": "boolean", "description": "assignee me; no board/workspace: my open tasks everywhere, other filters ignored"},
 		"limit":     map[string]any{"type": "integer", "description": "1-50, default 20"},
 		"cursor":    str("next page"),
 	})), listTasks},
-	{def("update_task", "Change fields of a task; only given fields change.", schema([]string{"task"}, map[string]any{
+	{def("update_task", "Change the given fields of a task.", schema([]string{"task"}, map[string]any{
 		"task":          taskArg,
 		"workspace":     wsArg,
 		"title":         str("1-200 chars"),
-		"description":   str("markdown; replaces the description"),
+		"description":   str("markdown; replaces it"),
 		"priority":      map[string]any{"type": "string", "enum": []string{"none", "low", "medium", "high", "urgent"}},
 		"due":           str("YYYY-MM-DD, empty = none"),
 		"start":         str("YYYY-MM-DD, empty = none"),
 		"estimate":      map[string]any{"type": "integer", "description": "0 = none"},
-		"parent":        str("parent task id or key, empty = none"),
+		"parent":        str("parent task, empty = none"),
 		"labels":        strs("label names: the whole set"),
 		"add_labels":    strs("label names to add"),
 		"remove_labels": strs("label names to remove"),
@@ -152,8 +190,88 @@ var toolDefs = []tool{
 		"workspace": wsArg,
 		"users":     strs("me, user ids, names or nicknames"),
 		"mode":      map[string]any{"type": "string", "enum": []string{"add", "remove", "set"}, "description": "default add"},
-		"lead":      str("the lead among the assignees (me, id, name); default: kept, else the first"),
+		"lead":      str("lead among assignees; default: kept, else first"),
 	})), assign},
+	// CBF-182: a task's files for the agent; fixing its own comment instead of posting another.
+	{def("get_task_attachment", "A file of a task or its comment: metadata (sha256) and download_url, a signed URL for 10 min: fetch it with curl in a shell, never paste the bytes into the chat. Text (256 KiB) and images (up to 3 MiB, else a preview) also inline. Limits 3 MiB, images 5 MiB; text, xlsx, docx, pptx, pdf, zip, ogg, mp3, wav, m4a, png, jpeg, webp, gif.", schema([]string{"task", "file"}, map[string]any{
+		"task":      taskArg,
+		"workspace": wsArg,
+		"file":      str("file id (from read) or name"),
+		"comment":   str("comment message id; default: the task, its last 100 comments"),
+	})), getTaskAttachment},
+	// CBF-187: a local file to a comment or message: upload URL, curl, then files of comment_task / send_message.
+	{def("upload_attachment", "A single-use upload URL (10 min) for one local file up to 3 MiB for a task comment (task) or a room message (room): run the returned curl in a shell, then pass the answer's file id in files of comment_task or send_message.", schema(nil, map[string]any{
+		"task":      str("task id or key whose comment gets the file (or room)"),
+		"workspace": wsArg,
+		"room":      str("room id whose message gets the file (or task)"),
+	})), uploadAttachment},
+	{def("edit_message", "Edit your own message or comment.", schema([]string{"message", "text"}, map[string]any{
+		"message": str("message id"),
+		"text":    str("markdown"),
+	})), editMessage},
+	// CBF-188: calendar, inbox, reactions, checklists, task links, approval.
+	{def("calendar", "Meetings: mine in a period, one with its comments, people's free/busy, common free slots. Times ISO 8601 (no offset: my timezone).", schema(nil, map[string]any{
+		"action":     map[string]any{"type": "string", "enum": []string{"list", "event", "freebusy", "suggest"}, "description": "default list"},
+		"workspace":  str("workspace id"),
+		"from":       str("default today 00:00"),
+		"to":         str("default +7 days (freebusy +1)"),
+		"all":        map[string]any{"type": "boolean", "description": "list: every one I see"},
+		"event":      str("event: meeting id"),
+		"users":      strs("me, user ids, names or nicknames"),
+		"duration":   map[string]any{"type": "integer", "description": "suggest: minutes, default 30"},
+		"work_hours": map[string]any{"type": "boolean", "description": "suggest: in working hours, default true"},
+		"room":       str("suggest: a voice room that must be free too"),
+		"limit":      map[string]any{"type": "integer", "description": "list: 1-100, default 50"},
+	})), calendarTool},
+	{def("event", "Create, change, cancel a meeting, or comment on it.", schema([]string{"action"}, map[string]any{
+		"action":      map[string]any{"type": "string", "enum": []string{"create", "update", "cancel", "comment"}},
+		"event":       str("meeting id (not for create)"),
+		"workspace":   str("create: workspace id"),
+		"title":       str("up to 120 chars"),
+		"description": str("markdown"),
+		"start":       str("ISO 8601; update keeps the length"),
+		"end":         str("ISO 8601; or duration"),
+		"duration":    map[string]any{"type": "integer", "description": "minutes, default 30"},
+		"all_day":     map[string]any{"type": "boolean"},
+		"users":       strs("attendees: user ids, names or nicknames"),
+		"mode":        map[string]any{"type": "string", "enum": []string{"add", "remove", "set"}, "description": "update users, default add"},
+		"room":        str("voice room id or name; update: none = no room"),
+		"repeat":      map[string]any{"type": "string", "enum": []string{"none", "daily", "weekly", "biweekly", "monthly", "workdays"}},
+		"occurrence":  str("one occurrence of a series (from calendar)"),
+		"scope":       map[string]any{"type": "string", "enum": []string{"this", "following", "all"}, "description": "with occurrence, default this"},
+		"text":        str("comment: markdown"),
+	})), eventTool},
+	{def("inbox", "What was written to me: unread DMs and messages mentioning me, newest first.", schema(nil, map[string]any{
+		"workspace": str("mentions of one workspace"),
+		"limit":     map[string]any{"type": "integer", "description": "1-50, default 20"},
+		"before":    str("message id: older mentions"),
+	})), inbox},
+	{def("react", "Add or remove my reaction to a message.", schema([]string{"message", "emoji"}, map[string]any{
+		"message": str("message id"),
+		"emoji":   str("an emoji, e.g. 👍"),
+		"mode":    map[string]any{"type": "string", "enum": []string{"add", "remove"}, "description": "default add"},
+	})), react},
+	{def("checklist", "Check, uncheck or toggle a task's checklist item, or add items.", schema([]string{"task"}, map[string]any{
+		"task":      taskArg,
+		"workspace": wsArg,
+		"action":    map[string]any{"type": "string", "enum": []string{"check", "uncheck", "toggle", "add"}, "description": "default check"},
+		"item":      str("number (as in read), text or id; add: the text"),
+		"items":     strs("add: several items"),
+		"checklist": str("title or id; add: default the first"),
+	})), checklistTool},
+	{def("link_tasks", "Link two tasks of a workspace or remove the link.", schema([]string{"task", "related"}, map[string]any{
+		"task":      taskArg,
+		"workspace": wsArg,
+		"related":   str("the other task: id or key"),
+		"kind":      map[string]any{"type": "string", "enum": []string{"relates", "blocks", "blocked_by", "duplicates"}, "description": "task <kind> related, default relates"},
+		"mode":      map[string]any{"type": "string", "enum": []string{"add", "remove"}, "description": "default add"},
+	})), linkTasks},
+	{def("approve", "Vote on a task's approval as its approver.", schema([]string{"task", "decision"}, map[string]any{
+		"task":      taskArg,
+		"workspace": wsArg,
+		"decision":  map[string]any{"type": "string", "enum": []string{"approve", "reject", "withdraw"}},
+		"reason":    str("required to reject, up to 500 chars"),
+	})), approve},
 }
 
 var (
@@ -195,15 +313,18 @@ func need(name, v string) error {
 // ---- find ----
 
 func find(ctx context.Context, c *api, a args) (any, error) {
-	kinds := []string{"tasks", "messages", "rooms", "boards"}
+	kinds := []string{"tasks", "messages", "rooms", "boards", "people"}
 	if a.Kind != "" {
 		if !slices.Contains(kinds, a.Kind) {
-			return nil, errors.New("kind must be tasks, messages, rooms or boards")
+			return nil, errors.New("kind must be tasks, messages, rooms, boards or people")
 		}
 		kinds = []string{a.Kind}
 	}
 	limit := clamp(a.Limit, 10, 20)
 	q := strings.TrimSpace(a.Q)
+	if a.Kind == "" && q == "" {
+		kinds = slices.DeleteFunc(kinds, func(k string) bool { return k == "people" }) // every member of every workspace: ask for it
+	}
 	out := map[string]any{}
 	searchTasks, searchMsgs := slices.Contains(kinds, "tasks"), slices.Contains(kinds, "messages")
 	if (searchTasks || searchMsgs) && q == "" {
@@ -300,6 +421,19 @@ func find(ctx context.Context, c *api, a args) (any, error) {
 			out["boards"] = boards
 		}
 	}
+	if slices.Contains(kinds, "people") {
+		wss, err := workspaceIDs(ctx, c, a.Workspace)
+		if err != nil {
+			return nil, err
+		}
+		ps, err := people(ctx, c, wss, q, limit)
+		if err != nil {
+			return nil, err
+		}
+		if ps != nil {
+			out["people"] = ps
+		}
+	}
 	if len(out) == 0 {
 		return map[string]any{"found": 0}, nil
 	}
@@ -325,6 +459,8 @@ func workspaceIDs(ctx context.Context, c *api, ws string) ([]string, error) {
 
 func read(ctx context.Context, c *api, a args) (any, error) {
 	switch {
+	case strings.TrimSpace(a.Person) != "":
+		return readPerson(ctx, c, a) // CBF-188
 	case strings.TrimSpace(a.Task) != "":
 		tr, board, err := loadTask(ctx, c, a.Task, a.Workspace)
 		if err != nil {
@@ -359,9 +495,23 @@ func read(ctx context.Context, c *api, a args) (any, error) {
 			"workspace": t.GetWorkspaceId(), "room": t.GetRoomId(), "comments": t.GetCommentCount(), "subtasks": subs,
 			"created_by": t.GetCreatedBy(), "updated": ts(t.GetUpdatedAt()),
 			"git": gitLinks(t), "releases": releases(t), // ADR-0156
+			"files": fileList(t.GetAttachments()), "checklists": checklists(t), // CBF-182
+			"approval": approvalInfo(t), "links": taskLinks(tr), // CBF-188
 		}
 		if p := tr.GetParent(); p != nil {
 			out["parent"] = compact(map[string]any{"id": p.GetId(), "key": p.GetKey(), "title": p.GetTitle()})
+		}
+		if a.Comments > 0 && t.GetRoomId() != "" {
+			var ms v1.ListMessagesResponse
+			qs := url.Values{"limit": {strconv.Itoa(clamp(a.Comments, 20, 50))}}
+			if err := c.call(ctx, http.MethodGet, "/api/rooms/"+seg(t.GetRoomId())+"/messages", qs, nil, &ms); err != nil {
+				return nil, err
+			}
+			list := make([]map[string]any, 0, len(ms.GetMessages()))
+			for _, m := range slices.Backward(ms.GetMessages()) {
+				list = append(list, message(m))
+			}
+			out["recent_comments"], out["more_comments"] = list, ms.GetHasMore()
 		}
 		return compact(out), nil
 	case strings.TrimSpace(a.Room) != "":
@@ -385,13 +535,24 @@ func read(ctx context.Context, c *api, a args) (any, error) {
 		for _, m := range slices.Backward(ms.GetMessages()) { // newest first in the API, oldest first here
 			list = append(list, message(m))
 		}
-		return compact(map[string]any{
+		out := map[string]any{
 			"room": compact(map[string]any{"id": r.GetId(), "name": r.GetName(), "type": enum(r.GetType().String(), "ROOM_TYPE_"),
 				"topic": r.GetTopic(), "workspace": r.GetWorkspaceId()}),
 			"messages": list, "more": ms.GetHasMore(),
-		}), nil
+		}
+		if a.Members { // CBF-188
+			people, total, err := roomMembers(ctx, c, r)
+			if err != nil {
+				return nil, err
+			}
+			out["members"] = people
+			if total > len(people) {
+				out["members_total"] = total
+			}
+		}
+		return compact(out), nil
 	}
-	return nil, errors.New("give task or room")
+	return nil, errors.New("give task, room or person")
 }
 
 func message(m *v1.Message) map[string]any {
@@ -402,10 +563,7 @@ func message(m *v1.Message) map[string]any {
 	case m.GetSticker() != nil:
 		text = "[sticker " + m.GetSticker().GetEmoji() + "]"
 	}
-	var files []string
-	for _, f := range m.GetAttachments() {
-		files = append(files, f.GetName())
-	}
+	files := fileList(m.GetAttachments()) // ids for get_task_attachment (CBF-182)
 	// ADR-0140: who saw the bot's own message on screen (set by the API for the author only).
 	var readBy []map[string]any
 	for _, rd := range m.GetReadBy() {
@@ -557,14 +715,14 @@ func where(out map[string]any, t *v1.Task, b *v1.Board) map[string]any {
 }
 
 func commentTask(ctx context.Context, c *api, a args) (any, error) {
-	if err := errors.Join(need("task", a.Task), need("text", a.Text)); err != nil {
+	if err := errors.Join(need("task", a.Task), needBody(a)); err != nil {
 		return nil, err
 	}
 	tr, err := taskByRef(ctx, c, a.Task, a.Workspace)
 	if err != nil {
 		return nil, err
 	}
-	out, err := send(ctx, c, tr.GetTask().GetRoomId(), a.Text, "")
+	out, err := send(ctx, c, tr.GetTask().GetRoomId(), a.Text, "", a.Files)
 	if err != nil {
 		return nil, err
 	}
@@ -593,22 +751,59 @@ func setTaskStatus(ctx context.Context, c *api, a args) (any, error) {
 }
 
 func sendMessage(ctx context.Context, c *api, a args) (any, error) {
-	if err := errors.Join(need("room", a.Room), need("text", a.Text)); err != nil {
+	if err := needBody(a); err != nil {
 		return nil, err
 	}
-	return send(ctx, c, a.Room, a.Text, a.ReplyTo)
+	room := strings.TrimSpace(a.Room)
+	switch {
+	case room != "" && strings.TrimSpace(a.To) != "":
+		return nil, errors.New("give room or to, not both")
+	case room == "" && strings.TrimSpace(a.To) == "":
+		return nil, errors.New("give room or to")
+	case room == "": // CBF-188: the person's DM, opened if new
+		var err error
+		if room, err = dmWith(ctx, c, a.Workspace, a.To); err != nil {
+			return nil, err
+		}
+	}
+	return send(ctx, c, room, a.Text, a.ReplyTo, a.Files)
 }
 
-func send(ctx context.Context, c *api, room, text, replyTo string) (any, error) {
+// needBody: a message needs text or files.
+func needBody(a args) error {
+	if strings.TrimSpace(a.Text) == "" && len(a.Files) == 0 {
+		return errors.New("text is required (or files)")
+	}
+	return nil
+}
+
+// send posts a message with files (ids of the caller's unattached uploads) through the app's
+// route: it checks ATTACH_FILES and that every file is the caller's own unattached upload in
+// this workspace, in one transaction: one bad id and nothing is posted.
+func send(ctx context.Context, c *api, room, text, replyTo string, files []string) (any, error) {
 	var r v1.CreateMessageResponse
-	req := &v1.CreateMessageRequest{Content: text, ReplyToId: strings.TrimSpace(replyTo), Nonce: uuid.NewString()}
+	var ids []string
+	for _, f := range files {
+		ids = append(ids, strings.TrimSpace(f))
+	}
+	req := &v1.CreateMessageRequest{Content: text, ReplyToId: strings.TrimSpace(replyTo), Nonce: uuid.NewString(), AttachmentIds: ids}
 	if err := c.call(ctx, http.MethodPost, "/api/rooms/"+seg(room)+"/messages", nil, req, &r); err != nil {
 		return nil, err
 	}
-	return map[string]any{"id": r.GetMessage().GetId(), "room": r.GetMessage().GetRoomId()}, nil
+	out := map[string]any{"id": r.GetMessage().GetId(), "room": r.GetMessage().GetRoomId()}
+	if fs := fileList(r.GetMessage().GetAttachments()); fs != nil {
+		out["files"] = fs
+	}
+	return out, nil
 }
 
 // ---- compact answers ----
+
+// jsonText is v as compact JSON (a content block's text).
+func jsonText(v any) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
 
 // raw is the API object as protojson without default values (read full=true).
 func raw(m proto.Message) (any, error) {
@@ -632,6 +827,10 @@ func compact(m map[string]any) map[string]any {
 				delete(m, k)
 			}
 		case uint32:
+			if x == 0 {
+				delete(m, k)
+			}
+		case uint64:
 			if x == 0 {
 				delete(m, k)
 			}
@@ -679,4 +878,22 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// allDayOr is the all-day flag the caller passed, else def (nil = not passed).
+func (a args) allDayOr(def bool) bool {
+	if a.AllDay != nil {
+		return *a.AllDay
+	}
+	return def
+}
+
+// inboxClip caps the text of a DM preview in the inbox (runes).
+const inboxClip = 300
+
+func clip(s string) string {
+	if r := []rune(s); len(r) > inboxClip {
+		return string(r[:inboxClip]) + "…"
+	}
+	return s
 }

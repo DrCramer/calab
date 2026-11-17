@@ -1,4 +1,4 @@
-# ADR-0165: Расширенные пресеты screen share (2026-10-04; self-host migration alignment 2026-10-10, updated for 4.1.1)
+# ADR-9001: Расширенные пресеты screen share (2026-10-04; self-host migration alignment 2026-10-10, updated for 4.1.1)
 
 ## Контекст
 
@@ -31,3 +31,5 @@
 В upstream 4.2–4.11 добавлены миграции 00122–00138. Чтобы продолжить ту же историю без повторного применения чужих версий 00107/00108, они перенесены в 00124–00140. Обновление с self-host 4.1.1 проходит по порядку; API применяет миграции при запуске.
 
 Upstream 4.12–4.18 migrations 00139–00150 are appended as 00141–00152 (including upstream gaps). Applied versions through 00140 are immutable.
+
+Upstream 4.19–4.23 migrations 00151–00155 are appended as 00153–00157. Versions through 00152 remain byte-identical. Fork ADR IDs 9001/9002 are reserved to avoid upstream collisions.
