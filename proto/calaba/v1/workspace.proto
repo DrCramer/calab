@@ -62,6 +62,11 @@ message Workspace {
   // boards, Disk items and Wiki pages (to manage what a former member left behind). Off by
   // default; only the owner changes it (UpdateWorkspaceRequest.owner_sees_private).
   bool owner_sees_private = 19;
+  // The superadmin's size limit of one file in this workspace, MB (workspaces.max_file_mb,
+  // ADR-0155); 0 = the server's (Ready.max_file_mb). Administrators upload up to the hard cap
+  // above it (ADR-0164). The client checks a file against it before uploading (CBF-191); the
+  // server decides (413 FILE_TOO_LARGE with limit).
+  uint32 max_file_mb = 20;
 }
 
 message WorkspaceSuspension {
@@ -131,6 +136,10 @@ message Invite {
   uint32 uses = 6;
   google.protobuf.Timestamp expires_at = 7; // unset = never
   google.protobuf.Timestamp created_at = 8;
+  // Custom roles given on joining by it (ADR-0026 addendum 2026-11-10), as far as its author may
+  // give them at that moment; deleted ones, and all of them once the author left or lost the
+  // right, are skipped.
+  repeated string role_ids = 9;
 }
 
 // POST /api/workspaces
@@ -233,6 +242,11 @@ message JoinWorkspaceResponse {
 message CreateInviteRequest {
   uint32 max_uses = 1;           // 0 = unlimited
   uint32 expires_in_seconds = 2; // 0 = never
+  // Custom roles (not built-in) the joiner gets (ADR-0026 addendum 2026-11-10): checked like
+  // PUT …/members/{user_id}/roles — MANAGE_MEMBERS or MANAGE_ROLES, below the caller's highest
+  // role, no bits beyond the caller's (non-admin), billing roles by the owner only (403);
+  // unknown or built-in ids: 422 roleIds.
+  repeated string role_ids = 3;
 }
 
 message CreateInviteResponse {
@@ -313,6 +327,8 @@ message InviteLookupResponse {
 // 404: no such (verified, non-guest) user.
 message AddMemberRequest {
   string user_id = 1;
+  // Custom roles given at once, checked like CreateInviteRequest.role_ids.
+  repeated string role_ids = 2;
 }
 
 message AddMemberResponse {
@@ -329,6 +345,7 @@ message EmailInvite {
   google.protobuf.Timestamp created_at = 6;
   google.protobuf.Timestamp expires_at = 7; // 7 days after the last send
   google.protobuf.Timestamp last_sent_at = 8;
+  repeated string role_ids = 9; // custom roles given on joining (Invite.role_ids)
 }
 
 // POST /api/workspaces/{id}/invites/email → 201 CreateEmailInviteResponse. Mails a link
@@ -340,6 +357,9 @@ message EmailInvite {
 message CreateEmailInviteRequest {
   string email = 1;
   optional WorkspaceRole role = 2;
+  // Custom roles given on joining, checked like CreateInviteRequest.role_ids; sending again
+  // replaces them.
+  repeated string role_ids = 3;
 }
 
 message CreateEmailInviteResponse {

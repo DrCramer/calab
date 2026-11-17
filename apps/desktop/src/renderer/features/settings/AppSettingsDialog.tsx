@@ -5,9 +5,10 @@ import { localAuthority } from '../identity/model';
 import { AUDIO_TIERS_KBPS, audioTierKbps } from '@calaba/protocol';
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AppWindow, Ban, Bell, CalendarDays, CircleUser, Headphones, Info, Keyboard, Mail, Mic, MonitorSmartphone, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
+import { AppWindow, Ban, Bell, CalendarDays, CircleUser, Headphones, Info, Keyboard, Mail, Mic, MonitorSmartphone, Plug, SlidersHorizontal, Trash2, Wifi } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { AppInfo, AppSettings, PermissionStatus } from '../../../shared/ipc';
+import { monoTrayIconSupported } from '../../../shared/trayIconFile';
 import type { UpdateChannel } from '../../../shared/updateFeed';
 import { Avatar } from '../../components/Avatar';
 import { AvatarButtons } from '../../components/AvatarPicker';
@@ -69,6 +70,7 @@ import { MailTab } from './MailSettings';
 import { MAIL_ENABLED } from '../mail/boot';
 import { TaskNotifyCard } from './TaskNotifyCard';
 import { BlockedTab } from './BlockedTab';
+import { McpTab } from './McpSettings';
 
 export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; onClose: () => void }): ReactNode {
   const superadmin = useSession((s) => s.me?.isSuperadmin === true);
@@ -91,6 +93,8 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
     ...(MAIL_ENABLED ? [{ id: 'mail', label: t('mbox.section'), icon: Mail, content: <MailTab />, keywords: t('mbox.settings.keywords') }] : []),
     { id: 'connection', label: t('settings.connection'), icon: Wifi, content: <ConnectionTab /> },
     { id: 'sessions', label: t('settings.sessions'), icon: MonitorSmartphone, content: <SessionsTab /> },
+    // «MCP» (CBF-183, ADR-0158): connect an AI agent as yourself; next to «Сеансы», where it shows up.
+    ...(guest ? [] : [{ id: 'mcp', label: t('mcpSettings.section'), icon: Plug, content: <McpTab />, keywords: t('mcpSettings.keywords') }]),
     // «Заблокированные» (ADR-0154): the people I blocked; unblock here.
     { id: 'blocked', label: t('block.settingsTab'), icon: Ban, content: <BlockedTab />, keywords: t('block.keywords') },
     // «OAuth-приложения» (ADR-0054): near the end — rarely needed; Business only (PlanLock).
@@ -111,7 +115,7 @@ export function AppSettingsDialog({ tab, onClose }: { tab: string | undefined; o
       initial={tab}
       fallback="general"
       onClose={onClose}
-      sections={sections.filter((section) => local || !['profile', 'sessions', 'calendar'].includes(section.id))}
+      sections={sections.filter((section) => local || !['profile', 'sessions', 'mcp', 'calendar'].includes(section.id))}
       footer={
         <SettingsFooter
           superadmin={superadmin}
@@ -533,10 +537,12 @@ function MusicianRow({ outputs }: { outputs: MediaDeviceInfo[] }): ReactNode {
   const outputId = usePrefs((s) => s.outputDeviceId);
   const setPrefs = usePrefs((s) => s.setPrefs);
   const allowed = useMusicianAllowed();
+  // A native-audio join on iPhone (ADR-0149): off, with the reason in place of the hint.
+  const audioOnly = useVoice((s) => s.audioOnly);
   const warning = on ? musicianWarning(outputLabel(outputs, outputId)) : null;
   const row = (
-    <Row label={t('music.mode')} hint={t('music.hint')}>
-      <Toggle label={t('music.mode')} checked={on && allowed} disabled={!allowed} onChange={(v) => setPrefs({ musicianMode: v })} />
+    <Row label={t('music.mode')} hint={audioOnly ? t('music.audioOnly') : t('music.hint')}>
+      <Toggle label={t('music.mode')} checked={on && allowed && !audioOnly} disabled={!allowed || audioOnly} onChange={(v) => setPrefs({ musicianMode: v })} />
     </Row>
   );
   // Free (ADR-0052): the switch stays in place under the plan lock (docs/08 «Функции не по тарифу»).
@@ -1046,6 +1052,16 @@ function DesktopAppCards({
                 { value: 'quit', label: t('app.onCloseQuit') },
               ]}
               onChange={(v) => void save({ closeToTray: v === 'tray' }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
+            />
+          </Row>
+        ) : null}
+        {/* Windows only: macOS already draws a template icon, Linux trays vary too much (CBF-171). */}
+        {info && monoTrayIconSupported(info.platform) ? (
+          <Row label={t('app.monoTray')} hint={t('app.monoTrayHint')}>
+            <Toggle
+              label={t('app.monoTray')}
+              checked={settings?.monoTrayIcon ?? false}
+              onChange={(v) => void save({ monoTrayIcon: v }).catch((e: unknown) => toast.fail(e, t('err.ctx.save')))}
             />
           </Row>
         ) : null}

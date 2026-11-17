@@ -153,29 +153,37 @@ func (q *Queries) HasPendingEmailInvite(ctx context.Context, email string) (bool
 }
 
 const listEmailInvites = `-- name: ListEmailInvites :many
-SELECT id, workspace_id, email, role, invited_by, invite_id, expires_at, last_sent_at, accepted_at, created_at FROM email_invites WHERE workspace_id = $1 AND accepted_at IS NULL ORDER BY created_at DESC
+SELECT e.id, e.workspace_id, e.email, e.role, e.invited_by, e.invite_id, e.expires_at, e.last_sent_at, e.accepted_at, e.created_at, i.role_ids FROM email_invites e
+JOIN workspace_invites i ON i.id = e.invite_id
+WHERE e.workspace_id = $1 AND e.accepted_at IS NULL ORDER BY e.created_at DESC
 `
 
-func (q *Queries) ListEmailInvites(ctx context.Context, workspaceID uuid.UUID) ([]EmailInvite, error) {
+type ListEmailInvitesRow struct {
+	EmailInvite EmailInvite
+	RoleIds     []uuid.UUID
+}
+
+func (q *Queries) ListEmailInvites(ctx context.Context, workspaceID uuid.UUID) ([]ListEmailInvitesRow, error) {
 	rows, err := q.db.Query(ctx, listEmailInvites, workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []EmailInvite{}
+	items := []ListEmailInvitesRow{}
 	for rows.Next() {
-		var i EmailInvite
+		var i ListEmailInvitesRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.WorkspaceID,
-			&i.Email,
-			&i.Role,
-			&i.InvitedBy,
-			&i.InviteID,
-			&i.ExpiresAt,
-			&i.LastSentAt,
-			&i.AcceptedAt,
-			&i.CreatedAt,
+			&i.EmailInvite.ID,
+			&i.EmailInvite.WorkspaceID,
+			&i.EmailInvite.Email,
+			&i.EmailInvite.Role,
+			&i.EmailInvite.InvitedBy,
+			&i.EmailInvite.InviteID,
+			&i.EmailInvite.ExpiresAt,
+			&i.EmailInvite.LastSentAt,
+			&i.EmailInvite.AcceptedAt,
+			&i.EmailInvite.CreatedAt,
+			&i.RoleIds,
 		); err != nil {
 			return nil, err
 		}
@@ -189,7 +197,7 @@ func (q *Queries) ListEmailInvites(ctx context.Context, workspaceID uuid.UUID) (
 
 const lookupInvitee = `-- name: LookupInvitee :one
 
-SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at FROM users
+SELECT id, email, password_hash, display_name, avatar_file_id, status_text, settings, created_at, disabled_at, status_emoji, status_expires_at, is_guest, guest_expires_at, timezone, email_verified_at, pending_email, locale, presence_status, presence_until, is_bot, birthday_day, birthday_month, birthday_year, birthday_hidden, event_reminders, event_reminders_dnd, storage_quota_bytes, work_start_min, work_end_min, work_days, hide_message_text_in_notifications, username, phone, task_notify_off, task_notify_bots, calendar_zones, deleted_at, voice_muted, voice_deafened, voice_mute_at FROM users
 WHERE email = $1 AND email_verified_at IS NOT NULL AND disabled_at IS NULL AND NOT is_guest
 `
 
@@ -236,6 +244,9 @@ func (q *Queries) LookupInvitee(ctx context.Context, email *string) (User, error
 		&i.TaskNotifyBots,
 		&i.CalendarZones,
 		&i.DeletedAt,
+		&i.VoiceMuted,
+		&i.VoiceDeafened,
+		&i.VoiceMuteAt,
 	)
 	return i, err
 }

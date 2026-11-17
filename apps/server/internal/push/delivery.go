@@ -18,6 +18,10 @@ func (s *Service) Observe(ctx context.Context, userID uuid.UUID, event *v1.Dispa
 	if len(s.providers) == 0 || event == nil {
 		return
 	}
+	if userID != uuid.Nil && (event.GetReadStateUpdate() != nil || event.GetDmStateUpdate() != nil) {
+		s.scheduleBadge(ctx, userID)
+		return
+	}
 	if state := event.GetCallState().GetCall(); state != nil && state.State != v1.CallState_CALL_STATE_RINGING && userID != uuid.Nil {
 		if _, ok := s.providers[v1.PushProvider_PUSH_PROVIDER_FCM]; ok {
 			if call, err := uuid.Parse(state.Id); err == nil {
@@ -255,9 +259,25 @@ func (s *Service) dispatch(ctx context.Context, job sqlc.PushDelivery) error {
 		if err := s.presentation(ctx, q, user, job, &payload); err != nil {
 			return err
 		}
+		var badgeAttempt string
+		if device.Provider == int16(v1.PushProvider_PUSH_PROVIDER_APNS) {
+			count, err := s.badgeCount(ctx, q, user, session)
+			if err != nil {
+				return err
+			}
+			// Preserve ordinary alerts during a cache outage, but do not change the
+			// icon unless the previous shared count has been invalidated first.
+			badgeAttempt, _, err = s.prepareBadge(ctx, device.ID, device.Version, count, false)
+			if err == nil {
+				payload.Badge = &count
+			}
+		}
 		// Endpoint/version, session and freshly resolved access/settings stay bound in
 		// this transaction immediately before dispatch. No detached raw-event fanout.
 		result := provider.Sender.Send(ctx, Endpoint{Provider: v1.PushProvider(device.Provider), Token: device.Token, AppID: device.AppID, Environment: device.Environment}, payload)
+		if payload.Badge != nil {
+			s.finishBadge(ctx, device.ID, device.Version, *payload.Badge, badgeAttempt, result)
+		}
 		if result.Invalid {
 			_, err = q.DeleteInvalidPushDevice(ctx, sqlc.DeleteInvalidPushDeviceParams{ID: device.ID, Version: device.Version, TokenHash: device.TokenHash, InvalidBefore: result.InvalidBefore})
 			if err != nil {

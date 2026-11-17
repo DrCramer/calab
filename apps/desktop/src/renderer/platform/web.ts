@@ -463,7 +463,7 @@ function info(): AppInfo {
   };
 }
 
-const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: '', updateChannel: 'github', autostart: false, autoUpdate: false, autoCheckUpdates: false, closeToTray: false, trayHintShown: false });
+const settings = (): AppSettings => ({ serverUrl: location.origin, updateUrl: '', updateChannel: 'github', autostart: false, autoUpdate: false, autoCheckUpdates: false, closeToTray: false, monoTrayIcon: false, trayHintShown: false });
 
 /**
  * Links on the web: https://<domain>/join/<code> (workspace invite) and https://<domain>/r/<code>
@@ -689,6 +689,7 @@ export function createWebPlatform(): Platform {
       showWindow: () => window.focus(),
       // Installed PWA: the app icon badge (Badging API, where supported).
       setBadge: (n) => {
+        if (hostCapabilities.notifications?.setBadge) { hostCapabilities.notifications.setBadge(Math.min(n, 99999)); return; }
         if (!('setAppBadge' in navigator)) return;
         void (n > 0 ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => undefined);
       },

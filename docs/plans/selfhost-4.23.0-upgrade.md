@@ -1,4 +1,4 @@
-# Self-host 4.23.0 upgrade contract (2026-11-17, revision 1)
+# Self-host 4.23.0 upgrade contract (2026-11-17, revision 1.1)
 
 Owner request: update DrCramer/calab, its Windows client and this host, preserving
 custom changes. Lead decision: merge published upstream v4.23.0 at
@@ -8,6 +8,8 @@ e821645c6b745812e9c86c64086083370db54e52 onto fork 61f4b270; exclude later main 
 
 - Preserve screen-share enum IDs 1–12, explicit quality ordering, presets through
   2160p60/Original60, room/plan checks, first-run server and fork-only update feed.
+- Workspace media defaults must clamp presets by quality, not numeric enum ID;
+  use the existing allowedStreamPreset helper and verify legacy/new enum ordering.
 - Applied SQL versions through 152 are immutable. Append upstream 151–155 as
   153–157, byte-identical bodies; inspect hard-coded migration references in tests.
 - Preserve production secrets, persistent volumes, quotas and MAX_FILE_SIZE_MB=1908.

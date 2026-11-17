@@ -17,13 +17,13 @@ type PdfState = { kind: 'loading' } | { kind: 'ready'; url: string } | { kind: '
  * and shown from memory. Closing aborts the fetch and frees the blob. One file per mount (the
  * dialog is keyed by the file id).
  */
-function usePdfBlob(fileId: string): PdfState {
+function usePdfBlob(path: string): PdfState {
   const [state, setState] = useState<PdfState>({ kind: 'loading' });
   useEffect(() => {
     const ac = new AbortController();
     let url: string | null = null;
     platform
-      .apiFetch(filePath(fileId), { signal: ac.signal })
+      .apiFetch(path, { signal: ac.signal })
       .then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const blob = await res.blob();
@@ -39,7 +39,7 @@ function usePdfBlob(fileId: string): PdfState {
       ac.abort();
       if (url) URL.revokeObjectURL(url);
     };
-  }, [fileId]);
+  }, [path]);
   return state;
 }
 
@@ -52,13 +52,22 @@ export function PdfViewer({
   file,
   onClose,
   onSendToChat,
+  path,
+  onDownload,
+  noDownload = false,
 }: {
   file: { id: string; name: string; size: bigint };
   onClose: () => void;
   /** Opened from the Disk (CBF-20): «Отправить в чат». */
   onSendToChat?: () => void;
+  /** Another source of the bytes (a public Disk link, ADR-0165); default GET /api/files/{id}. */
+  path?: string;
+  /** «Скачать» of that source; default the file download. */
+  onDownload?: () => void;
+  /** No «Скачать» at all (a «Без скачивания» public link, ADR-0167). */
+  noDownload?: boolean;
 }): ReactNode {
-  const state = usePdfBlob(file.id);
+  const state = usePdfBlob(path ?? filePath(file.id));
   const closeOnBackdrop = (e: MouseEvent): void => {
     if (e.target === e.currentTarget) onClose();
   };
@@ -83,9 +92,11 @@ export function PdfViewer({
                 <Send className="size-5" />
               </IconButton>
             ) : null}
-            <IconButton label={t('lightbox.download')} onClick={() => downloadFile(file)} className={onDark} data-testid="pdf-download">
-              <Download className="size-5" />
-            </IconButton>
+            {noDownload ? null : (
+              <IconButton label={t('lightbox.download')} onClick={onDownload ?? (() => downloadFile(file))} className={onDark} data-testid="pdf-download">
+                <Download className="size-5" />
+              </IconButton>
+            )}
           </ViewerBar>
           <div className="grid min-h-0 flex-1 place-items-center px-6 pb-6 mobile:px-2" onClick={closeOnBackdrop}>
             {state.kind === 'ready' ? (

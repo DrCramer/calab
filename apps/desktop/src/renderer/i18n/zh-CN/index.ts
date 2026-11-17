@@ -173,7 +173,7 @@ export const zhCN: Dict = {
 
   // gateway
   'gateway.connecting': '连接中…',
-  'gateway.reconnecting': '与服务器的连接已断开——正在重新连接…',
+  'gateway.reconnecting': '无法连接服务器——正在恢复…',
 
   // shell
   'shell.pickRoom': '请在左侧选择一个房间',
@@ -594,6 +594,8 @@ export const zhCN: Dict = {
   'app.onCloseHint': '最小化后 Calab 仍保持语音连接并响应按键通话',
   'app.onCloseTray': '最小化到托盘',
   'app.onCloseQuit': '退出',
+  'app.monoTray': '托盘单色图标',
+  'app.monoTrayHint': '随 Windows 任务栏主题显示白色或黑色',
   'app.devStats': '音视频统计',
   'app.devStatsHint': '码率、编解码器与负载——见语音面板',
 
@@ -698,6 +700,8 @@ export const zhCN: Dict = {
   'ws.role': '角色：{name}',
   'invite.new': '新建邀请',
   'invite.createHint': '创建后链接会立即复制到剪贴板。',
+  'invite.roles': '角色',
+  'invite.rolesHint': '通过邀请加入时授予',
   'invite.active': '有效邀请',
 
   // core (review fixes: links, mic loss, insecure server)

@@ -288,7 +288,7 @@ func New(d Deps) *App {
 	// Voice: the rtc service reacts to permission/membership/session events it publishes
 	// through SyncPublisher; everything else publishes through the same decorated publisher.
 	var rtcSvc *rtc.Service
-	pushSvc := push.New(d.DB, d.Push)
+	pushSvc := push.New(d.DB, d.Redis, d.Push)
 	pushSvc.Avatars = push.NewAvatars(d.Blob)
 	base = push.Publisher{Publisher: base, S: pushSvc}
 	pub := base
@@ -300,6 +300,7 @@ func New(d Deps) *App {
 		rtcSvc = rtc.NewService(rtc.Config{
 			PublicURL: d.Config.LiveKitURL, APIKey: d.Config.LiveKitAPIKey, Secret: d.Config.LiveKitAPISecret,
 			MaxParticipants: d.Config.LiveKitMaxParticipants, LostGrace: d.Config.VoiceLostGrace,
+			IdentityTransientGrace: d.Config.IdentityTransientGrace,
 		}, d.DB, d.Redis, lk, base)
 		rtcSvc.Plans = planSvc
 		pub = rtc.SyncPublisher{Publisher: base, S: rtcSvc}
@@ -341,6 +342,7 @@ func New(d Deps) *App {
 	authSvc.AdmitSeat = func(ctx context.Context, q *sqlc.Queries, wsID, userID uuid.UUID, role string) error {
 		return planSvc.AdmitSeat(ctx, q, wsID, userID, userID, role)
 	}
+	authSvc.InviteRoles = workspaces.GiveInviteRoles
 	authSvc.Mail = mailSvc
 	authSvc.Conversions = metrikaSvc
 	botSvc.SetAuth(authSvc)
@@ -402,6 +404,9 @@ func New(d Deps) *App {
 		Plans:              planSvc,
 		PlanContact:        d.Config.PlanContact(),
 		BillingSelfServe:   d.Config.Billing.Enabled && d.Config.Billing.SelfServe,
+		MaxFileMB:          uint32(d.Config.MaxFileSizeMB), //nolint:gosec // config validates 1..MaxFileSizeCapMB
+		// One grace for every undecided identity check: calls (rtc) and gateway leases (ADR-0166).
+		IdentityTransientGrace: d.Config.IdentityTransientGrace,
 	}, d.DB, d.Redis, authSvc, pub)
 
 	authSvc.OnBotRequest = hub.TouchBot
@@ -504,8 +509,12 @@ func New(d Deps) *App {
 	filesSvc.Routes(mux, private)
 	diskSvc := disk.New(d.DB, pub, filesSvc, planSvc)
 	diskSvc.PublicURL = d.Config.PublicAppURL
-	diskSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link:", 60, 60)        // public link page + thumbnail: 60 per minute per IP
-	diskSvc.LinkDownloadLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link-dl:", 30, 30) // public downloads (each Range request): 30 per minute per IP
+	diskSvc.LinkReadLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link:", 60, 60)           // public link page + thumbnail: 60 per minute per IP
+	diskSvc.LinkDownloadLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link-dl:", 30, 30)    // public downloads (each Range request): 30 per minute per IP
+	diskSvc.LinkArchiveLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link-zip:", 3, 0.2)    // «Скачать всё» of a folder link: 3 at once, then one per 5 minutes per IP
+	diskSvc.LinkUnlockLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link-pw:", 5, 5)        // password attempts on a protected link (ADR-0167): 5 at once, 5 per minute per IP
+	diskSvc.LinkUnlockLinkLimit = redisx.NewRateLimiter(d.Redis, "rl:disk-link-pwl:", 20, 10) // and 20 at once, 10 per minute per link (whatever the IPs)
+	diskSvc.UnlockKey = disk.DeriveUnlockKey([]byte(d.Config.JWTSecret))
 	diskSvc.Routes(mux, private)
 	// Office editing (ADR-0143): the routes are always registered (one route table); off = 404.
 	oc := d.Config.Office
@@ -521,6 +530,7 @@ func New(d Deps) *App {
 		SessionTTL: oc.SessionTTL,
 	}, &office.DiskStore{DB: d.DB, Files: filesSvc, Disk: diskSvc, PlanActive: planSvc.CheckActive}, officeSessions)
 	officeSvc.Announce = diskSvc
+	diskSvc.Office = officeSvc                                                          // the read-only viewer of public links (ADR-0165)
 	officeSvc.ConfigLimit = redisx.NewRateLimiter(d.Redis, "rl:office-config:", 30, 30) // opens: 30 at once, 30 per minute per user
 	officeSvc.ConvertLimit = redisx.NewRateLimiter(d.Redis, "rl:office-convert:", 5, 5) // «Сохранить как»: 5 per minute per user
 	officeSvc.DocsLimit = redisx.NewRateLimiter(d.Redis, "rl:office-ds:", 120, 120)     // Document Server file + callback requests: 120 per minute per item
@@ -690,6 +700,11 @@ func New(d Deps) *App {
 	// MCP for bots (CBF-48): its tools call the routes above through the full chain (h) with
 	// the bot's own token, so a tool has exactly the bot's rights.
 	mcpHandler := mcp.New(buildinfo.Version)
+	// CBF-185/187: signed download and upload URLs of the tools (ADR-0158 addendum «files»): the
+	// token in the path is the credential; the handlers replay the app's REST call as the caller.
+	mcpHandler.URLKey, mcpHandler.Redis, mcpHandler.Origins = mcp.DeriveURLKey([]byte(d.Config.JWTSecret)), d.Redis, d.Config.AllowedOrigins()
+	mux.Handle(mcp.FileRoute, http.HandlerFunc(mcpHandler.ServeFile))
+	mux.Handle(mcp.UploadRoute, http.HandlerFunc(mcpHandler.ServeUpload))
 	// ADR-0158: a person connects an MCP client through OAuth; a 401 of the endpoint points the
 	// client to the metadata.
 	mcpOAuth := mcpauth.New(mcpauth.Config{DB: d.DB, Auth: authSvc, Origins: d.Config.AllowedOrigins(), RedirectURIs: d.Config.MCPOAuthRedirectURIs,
@@ -699,6 +714,8 @@ func New(d Deps) *App {
 	authSvc.MCPInnerRoutes = mcp.InnerRoutes()
 	mcpOAuth.Routes(mux)
 	mux.Handle(mcp.Path, mcpOAuth.Challenge(private(mcpHandler)))
+	// CBF-183: the short address https://<app>/mcp — the same endpoint, its own OAuth resource.
+	mux.Handle(mcp.ShortPath, mcp.Browsers(mcpOAuth.Challenge(private(mcpHandler))))
 	mux.Handle("/api/", httpx.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
 		return httpx.NotFound("route")
 	}))

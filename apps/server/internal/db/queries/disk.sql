@@ -218,16 +218,34 @@ DELETE FROM disk_permissions WHERE item_id = $1;
 INSERT INTO disk_permissions (item_id, target_type, target_id, allow, deny) VALUES ($1, $2, $3, $4, $5);
 
 -- name: UpsertDiskLink :one
--- Turns the public link of a file on: a new code each time it is (re-)enabled.
-INSERT INTO disk_links (item_id, code, created_by, expires_at)
-VALUES (sqlc.arg('item_id'), sqlc.arg('code'), sqlc.narg('created_by'), sqlc.narg('expires_at'))
+-- Turns the public link of an item on: a new code each time it is (re-)enabled, with the
+-- password and «Без скачивания» of the request (ADR-0167); a re-enable bumps password_version,
+-- so no unlock of the old link opens the new one.
+INSERT INTO disk_links (item_id, code, created_by, expires_at, password_hash, view_only)
+VALUES (sqlc.arg('item_id'), sqlc.arg('code'), sqlc.narg('created_by'), sqlc.narg('expires_at'),
+        sqlc.narg('password_hash'), sqlc.arg('view_only'))
 ON CONFLICT (item_id) DO UPDATE SET
-    code       = EXCLUDED.code,
-    created_by = EXCLUDED.created_by,
-    created_at = now(),
-    expires_at = EXCLUDED.expires_at,
-    revoked_at = NULL,
-    downloads  = 0
+    code             = EXCLUDED.code,
+    created_by       = EXCLUDED.created_by,
+    created_at       = now(),
+    expires_at       = EXCLUDED.expires_at,
+    revoked_at       = NULL,
+    downloads        = 0,
+    password_hash    = EXCLUDED.password_hash,
+    password_version = disk_links.password_version + 1,
+    view_only        = EXCLUDED.view_only
+RETURNING *;
+
+-- name: SetDiskLinkPassword :one
+-- Sets, changes (hash) or removes (NULL) the password of a live link; every call bumps
+-- password_version, which ends every unlock made before (ADR-0167).
+UPDATE disk_links SET password_hash = sqlc.narg('password_hash'), password_version = password_version + 1
+WHERE id = $1
+RETURNING *;
+
+-- name: SetDiskLinkViewOnly :one
+-- «Без скачивания» of a live link (ADR-0167).
+UPDATE disk_links SET view_only = $2 WHERE id = $1
 RETURNING *;
 
 -- name: GetDiskLinkByItem :one
@@ -235,13 +253,18 @@ RETURNING *;
 SELECT * FROM disk_links WHERE item_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now());
 
 -- name: GetDiskLinkByCode :one
--- An anonymous visit: the live link with its item and file. A file in the trash or restricted
--- still answers (ADR-0094 §3); one deleted forever is gone with its rows.
-SELECT sqlc.embed(l), sqlc.embed(di), sqlc.embed(f)
+-- An anonymous visit: the live link with its item (a file or a folder, ADR-0165). A file in the
+-- trash or restricted still answers (ADR-0094 §3); one deleted forever is gone with its rows.
+SELECT sqlc.embed(l), sqlc.embed(di)
 FROM disk_links l
 JOIN disk_items di ON di.id = l.item_id
-JOIN files f ON f.id = di.file_id
 WHERE l.code = $1 AND l.revoked_at IS NULL AND (l.expires_at IS NULL OR l.expires_at > now());
+
+-- name: ListDiskDenyViewItems :many
+-- Which of the items carry an override that denies DISK_VIEW (bit 35) to a role or a person: a
+-- public folder link leaves them out with their subtrees (ADR-0165).
+SELECT DISTINCT item_id FROM disk_permissions
+WHERE item_id = ANY(sqlc.arg('ids')::uuid[]) AND (deny & (1::bigint << 35)) <> 0;
 
 -- name: RevokeDiskLink :execrows
 UPDATE disk_links SET revoked_at = now() WHERE item_id = $1 AND revoked_at IS NULL;
@@ -403,6 +426,19 @@ WITH RECURSIVE down (id, depth) AS (
 SELECT sqlc.embed(di), down.depth::int AS depth
 FROM down JOIN disk_items di ON di.id = down.id
 ORDER BY down.depth, di.id;
+
+-- name: ListDiskSubtreeCapped :many
+-- ListDiskSubtree for an anonymous visitor («Скачать всё» of a folder link, ADR-0165): at most lim
+-- rows and in no promised order (the caller sorts by depth), so a subtree far above the archive
+-- ceiling stops the walk early instead of being read whole on every call.
+WITH RECURSIVE down (id, depth) AS (
+    SELECT c.id, 1 FROM disk_items c WHERE c.parent_id = sqlc.arg('id')::uuid
+    UNION ALL
+    SELECT c.id, down.depth + 1 FROM disk_items c JOIN down ON c.parent_id = down.id WHERE down.depth < 64
+)
+SELECT sqlc.embed(di), down.depth::int AS depth
+FROM down JOIN disk_items di ON di.id = down.id
+LIMIT sqlc.arg('lim');
 
 -- name: DetachDiskItem :one
 -- Detaches an item (with its subtree) to the root of the Disk under a free name, with the flag

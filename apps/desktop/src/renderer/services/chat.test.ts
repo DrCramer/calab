@@ -1,5 +1,5 @@
 import { create } from '@bufbuild/protobuf';
-import { MessageSchema, UnfurlResponseSchema, type Message, type UnfurlResponse } from '@calaba/protocol';
+import { FileMetaSchema, MessageSchema, UnfurlResponseSchema, type Message, type UnfurlResponse } from '@calaba/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createMessage = vi.fn<(roomId: string, body: { nonce: string; content: string }) => Promise<{ message?: Message }>>();
@@ -11,14 +11,17 @@ vi.mock('../lib/api/endpoints', () => ({
     unfurl: { get: (url: string) => unfurlGet(url) },
   },
   uploadFile: vi.fn(),
+  uploadPath: (ws: string, room: string) => (ws ? `/api/workspaces/${ws}/files` : `/api/dms/${room}/files`),
 }));
 vi.mock('./gateway', () => ({ sendTyping: () => undefined }));
 vi.mock('../stores/toasts', () => ({ toast: { fail: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 vi.mock('../platform', () => ({ platform: { kind: 'web', app: { log: () => undefined } } }));
 
-const { sendMessage, retrySend, loadPins, resyncPins, unfurl } = await import('./chat');
+const { sendMessage, retrySend, loadPins, resyncPins, unfurl, unfurlRetryMs, peekUnfurl, resetChatCaches } = await import('./chat');
 const { ApiError } = await import('../lib/api/client');
 const { useMessages } = await import('../stores/messages');
+const { useSession } = await import('../stores/session');
+const { uploadFile } = await import('../lib/api/endpoints');
 
 const ROOM = 'room-1';
 const server = (nonce: string, id = '0190a0b0-0000-7000-8000-000000000001'): Message =>
@@ -88,6 +91,43 @@ describe('chat.sendMessage', () => {
   });
 });
 
+describe('chat.sendMessage — attachments too large (CBF-191)', () => {
+  const blob = (size: number) => new Blob([new Uint8Array(size)], { type: 'application/octet-stream' });
+  const upload = vi.mocked(uploadFile);
+  beforeEach(() => {
+    upload.mockReset();
+    useSession.getState().set({ maxFileMb: 0 });
+  });
+
+  it('a file above the known limit fails before uploading, without «Повторить»', async () => {
+    useSession.getState().set({ maxFileMb: 1 }); // a DM: the server's limit
+    await sendMessage('', ROOM, '', [{ file: blob(2 << 20), name: 'big.bin' }], undefined, 'n5');
+    expect(upload).not.toHaveBeenCalled();
+    expect(items()[0]).toMatchObject({ status: 'failed', final: true, error: 'Файл слишком большой, лимит 1 МБ' });
+  });
+
+  it('a proxy 413 page names the size, not «Сервер недоступен», and is final', async () => {
+    upload.mockReturnValue({ promise: Promise.reject(new ApiError('ERROR_CODE_UNSPECIFIED', 'Request Entity Too Large', 413)), abort: () => undefined });
+    await sendMessage('', ROOM, '', [{ file: blob(10), name: 'a.bin' }], undefined, 'n6');
+    expect(items()[0]).toMatchObject({ status: 'failed', final: true, error: 'Файл слишком большой' });
+  });
+
+  it('«Повторить» after a network failure uploads the same files again', async () => {
+    const meta = create(FileMetaSchema, { id: 'f1', name: 'a.bin' });
+    upload.mockReturnValueOnce({ promise: Promise.reject(new ApiError('ERROR_CODE_UNAVAILABLE', 'upload failed', 0)), abort: () => undefined });
+    const file = { file: blob(10), name: 'a.bin' };
+    await sendMessage('', ROOM, '', [file], undefined, 'n7');
+    const failed = items()[0];
+    expect(failed).toMatchObject({ status: 'failed', final: false });
+    upload.mockReturnValueOnce({ promise: Promise.resolve(meta), abort: () => undefined });
+    createMessage.mockImplementation((_r, b) => Promise.resolve({ message: server(b.nonce) }));
+    if (failed) await retrySend('', ROOM, failed);
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(upload.mock.calls[1]?.[1]).toBe(file.file);
+    expect(items()[0]?.status).toBe('sent');
+  });
+});
+
 describe('chat.loadPins (docs/18 step 4)', () => {
   const pinned = (id: string): Message => create(MessageSchema, { id, roomId: ROOM, authorId: 'me', content: 'pin', pinnedAt: { seconds: 1n } });
 
@@ -141,5 +181,54 @@ describe('chat.unfurl', () => {
     unfurlGet.mockImplementation((u) => Promise.resolve(create(UnfurlResponseSchema, u.endsWith('/empty') ? { url: u } : { url: u, title: 'Title' })));
     await expect(unfurl('https://example.test/empty')).resolves.toBeNull();
     await expect(unfurl('https://example.test/card')).resolves.toMatchObject({ title: 'Title' });
+  });
+
+  // GitHub #313: a row the feed remounts draws its preview at the final height on the first render.
+  it('peekUnfurl: the answer synchronously once it is in (a card or null), nothing before or after a reset', async () => {
+    unfurlGet.mockReset();
+    let answer: (r: UnfurlResponse) => void = () => undefined;
+    unfurlGet.mockImplementation((u) => (u.endsWith('/slow') ? new Promise((res) => (answer = res)) : Promise.reject(new ApiError('ERROR_CODE_NOT_FOUND', 'preview not found', 404))));
+    const slow = 'https://example.test/peek/slow';
+    const missing = 'https://example.test/peek/missing';
+    expect(peekUnfurl(slow)).toBeUndefined();
+    const p = unfurl(slow);
+    expect(peekUnfurl(slow)).toBeUndefined(); // on its way
+    answer(create(UnfurlResponseSchema, { url: slow, title: 'Slow card' }));
+    await p;
+    expect(peekUnfurl(slow)).toMatchObject({ title: 'Slow card' });
+    await unfurl(missing);
+    expect(peekUnfurl(missing)).toBeNull(); // «preview not found» is an answer too: no card, no growth later
+    resetChatCaches();
+    expect(peekUnfurl(slow)).toBeUndefined();
+    expect(peekUnfurl(missing)).toBeUndefined();
+  });
+
+  // CBF-176: a bot's fresh link gets a 429 / 503 for a moment; that used to stay «no preview» for the session.
+  it('a transient failure (429 / 5xx / network) is retried, then forgotten: never a session-long «no preview»', async () => {
+    const saved = unfurlRetryMs.delays;
+    unfurlRetryMs.delays = [1, 1];
+    try {
+      unfurlGet.mockReset();
+      const url = 'https://example.test/flaky';
+      unfurlGet
+        .mockRejectedValueOnce(new ApiError('ERROR_CODE_RATE_LIMITED', 'slow down', 429))
+        .mockRejectedValueOnce(new TypeError('network'))
+        .mockResolvedValueOnce(create(UnfurlResponseSchema, { url, title: 'Late card' }));
+      await expect(unfurl(url)).resolves.toMatchObject({ title: 'Late card' });
+      expect(unfurlGet).toHaveBeenCalledTimes(3);
+      expect(peekUnfurl(url)).toMatchObject({ title: 'Late card' });
+
+      const down = 'https://example.test/down';
+      unfurlGet.mockReset();
+      unfurlGet.mockRejectedValue(new ApiError('ERROR_CODE_INTERNAL', 'boom', 503));
+      await expect(unfurl(down)).resolves.toBeNull();
+      expect(unfurlGet).toHaveBeenCalledTimes(3);
+      expect(peekUnfurl(down)).toBeUndefined(); // not an answer: the next mount asks again
+      unfurlGet.mockReset();
+      unfurlGet.mockResolvedValue(create(UnfurlResponseSchema, { url: down, title: 'Back' }));
+      await expect(unfurl(down)).resolves.toMatchObject({ title: 'Back' });
+    } finally {
+      unfurlRetryMs.delays = saved;
+    }
   });
 });

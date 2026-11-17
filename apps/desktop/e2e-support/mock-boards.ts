@@ -558,7 +558,7 @@ export class BoardsMock {
   }
 
   /** Task notices as the server keeps them (ADR-0141): one row per recipient. */
-  private readonly noticeLog: Array<{ id: string; user: string; taskId: string; notice: MessageInitShape<typeof TaskNoticeSchema>; at: Timestamp }> = [];
+  private readonly noticeLog: Array<{ id: string; user: string; taskId: string; notice: MessageInitShape<typeof TaskNoticeSchema>; at: Timestamp; dismissed?: boolean }> = [];
 
   private noticeSeq = 0;
 
@@ -573,18 +573,23 @@ export class BoardsMock {
     return id;
   }
 
-  /** POST /me/inbox/dismiss (CBF-155): the caller's own history rows leave. */
+  /** POST /me/inbox/dismiss (CBF-155): the caller's own history rows leave the inbox list («Недавние» keeps them, CBF-179). */
   dismissNotices(userId: string, ids: readonly string[]): void {
+    for (const l of this.noticeLog) if (l.user === userId && ids.includes(l.id)) l.dismissed = true;
+  }
+
+  /** The same with `taskIds` (the ✕ of a «Недавние» row): every notice of those tasks is deleted. */
+  dismissTasks(userId: string, taskIds: readonly string[]): void {
     for (let i = this.noticeLog.length - 1; i >= 0; i--) {
       const l = this.noticeLog[i];
-      if (l && l.user === userId && ids.includes(l.id)) this.noticeLog.splice(i, 1);
+      if (l && l.user === userId && taskIds.includes(l.taskId)) this.noticeLog.splice(i, 1);
     }
   }
 
   /** GET /me/task-notices (ADR-0141): mine, newest first, of tasks I see now, with the current key and title. */
-  notices(userId: string, before: string, limit: number): MessageInitShape<typeof ListTaskNoticesResponseSchema> {
+  notices(userId: string, before: string, limit: number, withDismissed = false): MessageInitShape<typeof ListTaskNoticesResponseSchema> {
     const all = this.noticeLog
-      .filter((l) => l.user === userId && (!before || l.id < before))
+      .filter((l) => l.user === userId && (withDismissed || !l.dismissed) && (!before || l.id < before))
       .filter((l) => {
         const t = this.tasks.get(l.taskId);
         const b = t ? this.boards.get(t.task.boardId) : undefined;
@@ -598,6 +603,17 @@ export class BoardsMock {
       }),
       hasMore: all.length > limit,
     };
+  }
+
+  /** GET /workspaces/{id}/recent-tasks (CBF-179): my latest notice of each task of the workspace, newest first, ≤ 50. */
+  recentTasks(wsId: string, userId: string): MessageInitShape<typeof ListTaskNoticesResponseSchema> {
+    const seen = new Set<string>();
+    const entries = (this.notices(userId, '', Number.MAX_SAFE_INTEGER, true).entries ?? []).filter((e) => {
+      if (e.workspaceId !== wsId || !e.taskId || seen.has(e.taskId)) return false;
+      seen.add(e.taskId);
+      return true;
+    });
+    return { entries: entries.slice(0, 50), hasMore: false };
   }
 
   private emitTaskDelete(t: TaskRec, purged: boolean, board: BoardRec): void {
@@ -1923,6 +1939,18 @@ export class BoardsMock {
   }
 
   /** The seeded CAL-3 (comments fixture): its task and room ids. */
+  /** Test helper (CBF-179): a notice in `userId`'s history of the task `key`, `at` ms, emitting nothing. */
+  seedNotice(userId: string, key: string, notice: MessageInitShape<typeof TaskNoticeSchema>, at: number): void {
+    const t = this.taskByKey(key);
+    if (!t) throw new Error(`no ${key}`);
+    this.logNotice(userId, t, notice, timestampFromMs(at));
+  }
+
+  /** Test helper (CBF-179): `userId`'s notice history is gone (an empty «Недавние»). */
+  clearNotices(userId: string): void {
+    this.dismissTasks(userId, this.noticeLog.filter((l) => l.user === userId).map((l) => l.taskId));
+  }
+
   taskByKey(key: string): TaskRec | undefined {
     return [...this.tasks.values()].find((t) => t.task.key === key);
   }

@@ -1,6 +1,6 @@
 import { applyIdentityAccess, identityRoomLocked } from './identity';
 import { useIdentity } from '../stores/identity';
-import { accessLocked, billingLocked } from '../features/identity/model';
+import { accessLocked, accessUndecided, billingLocked } from '../features/identity/model';
 import {
   VoiceStreamStopReason,
   WorkspaceRole,
@@ -13,6 +13,7 @@ import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { syncTimeZone } from './timezone';
 import { log } from '../lib/log';
 import { HOME, isDm, useDms } from '../stores/dms';
+import { useBoards } from '../stores/boards';
 import { useInbox } from '../stores/inbox';
 import { useMessages } from '../stores/messages';
 import { useArchiveView } from '../stores/archiveView';
@@ -94,6 +95,7 @@ import { isTaskRoom } from '../stores/rooms';
 import { onRoomArchived } from '../lib/api/client';
 import { isTempRoom } from '../lib/tempRooms';
 import { roomClosedToast } from './roomClosed';
+import { settingsRouteSection } from '../features/mcp/model';
 
 /** «печатает» lives 5 s after the last TYPING_START: senders repeat it every 3 s while typing (services/chat.ts), so a stuck indicator (a lost stop, a closed tab) fades fast (docs/09 #64). */
 export const TYPING_MS = 5000;
@@ -113,6 +115,22 @@ function openAdminRoute(superadmin: boolean): void {
   } catch {
     // not fatal
   }
+}
+
+/**
+ * Web `/settings/<section>` (CBF-183: the server sends a browser opening the MCP address `/mcp`
+ * to `/settings/mcp`): the settings open on that section once READY is in; the address becomes `/`.
+ */
+function openSettingsRoute(): void {
+  if (import.meta.env.VITE_PLATFORM !== 'web' || typeof location === 'undefined') return;
+  const section = settingsRouteSection(location.pathname);
+  if (!section) return;
+  try {
+    history.replaceState(null, '', '/');
+  } catch {
+    // not fatal
+  }
+  useUi.getState().openDialog({ kind: 'settings', tab: section });
 }
 
 /** Applies one gateway DISPATCH event to the stores. */
@@ -171,7 +189,7 @@ export function applyDispatch(ev: DispatchEvent): void {
   }
   switch (e.case) {
     case 'workspaceIdentityAccessUpdate': {
-      if (e.value.sessionId === useSession.getState().sessionId && e.value.access) {
+      if (e.value.sessionId === useSession.getState().sessionId && e.value.access && !accessUndecided(e.value.access)) {
         applyIdentityAccess(e.value.access);
         // A pending workspace (board #145) that turned out locked: the lock screen, not «connecting».
         // An ALLOWED update is followed by its WORKSPACE_CREATE, which settles it.
@@ -191,6 +209,9 @@ export function applyDispatch(ev: DispatchEvent): void {
       const prevUnread = rooms.unread;
       const prevMentions = rooms.mentions;
       for (const access of r.identityAccess) applyIdentityAccess(access);
+      // ADR-0166: a pending workspace we were showing (its access check is undecided — a database
+      // stall) stays on screen as it was, stale, until its WORKSPACE_CREATE settles it.
+      const stale = holdStale(r.pendingWorkspaceIds);
       ws.reset();
       // Board #145: left out of this READY while their lease was pending — still mine, kept
       // selected (under the name we knew) and shown as connecting until the server settles them.
@@ -221,6 +242,7 @@ export function applyDispatch(ev: DispatchEvent): void {
         applySnapshotApps(snap);
         applySnapshotBoards(snap);
       }
+      stale();
       // Room list previews (ADR-0073 §5): one set for all the workspaces.
       useRoomPreviews.getState().setAll(r.workspaces);
       // Task rooms (ADR-0042) are not in READY: the open ones come back before stale windows go.
@@ -266,6 +288,7 @@ export function applyDispatch(ev: DispatchEvent): void {
         emailVerificationOptional: r.emailVerificationOptional,
         emailInvitePending: r.emailInvitePending,
         billingSelfServe: r.billingSelfServe,
+        maxFileMb: r.maxFileMb,
         ready: true,
       });
       if (r.me?.settings) applyUserSettings(r.me.settings);
@@ -283,6 +306,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       applyReadyAdmissions(r);
       dropStaleWorkspaceBackground();
       openAdminRoute(r.me?.isSuperadmin === true);
+      openSettingsRoute();
       // After a reconnect the server's record of this device and LiveKit may disagree (docs/09 #71).
       voice.checkSeat();
       // My mic / deafen intent may not have reached the server while away (ADR-0134).
@@ -308,6 +332,14 @@ export function applyDispatch(ev: DispatchEvent): void {
     case 'workspaceCreate': {
       const snap = e.value.snapshot;
       if (!snap) return;
+      // A workspace kept stale through a pending READY (ADR-0166): its rooms deleted meanwhile go.
+      const settled = snap.workspace?.id ?? '';
+      if (staleHeld.delete(settled)) {
+        const live = new Set(snap.rooms.map((room) => room.id));
+        for (const room of Object.values(useRooms.getState().byId))
+          if (room.workspaceId === settled && !live.has(room.id)) removeRoom(settled, room.id);
+        void resyncLoadedRooms(); // its loaded chats missed their events meanwhile
+      }
       useWorkspaces.getState().applySnapshot(snap);
       useRooms.getState().upsertMany(snap.rooms);
       for (const room of snap.rooms) if (room.lastMessageId) useRooms.getState().setLastMessage(room.id, room.lastMessageId);
@@ -404,6 +436,7 @@ export function applyDispatch(ev: DispatchEvent): void {
       return;
     case 'workspaceDelete': {
       const id = e.value.workspaceId;
+      staleHeld.delete(id);
       useRoomPreviews.getState().drop(Object.values(useRooms.getState().byId).flatMap((r) => (r.workspaceId === id ? [r.id] : [])));
       useWorkspaces.getState().remove(id);
       useRooms.getState().removeWorkspace(id);
@@ -510,6 +543,11 @@ export function applyDispatch(ev: DispatchEvent): void {
     // The inbox ✕ on any of my devices (CBF-155, ADR-0163).
     case 'inboxDismiss':
       useInbox.getState().dismiss([...e.value.messageIds, ...e.value.noticeIds]);
+      // The ✕ of a «Недавние» row: the task's notices are gone for good (CBF-179).
+      for (const id of e.value.taskIds) {
+        useInbox.getState().removeTask(id);
+        useBoards.getState().dropRecent(id);
+      }
       return;
     case 'workspaceReportCreate':
     case 'workspaceReportUpdate':
@@ -825,6 +863,73 @@ function holdPending(on: boolean): void {
     pendingTimer = undefined;
     if (Object.keys(useWorkspaces.getState().pending).length > 0) resyncGateway('pending workspace not settled');
   }, PENDING_WORKSPACE_MAX_MS);
+}
+
+/** Workspaces READY listed as pending that are still shown from before (ADR-0166), until settled. */
+const staleHeld = new Set<string>();
+
+/** Pending workspaces held stale now (the connection indicator, tests). */
+export function staleWorkspaces(): ReadonlySet<string> {
+  return staleHeld;
+}
+
+function pick<T>(map: Readonly<Record<string, T>>, keys: ReadonlySet<string>): Record<string, T> {
+  return Object.fromEntries(Object.entries(map).filter(([k]) => keys.has(k)));
+}
+
+/**
+ * READY lists a workspace as pending when its access check is undecided (a database stall,
+ * board #145) — it is still mine. What we were showing of it (the workspace with its members,
+ * its rooms, categories and read state) is taken before READY resets the stores and put back
+ * after, so the open chat / board / call stay on screen, stale, instead of a «connecting»
+ * screen; its WORKSPACE_CREATE (or a lock / WORKSPACE_DELETE) settles it. Returns the restore.
+ */
+export function holdStale(pendingIds: readonly string[]): () => void {
+  const w = useWorkspaces.getState();
+  const held = pendingIds.filter((id) => w.byId[id]);
+  staleHeld.clear();
+  if (held.length === 0) return () => {};
+  const ids = new Set(held);
+  const entries: typeof w.byId = {};
+  const people = new Set<string>();
+  for (const id of held) {
+    const entry = w.byId[id];
+    if (!entry) continue;
+    entries[id] = entry;
+    for (const userId of Object.keys(entry.members)) people.add(userId);
+  }
+  const users = pick(w.users, people);
+  const presences = pick(w.presences, people);
+  const prevOrder = w.order;
+  const r = useRooms.getState();
+  const rooms = Object.values(r.byId).filter((room) => ids.has(room.workspaceId));
+  const roomIds = new Set(rooms.map((room) => room.id));
+  const categories = Object.fromEntries(Object.entries(r.categories).filter(([, c]) => ids.has(c.workspaceId)));
+  const kept = {
+    readState: pick(r.readState, roomIds),
+    lastMessage: pick(r.lastMessage, roomIds),
+    unread: pick(r.unread, roomIds),
+    mentions: pick(r.mentions, roomIds),
+    notify: pick(r.notify, roomIds),
+  };
+  return () => {
+    useWorkspaces.setState((s) => {
+      const order = [...s.order];
+      // Back at the place it had in the rail.
+      for (const id of held) if (!order.includes(id)) order.splice(Math.min(prevOrder.indexOf(id), order.length), 0, id);
+      return { byId: { ...entries, ...s.byId }, order, users: { ...users, ...s.users }, presences: { ...presences, ...s.presences } };
+    });
+    useRooms.setState((s) => ({
+      categories: { ...categories, ...s.categories },
+      readState: { ...kept.readState, ...s.readState },
+      lastMessage: { ...kept.lastMessage, ...s.lastMessage },
+      unread: { ...kept.unread, ...s.unread },
+      mentions: { ...kept.mentions, ...s.mentions },
+      notify: { ...kept.notify, ...s.notify },
+    }));
+    useRooms.getState().upsertMany(rooms);
+    for (const id of held) staleHeld.add(id);
+  };
 }
 
 /** Keeps a valid workspace selected after READY / membership changes. */

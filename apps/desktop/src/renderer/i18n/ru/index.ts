@@ -171,7 +171,7 @@ export const ru = {
 
   // gateway
   'gateway.connecting': 'Подключение…',
-  'gateway.reconnecting': 'Нет соединения с сервером — переподключаемся…',
+  'gateway.reconnecting': 'Нет связи с сервером — восстанавливаем…',
 
   // shell
   'shell.pickRoom': 'Выберите комнату слева',
@@ -589,6 +589,8 @@ export const ru = {
   'app.onCloseHint': 'Свёрнутый Calab остаётся в голосе и слышит push-to-talk',
   'app.onCloseTray': 'Сворачивать в трей',
   'app.onCloseQuit': 'Выходить',
+  'app.monoTray': 'Монохромная иконка в трее',
+  'app.monoTrayHint': 'Белая или чёрная — по теме панели задач Windows',
   'app.devStats': 'Статистика звука и видео',
   'app.devStatsHint': 'Битрейты, кодеки и нагрузка — в панели голоса',
 
@@ -691,6 +693,8 @@ export const ru = {
   'ws.role': 'Роль: {name}',
   'invite.new': 'Новое приглашение',
   'invite.createHint': 'Ссылка скопируется в буфер обмена сразу после создания.',
+  'invite.roles': 'Роли',
+  'invite.rolesHint': 'Выдаются при входе по приглашению',
   'invite.active': 'Активные приглашения',
 
   // core (review fixes: links, mic loss, insecure server)

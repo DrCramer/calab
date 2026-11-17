@@ -15,6 +15,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
+	"time"
+
+	"github.com/redis/rueidis"
 
 	v1 "github.com/calaba/calaba/server/gen/calaba/v1"
 	"github.com/calaba/calaba/server/internal/auth"
@@ -23,6 +27,27 @@ import (
 
 // Path is the endpoint's route (any method; only POST is served).
 const Path = auth.MCPPath
+
+// ShortPath is the same endpoint at the short address (CBF-183): https://<app>/mcp. Only the
+// exact path: /mcp/connect and the rest of /mcp/ are the web app's.
+const ShortPath = auth.MCPShortPath
+
+// SettingsPage is the web app's «Settings → MCP» (a browser opening ShortPath lands there).
+const SettingsPage = "/settings/mcp"
+
+// Browsers wraps the short address: a browser that opens it (a top-level GET asking for HTML, no
+// token) is sent to the settings page that explains how to connect, instead of a JSON 401. An MCP
+// client never asks for text/html, so the transport and its OAuth discovery are untouched.
+func Browsers(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.Header.Get("Authorization") == "" && strings.Contains(r.Header.Get("Accept"), "text/html") {
+			w.Header().Set("Cache-Control", "no-store")
+			http.Redirect(w, r, SettingsPage, http.StatusSeeOther)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 // maxBody caps a JSON-RPC request.
 const maxBody = 1 << 20
@@ -45,6 +70,13 @@ type Handler struct {
 	API http.Handler
 	// Version is the server version reported in initialize.
 	Version string
+	// Signed file URLs (links.go): the signing key (DeriveURLKey; none = the tools refuse to
+	// make URLs), Valkey for the single use of upload URLs, the app origins the URLs are built
+	// on (the MCP request's Host among them, else the first), and the clock (tests).
+	URLKey  []byte
+	Redis   rueidis.Client
+	Origins []string
+	Now     func() time.Time
 }
 
 // New returns a handler; API is set later.
@@ -158,9 +190,12 @@ func (h *Handler) dispatch(r *http.Request, req rpcRequest) (any, *rpcError) {
 				return toolError("arguments: " + err.Error()), nil
 			}
 		}
-		out, err := t.run(r.Context(), &api{h: h.API, outer: r}, a)
+		out, err := t.run(r.Context(), &api{h: h.API, outer: r, m: h}, a)
 		if err != nil {
 			return toolError(errText(err)), nil
+		}
+		if blocks, ok := out.(content); ok { // text and image blocks (get_task_attachment)
+			return map[string]any{"content": []map[string]any(blocks)}, nil
 		}
 		b, err := json.Marshal(out)
 		if err != nil {

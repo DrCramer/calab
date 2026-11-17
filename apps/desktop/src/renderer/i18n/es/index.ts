@@ -173,7 +173,7 @@ export const es: Dict = {
 
   // gateway
   'gateway.connecting': 'Conectando…',
-  'gateway.reconnecting': 'Se perdió la conexión con el servidor — reconectando…',
+  'gateway.reconnecting': 'Sin conexión con el servidor — recuperando…',
 
   // shell
   'shell.pickRoom': 'Elige una sala a la izquierda',
@@ -595,6 +595,8 @@ export const es: Dict = {
   'app.onCloseHint': 'Calab minimizado sigue en la voz y atiende el push-to-talk',
   'app.onCloseTray': 'Minimizar a la bandeja',
   'app.onCloseQuit': 'Salir',
+  'app.monoTray': 'Icono monocromo en la bandeja',
+  'app.monoTrayHint': 'Blanco o negro, según el tema de la barra de tareas de Windows',
   'app.devStats': 'Estadísticas de audio y video',
   'app.devStatsHint': 'Tasas de bits, códecs y carga — en el panel de voz',
 
@@ -699,6 +701,8 @@ export const es: Dict = {
   'ws.role': 'Rol: {name}',
   'invite.new': 'Nueva invitación',
   'invite.createHint': 'El enlace se copia al portapapeles en cuanto se crea.',
+  'invite.roles': 'Roles',
+  'invite.rolesHint': 'Se asignan al unirse con la invitación',
   'invite.active': 'Invitaciones activas',
 
   // core (review fixes: links, mic loss, insecure server)
