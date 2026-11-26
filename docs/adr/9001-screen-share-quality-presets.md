@@ -33,3 +33,5 @@
 Upstream 4.12–4.18 migrations 00139–00150 are appended as 00141–00152 (including upstream gaps). Applied versions through 00140 are immutable.
 
 Upstream 4.19–4.23 migrations 00151–00155 are appended as 00153–00157. Versions through 00152 remain byte-identical. Fork ADR IDs 9001/9002 are reserved to avoid upstream collisions.
+
+Upstream 4.25 recording speech migration 00156 is appended as 00158. Applied versions through 00157 remain byte-identical.

@@ -8,8 +8,11 @@ import {
   HeartbeatSchema,
   IdentifySchema,
   PresenceStatus,
+  RecordingSpeechSchema,
   ResumeSchema,
+  ServerCapability,
   SetPresenceSchema,
+  SpeechIntervalSchema,
   SubscribeSchema,
   TypingSchema,
   type DispatchEvent,
@@ -80,6 +83,8 @@ export interface GatewayDeps {
   renewTabId?: () => void;
   /** Tab / window hidden now: an evicted session (4011) waits for wake() instead of a timer. */
   isHidden?: () => boolean;
+  /** HELLO brought capabilities other than the previous HELLO's (see `supports`). */
+  onCapabilities?(): void;
 }
 
 const OPEN = 1;
@@ -142,6 +147,12 @@ export class GatewayClient {
   /** When the current socket was created / got HELLO (0 = not yet). */
   private connectAt = 0;
   private helloAt = 0;
+  /**
+   * Hello.capabilities of the latest HELLO: what the server accepts beyond the base protocol (an
+   * older server closes the socket on a frame it does not know — a rollback, old pods of a
+   * rolling update). Kept across a drop until the next HELLO says otherwise.
+   */
+  private serverCaps = 0n;
   private lastBeatAt = 0;
   /** Consecutive 4004 closes without READY in between (the first one reconnects at once). */
   private authFailures = 0;
@@ -278,6 +289,23 @@ export class GatewayClient {
   setPresence(status: PresenceStatus, untilMs?: number): void {
     const until = untilMs === undefined ? undefined : timestampFromMs(untilMs);
     this.sendLimited(GatewayOpcode.PRESENCE_UPDATE, { case: 'setPresence', value: create(SetPresenceSchema, { status, until }) }, until ? 'presence:manual' : 'presence');
+  }
+
+  /**
+   * My on-air intervals of a recorded meeting (ADR-0169). `intervals` is called at the moment of
+   * sending (its times are «ms ago»). Sent now or not at all: false = no free token or the session is
+   * not READY (authenticated) yet, the caller keeps the intervals for its next attempt.
+   */
+  sendRecordingSpeech(roomId: string, recordingId: string, intervals: () => { agoStartMs: number; agoEndMs: number }[]): boolean {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== OPEN || this.status !== 'ready' || !this.supports(ServerCapability.RECORDING_SPEECH) || !this.takeToken()) return false;
+    const value = create(RecordingSpeechSchema, { roomId, recordingId, intervals: intervals().map((iv) => create(SpeechIntervalSchema, iv)) });
+    return this.sendFrame(GatewayOpcode.RECORDING_SPEECH, { case: 'recordingSpeech', value });
+  }
+
+  /** The latest HELLO advertised `cap` (Hello.capabilities); false before the first HELLO. */
+  supports(cap: ServerCapability): boolean {
+    return (this.serverCaps & BigInt(cap)) !== 0n;
   }
 
   subscribe(roomIds: string[]): void {
@@ -419,6 +447,10 @@ export class GatewayClient {
         this.helloTimer = null;
         this.helloAt = Date.now();
         this.heartbeatMs = frame.payload.value.heartbeatIntervalMs || this.heartbeatMs;
+        if (frame.payload.value.capabilities !== this.serverCaps) {
+          this.serverCaps = frame.payload.value.capabilities;
+          this.deps.onCapabilities?.();
+        }
         this.startHeartbeat();
         void this.authenticate();
         return;

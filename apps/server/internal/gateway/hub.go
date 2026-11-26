@@ -85,6 +85,10 @@ type Hub struct {
 	nSockets             atomic.Int64
 	// botSeen: when a bot's REST activity was last recorded here (TouchBot throttle).
 	botSeen sync.Map
+	// RecordingSpeech takes a client's on-air report of a recorded meeting (recording.Service.
+	// ReportSpeech, ADR-0169); nil = dropped and not advertised in HELLO (RECORDING_SPEAKER_NAMES=off).
+	// Set before serving.
+	RecordingSpeech func(ctx context.Context, user uuid.UUID, m *v1.RecordingSpeech, at time.Time)
 }
 
 // New creates a hub. Run must be started for fan-out.

@@ -1,5 +1,6 @@
 import { OfficeConfigResponseSchema, PublicDiskFileSchema, PublicDiskFolderSchema, UnlockDiskLinkRequestSchema } from '@calaba/protocol';
 import { body, call, callEmpty, qs } from '../lib/api/client';
+import { isInternalDiskPath } from '../lib/diskPublic';
 import { platform } from '../platform';
 
 /**
@@ -52,6 +53,18 @@ export const diskPublic = {
 /** The code of a `/d/{code}` page in the web build (null elsewhere). */
 export const diskPageCode = (): string | null =>
   import.meta.env.VITE_PLATFORM === 'web' ? (/^\/d\/([A-Za-z0-9_-]{43})\/?$/.exec(location.pathname)?.[1] ?? null) : null;
+
+/**
+ * The web page was opened at an in-app Disk address (CBF-201): the login explains it is not the
+ * public link. Read once at load — the boot hands `/disk/<id>` to `openDiskLink`, which resets the
+ * address bar to `/` before the login screen renders; forgotten once a session begins (a later
+ * logout's login screen is not about that link).
+ */
+let openedAtInternalDisk = import.meta.env.VITE_PLATFORM === 'web' && typeof location !== 'undefined' && isInternalDiskPath(location.pathname);
+export const onInternalDiskPage = (): boolean => openedAtInternalDisk;
+export const forgetInternalDiskPage = (): void => {
+  openedAtInternalDisk = false;
+};
 
 /** Starts a download of an absolute URL (the server answers `Content-Disposition: attachment`). */
 export function downloadUrl(url: string): void {
