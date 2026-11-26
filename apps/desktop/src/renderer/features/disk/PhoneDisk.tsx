@@ -24,6 +24,7 @@ import { DiskDialogs } from './Dialogs';
 import { CreateMenu } from './DiskBar';
 import { Center, RenameField, trashOrder } from './DiskItems';
 import { UploadRow } from './DiskScreen';
+import { PublicLinkMark } from './PublicLinkMark';
 import { ItemContextMenu, ItemMenuButton } from './ItemMenu';
 import { ItemBadges, ItemGlyph, ItemPicture } from './visuals';
 
@@ -89,6 +90,7 @@ export function PhoneDisk({ workspaceId, folderId, trash, root }: { workspaceId:
       ) : (
         <PhoneHeader title={title}>{actions}</PhoneHeader>
       )}
+      {folderId && !trash ? <PublicLinkMark itemId={folderId} className="flex items-center gap-2 border-b border-line px-4 py-1.5" /> : null}
       {searching ? <SearchField onClose={() => setSearching(false)} /> : null}
       <PhoneListing workspaceId={workspaceId} folderId={folderId} trash={trash} root={root} />
       <PhoneUploads workspaceId={workspaceId} />

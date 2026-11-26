@@ -13,6 +13,7 @@ import {
   TypingStartSchema,
   type DispatchEvent,
   type GatewayFrame,
+  ServerCapability,
 } from '@calaba/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReconnectBanner, RECONNECT_BANNER_DELAY_MS } from './banner';
@@ -65,8 +66,9 @@ class FakeSocket implements SocketLike {
   }
 }
 
-const hello = (ms = 10_000): GatewayFrame =>
-  create(GatewayFrameSchema, { op: GatewayOpcode.HELLO, payload: { case: 'hello', value: create(HelloSchema, { heartbeatIntervalMs: ms }) } });
+const SPEECH = BigInt(ServerCapability.RECORDING_SPEECH);
+const hello = (ms = 10_000, capabilities = 0n): GatewayFrame =>
+  create(GatewayFrameSchema, { op: GatewayOpcode.HELLO, payload: { case: 'hello', value: create(HelloSchema, { heartbeatIntervalMs: ms, capabilities }) } });
 const ack = (): GatewayFrame =>
   create(GatewayFrameSchema, { op: GatewayOpcode.HEARTBEAT_ACK, payload: { case: 'heartbeatAck', value: create(HeartbeatAckSchema) } });
 const dispatch = (seq: number, event: DispatchEvent['event']): GatewayFrame =>
@@ -87,6 +89,7 @@ function setup(
     getToken?: () => Promise<string | null>;
     failCreate?: () => boolean;
     onStatus?: (s: GatewayStatus) => void;
+    onCapabilities?: () => void;
     tab?: { id: () => string; renew: () => void; hidden: () => boolean };
   } = {},
 ) {
@@ -112,6 +115,7 @@ function setup(
     },
     onFatal: (k, r) => fatals.push(r ? `${k}:${r}` : k),
     random: () => 0.5,
+    ...(opts.onCapabilities && { onCapabilities: opts.onCapabilities }),
     ...(opts.tab && { tabId: opts.tab.id, renewTabId: opts.tab.renew, isHidden: opts.tab.hidden }),
   });
   const last = (): FakeSocket => {
@@ -123,10 +127,10 @@ function setup(
 }
 
 /** Opens the latest socket, sends HELLO and lets the async IDENTIFY/RESUME go out. */
-async function handshake(t: ReturnType<typeof setup>, ms = 10_000): Promise<FakeSocket> {
+async function handshake(t: ReturnType<typeof setup>, ms = 10_000, capabilities = 0n): Promise<FakeSocket> {
   const s = t.last();
   s.open();
-  s.deliver(hello(ms));
+  s.deliver(hello(ms, capabilities));
   await vi.advanceTimersByTimeAsync(0);
   return s;
 }
@@ -491,6 +495,56 @@ describe('GatewayClient', () => {
     await vi.advanceTimersByTimeAsync(1000);
     for (let i = 0; i < 25; i++) t.client.sendTyping('r');
     expect(typingSent()).toBe(OUT_BURST + 2);
+  });
+
+  it('a recording speech report goes now or not at all (ADR-0169)', async () => {
+    const t = setup();
+    t.client.start();
+    const s = await handshake(t, 10_000, SPEECH);
+    const reports = (): number => s.sent.filter((f) => f.op === GatewayOpcode.RECORDING_SPEECH).length;
+    let built = 0;
+    const ivs = (): { agoStartMs: number; agoEndMs: number }[] => {
+      built++;
+      return [{ agoStartMs: 3000, agoEndMs: 1000 }];
+    };
+    expect(t.client.sendRecordingSpeech('r', 'rec', ivs)).toBe(false); // socket open, not READY yet
+    expect(built).toBe(0);
+    s.deliver(ready(1));
+    expect(t.client.sendRecordingSpeech('r', 'rec', ivs)).toBe(true);
+    const f = s.sent.find((x) => x.payload.case === 'recordingSpeech');
+    expect(f?.payload.case === 'recordingSpeech' && f.payload.value.intervals.map((i) => [i.agoStartMs, i.agoEndMs])).toEqual([[3000, 1000]]);
+    for (let i = 0; i < OUT_BURST; i++) t.client.sendTyping('r'); // use up the burst
+    expect(t.client.sendRecordingSpeech('r', 'rec', ivs)).toBe(false); // the caller keeps its intervals
+    expect(reports()).toBe(1);
+    expect(built).toBe(1); // times are taken only when the frame goes
+  });
+
+  it('sends a recording speech report only while the latest HELLO advertises it (ADR-0169)', async () => {
+    let changes = 0;
+    const t = setup({ onCapabilities: () => changes++ });
+    t.client.start();
+    const ivs = (): { agoStartMs: number; agoEndMs: number }[] => [{ agoStartMs: 3000, agoEndMs: 1000 }];
+    const s = await handshake(t); // an older server (or RECORDING_SPEAKER_NAMES=off): no bit
+    s.deliver(ready(1));
+    expect(t.client.supports(ServerCapability.RECORDING_SPEECH)).toBe(false);
+    expect(t.client.sendRecordingSpeech('r', 'rec', ivs)).toBe(false);
+    expect(s.sent.some((f) => f.op === GatewayOpcode.RECORDING_SPEECH)).toBe(false);
+    expect(changes).toBe(0);
+
+    s.serverClose(1006);
+    await vi.advanceTimersByTimeAsync(BACKOFF_MAX_MS);
+    const s2 = await handshake(t, 10_000, SPEECH); // a new server
+    s2.deliver(resumed(2));
+    expect(changes).toBe(1);
+    expect(t.client.sendRecordingSpeech('r', 'rec', ivs)).toBe(true);
+
+    s2.serverClose(1006);
+    await vi.advanceTimersByTimeAsync(BACKOFF_MAX_MS);
+    const s3 = await handshake(t); // rolled back
+    s3.deliver(resumed(3));
+    expect(changes).toBe(2);
+    expect(t.client.sendRecordingSpeech('r', 'rec', ivs)).toBe(false);
+    expect(s3.sent.some((f) => f.op === GatewayOpcode.RECORDING_SPEECH)).toBe(false);
   });
 
   it('presence over the limit is deferred and coalesced to the newest value', async () => {

@@ -745,6 +745,16 @@ test('m-chat-recording', async ({ page }) => {
   await page.mouse.move(0, 0);
   await expectFeedFits(page);
   await checkpoint(page, 'm-chat-recording', { main: true });
+  // The transcript sheet with speakers by name (ADR-0169): avatar + name, a caller's number, «Спикер 3».
+  mock.state.transcriptSpeakers = true;
+  await feedToBottom(page);
+  await card.getByRole('button', { name: 'Полный транскрипт' }).tap();
+  const sheet = page.getByRole('dialog', { name: 'Транскрипт встречи' });
+  await expect(sheet.getByTestId('recording-transcript-row').first()).toContainText('Анна Смирнова');
+  await checkpoint(page, 'm-recording-transcript-speakers');
+  mock.state.transcriptSpeakers = false;
+  await sheet.getByRole('button', { name: 'Закрыть' }).tap();
+  await expect(sheet).toHaveCount(0);
   await card.getByRole('button', { name: 'Ответить', exact: true }).tap();
   const composer = page.getByTestId('composer');
   await expect(composer).toContainText('Встреча записана · 42 мин');
@@ -3000,6 +3010,14 @@ test('m-disk-folder', async ({ page }) => {
   await expect(folder.getByTestId('phone-header')).toContainText('Проекты');
   await expect(folder.getByTestId('disk-row')).toHaveCount(1);
   await checkpoint(page, 'm-disk-folder');
+  // CBF-201: a public link on the open folder — the mark «Доступна по ссылке» under the header.
+  await folder.getByTestId('phone-disk-more').tap();
+  await page.getByTestId('disk-open-link').tap();
+  await page.getByTestId('disk-link').getByRole('switch').tap();
+  await expect(page.getByTestId('disk-link-url')).toHaveValue(/\/d\//);
+  await page.keyboard.press('Escape');
+  await expect(folder.getByTestId('disk-public-mark')).toContainText('Доступна по ссылке');
+  await checkpoint(page, 'm-disk-folder-public-mark', { snapshot: false });
   // CBF-22: a text file opens the read-only viewer (tap), the type plates read in the rows.
   await folder.getByTestId('disk-row').getByTestId('disk-row-open').tap();
   await expect(folder.getByTestId('disk-row')).toHaveCount(4);
@@ -3007,6 +3025,16 @@ test('m-disk-folder', async ({ page }) => {
   await folder.getByTestId('disk-row').filter({ hasText: 'План релиза.md' }).getByTestId('disk-row-open').tap();
   await expect(page.getByTestId('disk-view-markdown')).toBeVisible();
   await checkpoint(page, 'm-disk-preview-text');
+  await page.keyboard.press('Escape');
+  // CBF-201: a file with its own public link — the same mark in the viewer.
+  await folder.getByTestId('disk-row').filter({ hasText: 'План релиза.md' }).getByTestId('disk-item-more').tap();
+  await page.getByTestId('disk-item-menu').getByTestId('disk-menu-link').tap();
+  await page.getByTestId('disk-link').getByRole('switch').tap();
+  await expect(page.getByTestId('disk-link-url')).toHaveValue(/\/d\//);
+  await page.keyboard.press('Escape');
+  await folder.getByTestId('disk-row').filter({ hasText: 'План релиза.md' }).getByTestId('disk-row-open').tap();
+  await expect(page.getByTestId('disk-public-mark')).toContainText('Доступна по ссылке');
+  await checkpoint(page, 'm-disk-preview-public-mark', { snapshot: false });
   await page.keyboard.press('Escape');
   await page.getByTestId('phone-back').tap();
   await page.getByTestId('phone-back').tap();
@@ -3083,6 +3111,9 @@ test('m-wiki-page', async ({ page }) => {
   await page.getByTestId('wiki-menu-access').tap();
   await expect(page.getByRole('dialog')).toBeVisible();
   await checkpoint(page, 'm-wiki-share', { snapshot: false });
+  await page.getByRole('dialog').getByRole('radio', { name: 'Ссылка' }).tap();
+  await expect(page.getByTestId('wiki-link-org-url')).toBeVisible();
+  await checkpoint(page, 'm-wiki-share-link', { snapshot: false });
 });
 
 test('m-wiki-toolbar', async ({ page }) => {

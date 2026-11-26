@@ -47,6 +47,7 @@ import { micTier, musicTier, type OpusTier } from '../lib/media/opusTier';
 import { applyMicTier, installOpusTierHook } from '../lib/media/opusTierPublish';
 import { ECHO, EchoRiskDetector, RemoteActivity, duckWanted, duckable } from '../lib/media/echo';
 import { RateTracker, audioSourceEcho, candidatePair, inboundAudio, inboundVideo, outboundAudio, outboundVideo, transportBytes } from '../lib/media/stats';
+import { PublisherDiag, ViewerDiag, requestedRids } from '../lib/media/streamDiag';
 import { VoiceGate, rmsToDb } from '../lib/media/vad';
 import { denoiseMode, wakeDbFor } from '../lib/media/denoiseSleep';
 import { rnnoiseSupported } from '../lib/media/rnnoiseSupport';
@@ -60,7 +61,7 @@ import { REMOTE_LEVEL, RemoteLevelSpeaking, readLevel, type LevelSample } from '
 import { audioDevices, deviceName, deviceSwitches, type AudioDevice } from '../lib/deviceSwitch';
 import { answerCallSelf, canSpeakFrom, isDeviceGone, meterUpdate, micModeFor, mySeat, pttAllowed, pttCue, qualityOf, remoteAudio, toggleDeafen, toggleMute, transmitDecision, withUserMuted, withUserVolume } from '../lib/voiceLogic';
 import { RemoteAudioOut } from '../lib/media/remoteAudioOut';
-import { captureOnOutputHeadset, livekitOutputStale, outputSink, outputsChanged } from '../lib/media/outputRoute';
+import { captureOnOutputHeadset, effectiveOutputChanged, livekitOutputStale, outputSink } from '../lib/media/outputRoute';
 import { useMessages } from '../stores/messages';
 import { useRooms } from '../stores/rooms';
 import { isTempRoom } from '../lib/tempRooms';
@@ -94,6 +95,7 @@ import {
   seatGraceMs,
   type MicPubView,
 } from '../lib/voiceRecovery';
+import { SilentVoiceWatch, type SilentStep, type VoiceFlow } from '../lib/silentVoice';
 import { SELF_SYNC_LAG_MS, SelfStateSync, type SelfFlags } from '../lib/selfStateSync';
 import { CONNECT_STUCK_MS, ConnectWatchdog, DISCONNECT_WAIT_MS, RECONNECT_STUCK_MS, STOP_STREAM_WAIT_MS, TEARDOWN_WAIT_MS, reconnectVerdict, rejectAfter, settleWithin, type ConnectStage, type StuckKind } from '../lib/voiceWatchdog';
 import { annot } from './annot';
@@ -173,6 +175,11 @@ const REBIND_SETTLE_MS = 400;
  * to the HFP profile, which takes about a second and fires no `devicechange` — re-bind after it.
  */
 const HEADSET_ROUTE_SETTLE_MS = 1500;
+/**
+ * A remote element fired `error` (its WebRTC output died or could not open, CBF-193): re-bind
+ * again, at most this many times per output change — a device that keeps failing cannot spin.
+ */
+const BROKEN_REBINDS = 2;
 /**
  * Mic track mute / unmute (ADR-0134): an op unsettled after this counts as failed (a lock held
  * across a dead link), and a failed one is retried after MUTE_RETRY_MS (by attempt, capped) —
@@ -274,6 +281,8 @@ class VoiceEngine {
   private muteRetryTimer: number | null = null;
   /** scheduleRebind: the settle timer after an output device change. */
   private rebindTimer: number | null = null;
+  /** Re-binds a remote element's `error` may still start before the next output change (CBF-193). */
+  private brokenRebinds = BROKEN_REBINDS;
   /** performance.now() the pending re-bind is due at: a later request never brings it forward. */
   private rebindDue = 0;
   private muteFails = 0;
@@ -327,15 +336,21 @@ class VoiceEngine {
   private lastMeterPush = 0;
   private audioBitrateKbps = 32;
   private screen: ActiveScreenShare | null = null;
+  /** Stream quality lines in main.log on change (docs/02 «Стрим: диагностика качества»). */
+  private readonly screenDiag = new PublisherDiag();
+  private readonly viewerDiag = new ViewerDiag();
   /**
    * Remote audio: one <audio> per track (echo rule 1), the only writer of their muted / volume /
    * sink (deafen, per-user volumes survive device switches and LiveKit's own writes; docs/02 «Deafen»).
    */
-  private readonly audioOut = new RemoteAudioOut(() => {
-    const v = useVoice.getState();
-    const p = prefs();
-    return { deafened: v.deafened, userVolumes: p.userVolumes, mutedUsers: p.mutedUsers, deafUsers: p.deafUsers, streamVolume: v.streamVolume, outputVolume: p.outputVolume };
-  });
+  private readonly audioOut = new RemoteAudioOut(
+    () => {
+      const v = useVoice.getState();
+      const p = prefs();
+      return { deafened: v.deafened, userVolumes: p.userVolumes, mutedUsers: p.mutedUsers, deafUsers: p.deafUsers, streamVolume: v.streamVolume, outputVolume: p.outputVolume };
+    },
+    () => this.onRemoteAudioBroken(),
+  );
   /** Stream subscriptions we requested (setSubscribed signals on every call, so dedupe). */
   private readonly wanted = new Map<string, boolean>();
   /** Whose stream we told «I'm watching» (calaba.watch), to send the matching «stopped». */
@@ -363,6 +378,24 @@ class VoiceEngine {
    */
   private remoteSpeakers: string[] = [];
   private readonly levelSpeakers = new RemoteLevelSpeaking();
+  /** Remote identities speaking at the last syncSpeaking: a new one starts the silent-voice check. */
+  private remoteSpeakingNow = new Set<string>();
+  /**
+   * «Speaking but silent» (lib/silentVoice.ts, docs/02 «Тихий собеседник»): a speaking colleague
+   * whose subscribed mic plays nothing here — re-attach, then resubscribe, bounded. Runs only on
+   * speaking starts: one receiver getStats + one one-shot timer per check, no permanent timer.
+   */
+  private readonly silentWatch = new SilentVoiceWatch({
+    probe: (sid) => this.probeMic(sid),
+    speaking: (sid) => {
+      const hit = this.micPub(sid);
+      return hit !== null && this.remoteSpeakingNow.has(hit.p.identity);
+    },
+    act: (sid, step, why) => this.onSilentMic(sid, step, why),
+    now: () => Date.now(),
+    setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+    clearTimeout: (id) => window.clearTimeout(id as number),
+  });
   /** The remote-level speaking sampler runs (on every 2nd echo tick: one timer, docs/14-energy.md). */
   private levelSpeakOn = false;
   private levelTick = 0;
@@ -587,6 +620,8 @@ class VoiceEngine {
     // is not sent to the previously open room by mistake; an open task / mail / DM is not taken
     // away (lib/chatFollow.ts). A click on another room still opens it.
     followVoiceChat({ kind: 'join', workspaceId, roomId, resumed: opts.resumed, call: opts.call });
+    const from = useVoice.getState().roomId;
+    if (from && from !== roomId) this.runBeforeLeave(); // a switch leaves the old room
     this.announceJoin();
     setLink({ attempts: 0, lastError: null, blockedHost: null });
     // Optimistic join (docs/05): I am in the room's list from the click on, also while the old
@@ -806,6 +841,7 @@ class VoiceEngine {
         ...(this.outputSinkNow() ? { audioOutput: { deviceId: this.outputSinkNow() } } : {}),
       });
       this.room = room;
+      this.brokenRebinds = BROKEN_REBINDS;
       // H.264 «Авто» = High on the wire (hardware on macOS): codec preferences set between
       // addTransceiver and the offer (lib/media/h264.ts, docs/02 «Кодек»). Lives as long as the Room.
       installH264ProfileHook(room.localParticipant, () => room.engine.pcManager?.publisher.getTransceivers());
@@ -1784,6 +1820,27 @@ class VoiceEngine {
     }, SEAT_SELF_GRACE_MS);
   }
 
+  private readonly beforeLeave: (() => void)[] = [];
+
+  /**
+   * `fn` runs right before this device leaves its room on purpose (leave, a switch to another
+   * room), while the connection and the server seat are still there: the last on-air report of
+   * a recorded meeting (ADR-0169) must reach the server before the seat goes.
+   */
+  onBeforeLeave(fn: () => void): void {
+    this.beforeLeave.push(fn);
+  }
+
+  private runBeforeLeave(): void {
+    for (const fn of this.beforeLeave) {
+      try {
+        fn();
+      } catch (err) {
+        log.warn('voice: before-leave hook failed', err);
+      }
+    }
+  }
+
   /**
    * User intent: leave voice (also stops a pending rejoin). `tellServer` false: another tab of
    * this auth session took the voice seat over (#40) — the seat is its now, a /voice/leave
@@ -1802,6 +1859,7 @@ class VoiceEngine {
     // /join already recorded it as pending), or the old call while a switch tears it down.
     const v = useVoice.getState();
     const seat = v.roomId ?? this.roomId ?? v.joining?.roomId ?? null;
+    this.runBeforeLeave();
     setVoice({ joining: null });
     await this.teardown(sound);
     // After room.disconnect(): tell the server at once (a pending /join would otherwise stay
@@ -2211,6 +2269,8 @@ class VoiceEngine {
       this.stopMicPipeline();
     }
     for (const el of this.audioOut.clear()) el.remove();
+    if (this.rebindTimer !== null) window.clearTimeout(this.rebindTimer);
+    this.rebindTimer = null;
     this.resetRecovery(keepSeat || park);
     this.viewers.clear();
     this.wanted.clear();
@@ -2654,6 +2714,7 @@ class VoiceEngine {
     // the speaking hold. VAD keeps the hold: the gate flaps between words.
     const instantOff = me && this.micMode() === 'ptt' && !this.selfSpeaking ? new Set([me]) : undefined;
     const remote = [...this.remoteSpeakers, ...this.levelSpeakers.identities()];
+    this.watchSpeakers(remote);
     this.speakers.update(speakingUserIds(remote, local, { userId: me, on: this.selfSpeaking && (this.room !== null || this.nativeRoom !== null) }), instantOff);
   }
 
@@ -2727,6 +2788,7 @@ class VoiceEngine {
 
   private resetSpeaking(): void {
     this.remoteSpeakers = [];
+    this.remoteSpeakingNow = new Set();
     this.stopLevelSpeaking();
     this.levelSpeakers.reset();
     this.selfSpeaking = false;
@@ -2974,6 +3036,108 @@ class VoiceEngine {
     for (const el of track.detach()) el.remove();
   }
 
+  /**
+   * A fresh player for one remote track: its element drops the stream (srcObject = null, so the
+   * next attach builds a new MediaStream and player instead of re-using the old one), leaves the
+   * DOM and RemoteAudioOut, and the track is attached again (same rules as on TrackSubscribed).
+   */
+  private reattachAudio(track: RemoteTrack, p: RemoteParticipant): void {
+    if (!track.sid) return;
+    const old = this.audioOut.remove(track.sid);
+    if (old) {
+      track.detach(old);
+      old.srcObject = null;
+      old.remove();
+    }
+    this.attachAudio(track, p, false);
+  }
+
+  /** The remote mic publication with this track sid, and its participant. */
+  private micPub(sid: string): { pub: RemoteTrackPublication; p: RemoteParticipant } | null {
+    const room = this.room;
+    if (!room) return null;
+    for (const p of room.remoteParticipants.values()) {
+      const pub = p.getTrackPublication(Track.Source.Microphone);
+      if (pub?.trackSid === sid) return { pub, p };
+    }
+    return null;
+  }
+
+  /** New remote speakers (server active speakers or their incoming level) start the silent-voice check. */
+  private watchSpeakers(remote: readonly string[]): void {
+    const now = new Set(remote);
+    const started = [...now].filter((id) => !this.remoteSpeakingNow.has(id));
+    this.remoteSpeakingNow = now;
+    for (const id of started) this.onRemoteSpeakingStart(id);
+  }
+
+  private onRemoteSpeakingStart(identity: string): void {
+    const room = this.room;
+    if (!room || this.nativeRoom || room.state !== ConnectionState.Connected) return;
+    // Deafened: nothing is subscribed by design. A hidden web page: the page coming back checks.
+    // Autoplay blocked (web before a tap): every element is paused by the browser, the tap fixes it
+    // (offerPlayback) — healing would spend the whole budget on healthy mics.
+    if (useVoice.getState().deafened || (platform.kind === 'web' && document.hidden) || !room.canPlaybackAudio) return;
+    const p = room.remoteParticipants.get(identity);
+    const pub = p?.getTrackPublication(Track.Source.Microphone);
+    if (!p || !pub?.trackSid || pub.isMuted) return;
+    const track = pub.track;
+    // Speaking without a track or an element (a TrackSubscribed that never reached us): the
+    // structural check attaches / resubscribes (bounded by its own tries).
+    if (!track?.sid || !this.audioOut.has(track.sid)) {
+      this.checkAudio('speaking without audio');
+      return;
+    }
+    // Muted by me (per-user mute, volume 0): silence is what was asked for.
+    const el = this.audioOut.element(track.sid);
+    if (!el || el.muted || el.volume === 0) return;
+    this.silentWatch.onSpeaking(pub.trackSid);
+  }
+
+  /** One mic's receive side now: its receiver's inbound-rtp counters and whether our element plays this track. */
+  private async probeMic(sid: string): Promise<VoiceFlow | null> {
+    const track = this.micPub(sid)?.pub.track;
+    const rx = track?.receiver;
+    if (!track?.sid || !rx) return null;
+    let report: RTCStatsReport;
+    try {
+      report = await rx.getStats();
+    } catch {
+      return null;
+    }
+    const entry = inboundRtp(report, 'audio')[0];
+    const packets = entry?.['packetsReceived'];
+    const samples = entry?.['totalSamplesReceived'];
+    if (typeof packets !== 'number') return null;
+    const el = this.audioOut.element(track.sid);
+    const src = el?.srcObject;
+    const bound = el !== undefined && !el.paused && src instanceof MediaStream && src.getAudioTracks().includes(track.mediaStreamTrack);
+    return { packets, samples: typeof samples === 'number' ? samples : null, bound };
+  }
+
+  /** A speaking colleague's mic plays nothing here (lib/silentVoice.ts): one bounded step. */
+  private onSilentMic(sid: string, step: SilentStep, why: string): void {
+    const hit = this.micPub(sid);
+    if (!hit || useVoice.getState().deafened || this.room?.canPlaybackAudio === false) return;
+    const { pub, p } = hit;
+    if (step === 'give-up') {
+      log.warn(`voice: mic ${sid} of ${p.identity} still silent while speaking after re-attach and resubscribe (${why}); a rejoin is left to the user`);
+      return;
+    }
+    if (step === 'reattach') {
+      if (!pub.track) return;
+      log.info(`voice: mic ${sid} of ${p.identity} speaking but silent here (${why}), re-attaching its <audio>`);
+      this.reattachAudio(pub.track, p);
+      return;
+    }
+    log.info(`voice: mic ${sid} of ${p.identity} speaking but silent here (${why}), resubscribing`);
+    const room = this.room;
+    pub.setSubscribed(false);
+    window.setTimeout(() => {
+      if (this.room === room && !useVoice.getState().deafened) pub.setSubscribed(true);
+    }, RESUBSCRIBE_GAP_MS);
+  }
+
   private nativeControls(): HostAudioControls {
     const v = useVoice.getState(); const p = prefs();
     const call = useCall.getState().call;
@@ -3113,8 +3277,12 @@ class VoiceEngine {
       }
       const prev = this.devices;
       this.devices = next;
-      // An input / camera change leaves the remote renderers alone (CBF-108).
-      if (announce && outputsChanged(prev, next)) this.scheduleRebind();
+      // An input / camera change, or an output the voices do not use, leaves the remote
+      // renderers alone (CBF-108, CBF-193): a re-bind cuts every voice for a moment.
+      if (announce && effectiveOutputChanged(prev, next, prefs().outputDeviceId)) {
+        this.brokenRebinds = BROKEN_REBINDS;
+        this.scheduleRebind();
+      }
       if (!announce || !prev || !this.roomId) return;
       const p = prefs();
       for (const sw of deviceSwitches(prev, next, { micDeviceId: p.micDeviceId, outputDeviceId: p.outputDeviceId })) announceDeviceSwitch(sw);
@@ -4029,6 +4197,11 @@ class VoiceEngine {
         return;
       }
       this.screen = share;
+      this.screenDiag.reset();
+      share.onSfuRequest((codecs) => {
+        const line = this.screen === share ? this.screenDiag.request(requestedRids(codecs), performance.now()) : null;
+        if (line) log.info(line);
+      });
       this.viewers.set(share.video.sid ?? '', new Set());
       // Whole screen: the annotation overlay may cover it (ADR-0028); a window: preview only. An
       // empty display id (Windows, issue #102) still goes: main resolves a single display itself.
@@ -4304,6 +4477,7 @@ class VoiceEngine {
     this.audioCheckTimer = null;
     this.micCheckTimer = null;
     this.resubscribes.clear();
+    this.silentWatch.reset();
     this.micMutedAt = null;
     this.micResumes = 0;
     this.micRestarts = 0;
@@ -4332,9 +4506,27 @@ class VoiceEngine {
       void this.audioOut.rebind().then((r) => {
         if (this.room !== room) return;
         log.info(`voice: output devices changed, ${r.rebound} remote audio element(s) re-bound`);
+        // A failed one fires `error` too: onRemoteAudioBroken runs the next pass.
+        if (r.failed > 0) log.warn(`voice: ${r.failed} remote audio element(s) did not start after the re-bind`);
         if (r.blocked > 0 && !document.hidden) this.offerPlayback();
       });
     }, ms);
+  }
+
+  /**
+   * A remote <audio> fired `error`: Chromium's shared WebRTC renderer lost its device (render
+   * error) or a re-bound player could not open it yet (CBF-193). That element is silent for good
+   * until the renderer is rebuilt — re-bind once the route has settled, a bounded number of
+   * times per output change (`brokenRebinds`, reset by the next one; a renderer that keeps
+   * failing on a fresh device cannot spin the renderer process).
+   */
+  private onRemoteAudioBroken(): void {
+    // A pass already due covers this element too: every element of a dead renderer fires
+    // `error` at once, which must not spend the whole budget on one pass.
+    if (!this.room || this.rebindTimer !== null || this.brokenRebinds <= 0) return;
+    this.brokenRebinds--;
+    log.info('voice: a remote audio element reported a media error, re-binding');
+    this.scheduleRebind();
   }
 
   /** One pass of «play what the system paused» (RemoteAudioOut.replayPaused); a refusal offers the tap. */
@@ -4411,7 +4603,8 @@ class VoiceEngine {
    */
   private checkAudio(why: string): void {
     const room = this.room;
-    if (!room || document.hidden) return; // the page coming back checks again
+    // A hidden web page: the page coming back checks again. A hidden desktop window still plays.
+    if (!room || (platform.kind === 'web' && document.hidden)) return;
     const pubs = new Map<string, { pub: RemoteTrackPublication; p: RemoteParticipant }>();
     const views: MicPubView[] = [];
     for (const p of room.remoteParticipants.values()) {
@@ -4687,6 +4880,8 @@ class VoiceEngine {
     this.camera.onStats(cameraOut);
     const screenReport = await this.screen?.video.getRTCStatsReport();
     const screenOut = screenReport ? outboundVideo(screenReport, this.rates, 'screen') : [];
+    const outLine = this.screen ? this.screenDiag.tick(screenOut, performance.now()) : null;
+    if (outLine) log.info(outLine);
     // A capture that changed size after publishing left an H.264 layer odd → OpenH264 (docs/14).
     if (hasOddH264Layer(screenOut)) {
       const was = screenOut.map((l) => `${l.width}x${l.height}`);
@@ -4717,6 +4912,8 @@ class VoiceEngine {
       const v = watchedTrack ? inboundRtp(inbound, 'video').find((e) => e['trackIdentifier'] === watchedTrack) : undefined;
       if (v && watchedSid) watching = inboundVideo(withOnly(inbound, v), this.rates, watchedSid);
     }
+    const inLine = this.viewerDiag.tick(watchedSid, watching, performance.now());
+    if (inLine) log.info(inLine);
     const rtt = pair?.rttMs ?? null;
     let out = 0;
     let inn = 0;
